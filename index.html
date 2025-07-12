@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Software Factory </title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="nav-container">
+                <div class="nav-logo">
+                    <h1>Software Factory</h1>
+                </div>
+                <div class="hamburger">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="hero-container">
+                <div class="hero-content">
+                    <h1>The most agentic SDLC platform on earth</h1>
+                    <p>Write quality requirements, build thorough Engineering plans, extract detailed tickets, Design, quality code, QA thoroughly in an increasingly automated way.</p>
+                    <a href="dashboard.html" class="early-access-btn">Start Building</a>
+                </div>
+                <div class="hero-image">
+                    <img src="images/hero-image.png" alt="Software Factory Hero">
+                </div>
+            </div>
+        </section>
+
+        <section class="features">
+            <div class="feature-section">
+                <div class="feature-content">
+                    <h2>Design Engineers</h2>
+                    <p>We strive to build a <span class="highlight-tag">culture</span>, <span class="highlight-tag">mindset</span> and <span class="highlight-tag">community</span> of Design engineers : folks who can <span class="highlight-tag">ideate</span>, <span class="highlight-tag">code</span>, <span class="highlight-tag">design</span>, <span class="highlight-tag">build</span> and <span class="highlight-tag">ship</span>.</p>
+                </div>
+                <div class="feature-image">
+                    <img src="images/privacy-image.png" alt="Privacy and Security">
+                </div>
+            </div>
+
+            <div class="feature-section reverse">
+                <div class="feature-content">
+                    <h2>Identity Freedom</h2>
+                    <p>Connect without revealing your identity. No phone numbers, email addresses, or personal information required. Your digital identity remains completely under your control.</p>
+                </div>
+                <div class="feature-image">
+                    <img src="images/identity-image.png" alt="Identity Freedom">
+                </div>
+            </div>
+
+            <div class="feature-section">
+                <div class="feature-content">
+                    <h2>Open & Decentralized</h2>
+                    <p>Built on open protocols and decentralized infrastructure. No single point of failure, no central authority. The network is owned and operated by its users.</p>
+                </div>
+                <div class="feature-image">
+                    <img src="images/open-image.png" alt="Open and Decentralized">
+                </div>
+            </div>
+
+            <div class="feature-section reverse">
+                <div class="feature-content">
+                    <h2>Distributed & Uncensorable</h2>
+                    <p>Resistant to censorship and surveillance. Messages are routed through a distributed network that cannot be blocked or monitored by any single entity.</p>
+                </div>
+                <div class="feature-image">
+                    <img src="images/distributed-image.png" alt="Distributed and Uncensorable">
+                </div>
+            </div>
+
+            <div class="feature-section">
+                <div class="feature-content">
+                    <h2>Fast, Reliable, & Scalable</h2>
+                    <p>Lightning-fast message delivery with high reliability. Our infrastructure scales automatically to handle millions of users without compromising performance.</p>
+                </div>
+                <div class="feature-image">
+                    <img src="images/scalable-image.png" alt="Fast, Reliable, and Scalable">
+                </div>
+            </div>
+
+            <div class="feature-section reverse">
+                <div class="feature-content">
+                    <h2>Non-Profit & Community-Driven</h2>
+                    <p>Developed by a community of privacy advocates and supported by non-profit organizations. Our mission is to provide secure communication for everyone, not profit.</p>
+                </div>
+                <div class="feature-image">
+                    <img src="images/community-image.png" alt="Non-Profit and Community-Driven">
+                </div>
+            </div>
+        </section>
+
+        <section class="supported-by">
+            <h3>Supported By</h3>
+            <div class="supporters">
+                <div class="supporter">
+                    <img src="opensats-logo.png" alt="OpenSats">
+                </div>
+                <div class="supporter">
+                    <img src="hrf-logo.png" alt="Human Rights Foundation">
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="footer-content">
+            <nav class="footer-nav">
+                <ul>
+                    <li><a href="#privacy">Privacy Matters</a></li>
+                    <li><a href="#faqs">FAQs</a></li>
+                    <li><a href="#updates">Updates</a></li>
+                    <li><a href="#contribute">Contribute</a></li>
+                    <li><a href="#download">Download</a></li>
+                </ul>
+            </nav>
+            <div class="footer-info">
+                <p>&copy; 2024 Software Factory. All rights reserved.</p>
+                <p>Developed by the Software Factory team</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Dark mode toggle functionality
+        const hamburger = document.querySelector('.hamburger');
+        const navMenu = document.querySelector('.nav-menu');
+
+        hamburger.addEventListener('click', () => {
+            hamburger.classList.toggle('active');
+            navMenu.classList.toggle('active');
+        });
+
+        // Close menu when clicking on a link
+        document.querySelectorAll('.nav-menu a').forEach(link => {
+            link.addEventListener('click', () => {
+                hamburger.classList.remove('active');
+                navMenu.classList.remove('active');
+            });
+        });
+
+    </script>
+</body>
+</html>

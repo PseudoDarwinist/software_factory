@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Software Factory - Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="nav-container">
+                <div class="nav-logo">
+                    <a href="index.html"><h1>Software Factory</h1></a>
+                </div>
+                <div class="hamburger">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section class="dashboard">
+            <div class="dashboard-container">
+                <div class="role-toggles" data-active="developer">
+                    <button class="role-toggle" data-role="business">Business</button>
+                    <button class="role-toggle" data-role="po">PO</button>
+                    <button class="role-toggle" data-role="designer">Designer</button>
+                    <button class="role-toggle active" data-role="developer">Developer</button>
+                </div>
+
+                <div class="dashboard-content">
+                    <h2>Welcome to Your Dashboard</h2>
+                    <p>Select your role to customize your experience.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // Pixel-perfect toggle functionality
+        const toggleContainer = document.querySelector('.role-toggles');
+        const toggleButtons = document.querySelectorAll('.role-toggle');
+        
+        toggleButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Remove active class from all buttons
+                toggleButtons.forEach(btn => btn.classList.remove('active'));
+                
+                // Add active class to clicked button
+                button.classList.add('active');
+                
+                // Update marble position via data attribute
+                const role = button.getAttribute('data-role');
+                toggleContainer.setAttribute('data-active', role);
+            });
+        });
+    </script>
+</body>
+</html>
