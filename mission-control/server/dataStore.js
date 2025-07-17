@@ -156,6 +156,30 @@ function loadData() {
 
 let store = loadData()
 
+// ---------------------------------------------------------------------------
+// Ensure previously persisted data has all required top-level collections. If
+// someone saved an older schema without these keys, accessing them later would
+// throw "Cannot read properties of undefined" errors (observed for
+// `productBriefs` and `stages`). We defensively add them here so the rest of
+// the API can assume they are present.
+// ---------------------------------------------------------------------------
+
+if (!store.stages) {
+  store.stages = {}
+}
+
+if (!store.productBriefs) {
+  store.productBriefs = {}
+}
+
+if (!store.stageTransitions) {
+  store.stageTransitions = []
+}
+
+// Persist immediately so the file on disk is upgraded to the latest shape and
+// we don’t have to fix it again on the next server restart.
+persist()
+
 function persist() {
   fs.writeFileSync(DATA_PATH, JSON.stringify(store, null, 2))
 }
@@ -197,6 +221,23 @@ module.exports = {
       item.unread = false
       persist()
     }
+  },
+  addProject(project) {
+    store.projects.push(project)
+    // Initialize stages for the new project
+    if (!store.stages[project.id]) {
+      store.stages[project.id] = {
+        think: [], define: [], plan: [], build: [], validate: []
+      }
+    }
+    persist()
+  },
+  removeProject(projectId) {
+    // Remove from projects array
+    store.projects = store.projects.filter(p => p.id !== projectId)
+    // Remove stages data
+    delete store.stages[projectId]
+    persist()
   },
   // Channel-to-project mapping helpers
   getProjectForChannel(channelId) {

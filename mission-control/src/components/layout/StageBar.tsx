@@ -84,7 +84,7 @@ export const StageBar: React.FC<StageBarProps> = ({
   return (
     <div className={clsx(
       'fixed top-0 left-0 right-0 z-50',
-      'bg-black/40 backdrop-blur-md',
+      'backdrop-blur-md',
       'border-b border-white/10',
       'px-4 py-3',
       className
@@ -109,7 +109,10 @@ export const StageBar: React.FC<StageBarProps> = ({
         </AnimatePresence>
 
         {/* Stage Navigation */}
-        <div className="flex items-center space-x-1">
+        <div
+          className="stage-toggles"
+          data-active={activeStage}
+        >
           {stages.map((stage, index) => {
             const isActive = activeStage === stage.id
             const isHovered = hoveredStage === stage.id
@@ -130,6 +133,7 @@ export const StageBar: React.FC<StageBarProps> = ({
                 onItemDrop={onItemDrop}
                 selectedProject={selectedProject}
                 currentStage={activeStage}
+                className={clsx('stage-toggle', isActive && 'active')}
               />
             )
           })}
@@ -157,6 +161,7 @@ interface StageTabProps {
   onItemDrop?: (itemId: string, fromStage: SDLCStage, toStage: SDLCStage) => void
   selectedProject?: string | null
   currentStage: SDLCStage
+  className?: string
 }
 
 const StageTab: React.FC<StageTabProps> = ({
@@ -171,12 +176,17 @@ const StageTab: React.FC<StageTabProps> = ({
   onItemDrop,
   selectedProject,
   currentStage,
+  className,
 }) => {
   // Drag and drop functionality
   const [{ canDrop, isOver }, drop] = useDrop(() => ({
     accept: 'FEED_ITEM',
     drop: (item: { id: string; type: string }) => {
-      if (onItemDrop && selectedProject) {
+      // Debug: log drop events
+      console.log('[StageBar] Dropped item', item.id, 'from', currentStage, 'to', stage.id)
+      // Always call onItemDrop if provided. The handler itself can decide what
+      // to do based on the current application state.
+      if (onItemDrop) {
         onItemDrop(item.id, currentStage, stage.id)
       }
       return { stageId: stage.id }
@@ -185,7 +195,7 @@ const StageTab: React.FC<StageTabProps> = ({
       isOver: monitor.isOver(),
       canDrop: monitor.canDrop(),
     }),
-  }), [onItemDrop, selectedProject, currentStage, stage.id])
+  }), [onItemDrop, currentStage, stage.id])
 
   React.useEffect(() => {
     if (isOver && canDrop) {
@@ -199,63 +209,20 @@ const StageTab: React.FC<StageTabProps> = ({
     <motion.div
       ref={drop}
       className={clsx(
-        'relative px-4 py-2 rounded-lg cursor-pointer',
-        'transition-all duration-300',
-        'select-none',
+        'relative cursor-pointer transition-all duration-300 select-none',
         !isAccessible && 'opacity-50 cursor-not-allowed',
-        isActive && 'text-white',
-        !isActive && 'text-white/70 hover:text-white/90',
+        className
       )}
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
       onMouseEnter={() => onHover(stage.id)}
       onMouseLeave={() => onHover(null)}
       onClick={isAccessible ? onClick : undefined}
     >
-      {/* Background with liquid glass effect */}
-      <motion.div
-        className="absolute inset-0 rounded-lg"
-        style={{
-          background: isActive
-            ? 'rgba(150, 179, 150, 0.2)'
-            : isHovered || isDragOver
-            ? 'rgba(150, 179, 150, 0.1)'
-            : 'transparent',
-          backdropFilter: isActive ? 'blur(12px)' : 'blur(8px)',
-          border: isActive
-            ? '1px solid rgba(150, 179, 150, 0.3)'
-            : isDragOver
-            ? '1px solid rgba(150, 179, 150, 0.5)'
-            : '1px solid transparent',
-        }}
-        animate={{
-          scale: isDragOver ? 1.1 : 1,
-          opacity: isActive ? 1 : isHovered || isDragOver ? 0.8 : 0.6,
-        }}
-        transition={{ duration: 0.2 }}
-      />
-
-      {/* Glow effect for active stage */}
-      {isActive && (
-        <motion.div
-          className="absolute inset-0 rounded-lg"
-          style={{
-            background: 'rgba(150, 179, 150, 0.1)',
-            filter: 'blur(8px)',
-            transform: 'scale(1.2)',
-          }}
-          animate={{ opacity: [0.3, 0.6, 0.3] }}
-          transition={{ duration: 2, repeat: Infinity }}
-        />
-      )}
-
       {/* Content */}
-      <div className="relative z-10 flex items-center space-x-2">
-        <span className="text-lg" role="img" aria-label={stage.description}>
-          {stage.icon}
-        </span>
-        <span className="font-medium text-sm">{stage.label}</span>
-      </div>
+      <span className="relative z-10 font-medium text-sm">
+        {stage.label}
+      </span>
 
       {/* Drag over indicator */}
       {isDragOver && (

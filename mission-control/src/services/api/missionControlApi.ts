@@ -90,6 +90,16 @@ class MissionControlApi {
     }
   }
 
+  async createProject(data: { name: string; repoUrl: string }): Promise<ProjectSummary> {
+    try {
+      const response = await this.client.post<ApiResponse<ProjectSummary>>('/projects', data)
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to create project:', error)
+      throw new Error('Failed to create project')
+    }
+  }
+
   async updateProject(projectId: string, updates: Partial<ProjectSummary>): Promise<ProjectSummary> {
     try {
       const response = await this.client.patch<ApiResponse<ProjectSummary>>(`/projects/${projectId}`, updates)
@@ -97,6 +107,29 @@ class MissionControlApi {
     } catch (error) {
       console.error('Failed to update project:', error)
       throw new Error('Failed to update project')
+    }
+  }
+
+  async deleteProject(projectId: string): Promise<void> {
+    try {
+      await this.client.delete(`/projects/${projectId}`)
+    } catch (error) {
+      console.error('Failed to delete project:', error)
+      throw new Error('Failed to delete project')
+    }
+  }
+
+  async uploadProjectDocs(projectName: string, formData: FormData): Promise<{ projectId: string; docCount: number }> {
+    try {
+      const response = await this.client.post<ApiResponse<{ projectId: string; docCount: number }>>('/projects/docs', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to upload project documents:', error)
+      throw new Error('Failed to upload project documents')
     }
   }
 
@@ -267,7 +300,10 @@ class MissionControlApi {
 
   // Socket.IO connection for real-time updates
   createSocketConnection(onMessage: (event: any) => void): Socket {
-    const socket = io('http://localhost:5001', {
+    // Always use current origin since Flask server proxies to Mission Control
+    const socketUrl = window.location.origin
+    
+    const socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
     })
@@ -311,6 +347,10 @@ class MissionControlApi {
     
     socket.on('brief.frozen', (data) => {
       onMessage({ type: 'brief.frozen', data })
+    })
+    
+    socket.on('project.indexed', (data) => {
+      onMessage({ type: 'project.indexed', data })
     })
     
     return socket

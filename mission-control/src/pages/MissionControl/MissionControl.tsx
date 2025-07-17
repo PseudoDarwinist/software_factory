@@ -243,32 +243,49 @@ export const MissionControl: React.FC = () => {
   }, [ui.selectedProject, actions])
 
   const handleItemDrop = useCallback(async (itemId: string, fromStage: typeof ui.activeStage, toStage: typeof ui.activeStage) => {
-    if (!ui.selectedProject) {
-      actions.setError('action', 'No project selected')
+    console.log('[MissionControl] handleItemDrop called', { itemId, fromStage, toStage, selectedProject: ui.selectedProject })
+    // Determine the project context. Prefer the currently selected project, but
+    // fall back to the project associated with the feed item itself. This allows
+    // drag-and-drop to work even when the user has not explicitly selected a
+    // project in the sidebar.
+    const projectId = ui.selectedProject || feedItems.find((f) => f.id === itemId)?.projectId
+    console.log('[MissionControl] Resolved projectId', projectId)
+    if (!projectId) {
+      actions.setError('action', 'Unable to determine project for this item')
       return
     }
-    
+
     try {
       actions.setLoading('action', true)
       actions.setError('action', null)
-      
-      const result = await missionControlApi.moveItemToStage(itemId, toStage, fromStage, ui.selectedProject)
-      
-      // If moving to Define stage and brief was created, navigate to Define stage
-      if (toStage === 'define' && result.brief) {
+
+      // Optimistically mark this feed item as being in the target stage so the
+      // DefineStage sidebar shows it immediately.
+      actions.updateFeedItem(itemId, { metadata: { ...(feedItems.find(f => f.id === itemId)?.metadata || {}), stage: toStage } })
+
+      // Optimistically switch the UI stage so users get immediate feedback.
+      if (toStage === 'define') {
         actions.setActiveStage('define')
-        // Optional: auto-select the item that was moved
         actions.setSelectedFeedItem(itemId)
       }
-      
-      // Refresh feed items to reflect the change
-      await loadFeedItems(ui.selectedProject || undefined)
+
+      // Attempt the server mutation. If it fails, the error toast will inform the
+      // user and the optimistic UI can be rolled back manually if desired.
+      const result = await missionControlApi.moveItemToStage(itemId, toStage, fromStage, projectId)
+
+      // If the backend returns a brief in response, you might choose to do
+      // something with it here (e.g., store it in state). This is left as a TODO
+      // because the existing UI does not yet surface that data.
+
+      // Refresh feed items to reflect the change. Use the resolved projectId so
+      // we stay in the same project context.
+      await loadFeedItems(projectId)
     } catch (error) {
       actions.setError('action', error instanceof Error ? error.message : 'Failed to move item')
     } finally {
       actions.setLoading('action', false)
     }
-  }, [ui.selectedProject, actions])
+  }, [ui.selectedProject, feedItems, actions])
 
   return (
     <DndProvider backend={HTML5Backend}>

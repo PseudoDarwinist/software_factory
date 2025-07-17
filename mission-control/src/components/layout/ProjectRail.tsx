@@ -25,9 +25,13 @@ import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import { LiquidCard } from '@/components/core/LiquidCard'
+import { X } from 'lucide-react'
 import { HealthDot } from '@/components/core/HealthDot'
+import { AddProjectModal } from '@/components/modals/AddProjectModal'
+import missionControlApi from '@/services/api/missionControlApi'
 import { tokens } from '@/styles/tokens'
 import type { ProjectSummary } from '@/types'
+import { useActions } from '@/stores/missionControlStore'
 
 interface ProjectRailProps {
   projects: ProjectSummary[]
@@ -52,6 +56,11 @@ export const ProjectRail: React.FC<ProjectRailProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [hoveredProject, setHoveredProject] = useState<string | null>(null)
+  const [showAddProjectModal, setShowAddProjectModal] = useState(false)
+  // actions used only within inner ProjectCard, so no need here
+
+  // Debug logging
+  console.log('ProjectRail render:', { collapsed, isMobile, showAddProjectModal })
 
   // Filter projects based on search query
   const filteredProjects = projects.filter(project =>
@@ -66,6 +75,22 @@ export const ProjectRail: React.FC<ProjectRailProps> = ({
     } else {
       onProjectSelect(projectId)
     }
+  }
+
+  // Handle project creation
+  const handleProjectAdded = (projectData: any) => {
+    console.log('Project added:', projectData)
+    // Note: In a real app, this would refresh the projects list
+    // For now, we'll just close the modal
+    setShowAddProjectModal(false)
+  }
+
+  // Debug click handler
+  const handleAddProjectClick = () => {
+    console.log('Add Project button clicked!')
+    console.log('Current state:', { collapsed, isMobile, showAddProjectModal })
+    setShowAddProjectModal(true)
+    console.log('Modal state should be true now')
   }
 
   return (
@@ -205,7 +230,10 @@ export const ProjectRail: React.FC<ProjectRailProps> = ({
             exit={{ opacity: 0, y: 20 }}
             className="p-4 border-t border-white/10"
           >
-            <button className="w-full p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-white/70 hover:text-white transition-all flex items-center justify-center space-x-2">
+            <button 
+              onClick={handleAddProjectClick}
+              className="neon-btn w-full flex items-center justify-center space-x-2"
+            >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
@@ -214,6 +242,14 @@ export const ProjectRail: React.FC<ProjectRailProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+
+      {/* Add Project Modal */}
+      <AddProjectModal
+        isOpen={showAddProjectModal}
+        onClose={() => setShowAddProjectModal(false)}
+        onProjectAdded={handleProjectAdded}
+      />
     </div>
   )
 }
@@ -237,6 +273,25 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
   onHover,
   index,
 }) => {
+  const storeActions = useActions()
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm(`Delete project “${project.name}” ? This cannot be undone.`)) return
+    try {
+      await missionControlApi.deleteProject(project.id)
+    } catch (err: any) {
+      if (err?.response?.status !== 404) {
+        alert('Failed to delete project')
+      }
+    }
+    // Refresh projects from backend regardless
+    try {
+      const fresh = await missionControlApi.getProjects()
+      storeActions.setProjects(fresh)
+    } catch {}
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -20 }}
@@ -244,6 +299,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
       transition={{ delay: index * 0.05 }}
       onMouseEnter={() => onHover(project.id)}
       onMouseLeave={() => onHover(null)}
+      onClick={onSelect}
     >
       <LiquidCard
         variant="project"
@@ -313,6 +369,14 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
             )}
           </AnimatePresence>
         </div>
+        {isHovered && (
+          <button
+            onClick={handleDelete}
+            className="absolute top-2 right-2 p-1 rounded hover:bg-white/10"
+          >
+            <X className="w-4 h-4 text-white/60" />
+          </button>
+        )}
       </LiquidCard>
     </motion.div>
   )

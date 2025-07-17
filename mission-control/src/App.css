@@ -421,4 +421,312 @@ html {
   .App {
     background: white !important;
   }
+  
+  .stage-toggles {
+    background: white !important;
+    border: 1px solid black !important;
+  }
+  
+  .stage-toggle {
+    color: black !important;
+    text-shadow: none !important;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Neon Button (matches landing page “Start Building” style)
+   ------------------------------------------------------------------------- */
+
+.neon-btn {
+  /* sizing + font */
+  display: inline-block;
+  padding: 0.75rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: 9999px;
+  text-align: center;
+  cursor: pointer;
+  text-decoration: none;
+
+  /* colours */
+  color: #ffffff;
+  background: linear-gradient(135deg, rgba(150, 179, 150, 0.9), rgba(150, 179, 150, 0.7));
+  border: 1px solid rgba(150, 179, 150, 0.6);
+
+  /* glow */
+  box-shadow:
+    0 0 15px 5px rgba(150, 179, 150, 0.4),
+    inset 0 1px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -1px 3px rgba(0, 0, 0, 0.1);
+
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.neon-btn:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 20px 8px rgba(150, 179, 150, 0.5),
+    inset 0 1px 3px rgba(255, 255, 255, 0.5),
+    inset 0 -1px 3px rgba(0, 0, 0, 0.12);
+  background: linear-gradient(135deg, rgba(150, 179, 150, 1), rgba(150, 179, 150, 0.85));
+}
+
+.neon-btn:active {
+  transform: translateY(0);
+  box-shadow:
+    0 0 10px 4px rgba(150, 179, 150, 0.45),
+    inset 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+.neon-btn--disabled,
+.neon-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* -------------------------------------------------------------------------
+   StageBar segmented control (Think → Validate) - Dashboard Style
+   ------------------------------------------------------------------------- */
+
+.stage-toggles {
+  display: flex;
+  position: relative;
+  height: 56px;
+  width: 640px;
+  max-width: 100%;
+  overflow: hidden;
+  margin: 0 auto;
+  border-radius: 28px;
+  background: rgba(200, 200, 200, 0.35);
+  backdrop-filter: blur(24px) saturate(180%) brightness(105%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08),
+              inset 0 1px 2px rgba(255, 255, 255, 0.4),
+              0 1px 2px rgba(0, 0, 0, 0.06);
+  padding: 0;
+}
+
+.stage-toggle {
+  flex: 1;
+  position: relative;
+  background: none;
+  border: none;
+  font: 500 16px/56px "SF Pro Text", -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #6A6C6C;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  letter-spacing: -0.2%;
+  padding-left: 44px;
+  padding-right: 24px;
+  text-align: left;
+  z-index: 2;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+/* Segment dividers */
+.stage-toggle + .stage-toggle::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: linear-gradient(#FFFFFF 40%, #C4CAD8 100%);
+  opacity: 0.45;
+}
+
+/* Active segment plate */
+.stage-toggle.active {
+  color: var(--accent-dark);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+.stage-toggle.active::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 24px;
+  background: linear-gradient(180deg,
+              rgba(255, 255, 255, 0.65) 0%,
+              rgba(255, 255, 255, 0.05) 30%,
+              var(--accent-light) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+      0 1px 3px rgba(0, 0, 0, 0.04),
+      inset 0 1px 2px rgba(255, 255, 255, 0.60);
+  z-index: 1;
+}
+
+/* Static marble ornament */
+.stage-toggle.active::before {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, var(--accent-light) 0%, var(--accent-mid) 40%, var(--accent-dark) 100%);
+  box-shadow: inset 0 1px 2px rgba(255,255,255,0.5),
+              0 1px 2px rgba(0,0,0,0.15);
+  z-index: 2;
+}
+
+/* Stage-specific color palettes */
+.stage-toggles[data-active="think"] {
+  --accent-light: #DFE5FF;
+  --accent-mid:   #5A7BFF;
+  --accent-dark:  #2846D8;
+}
+
+.stage-toggles[data-active="define"] {
+  --accent-light: #CFF8D6;
+  --accent-mid:   #34C759;
+  --accent-dark:  #0A8F2E;
+}
+
+.stage-toggles[data-active="plan"] {
+  --accent-light: #FFF4C8;
+  --accent-mid:   #FFCC00;
+  --accent-dark:  #CC9900;
+}
+
+.stage-toggles[data-active="build"] {
+  --accent-light: #FFE4B5;
+  --accent-mid:   #FF8C00;
+  --accent-dark:  #E6720A;
+}
+
+.stage-toggles[data-active="validate"] {
+  --accent-light: #FFD6DB;
+  --accent-mid:   #FF6F7A;
+  --accent-dark:  #C92B30;
+}
+
+/* Hover state */
+.stage-toggle:hover:not(.active) {
+  color: #4A4C4C;
+}
+
+/* Interaction states */
+.stage-toggles:hover::before {
+  filter: brightness(108%);
+  box-shadow: 0 2px 6px rgba(73, 145, 249, 0.45),
+              inset 0 2px 4px rgba(0, 0, 0, 0.20);
+}
+
+.stage-toggles:active::before {
+  transform: translateY(2px);
+  box-shadow: 0 1px 2px rgba(73, 145, 249, 0.45),
+              inset 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* -------------------------------------------------------------------------
+   Neon Button (matches landing page "Start Building" style)
+   ------------------------------------------------------------------------- */
+
+.neon-btn {
+  /* sizing + font */
+  display: inline-flex;
+  align-items: center;
+  padding: 0.75rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: 9999px;
+  text-align: center;
+  cursor: pointer;
+  text-decoration: none;
+  border: none;
+
+  /* colours */
+  color: #ffffff;
+  background: linear-gradient(135deg, rgba(150, 179, 150, 0.9), rgba(150, 179, 150, 0.7));
+  border: 1px solid rgba(150, 179, 150, 0.6);
+
+  /* glow */
+  box-shadow:
+    0 0 15px 5px rgba(150, 179, 150, 0.4),
+    inset 0 1px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -1px 3px rgba(0, 0, 0, 0.1);
+
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.neon-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 20px 8px rgba(150, 179, 150, 0.5),
+    inset 0 1px 3px rgba(255, 255, 255, 0.5),
+    inset 0 -1px 3px rgba(0, 0, 0, 0.12);
+  background: linear-gradient(135deg, rgba(150, 179, 150, 1), rgba(150, 179, 150, 0.85));
+}
+
+.neon-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow:
+    0 0 10px 4px rgba(150, 179, 150, 0.45),
+    inset 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+.neon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* -------------------------------------------------------------------------
+   Neon Button – landing-page yellow variant (overrides previous)            
+   ------------------------------------------------------------------------- */
+
+.neon-btn {
+  /* layout */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  /* colours */
+  color: #424424; /* dark text like landing page */
+  background: radial-gradient(
+              ellipse at 50% 0%,               /* soft top highlight */
+              rgba(255,255,255,0.65) 0%,
+              #f3f85d 35%,
+              #f3f85d 100%);
+  border: 0;
+
+  /* glow */
+  box-shadow:
+    0 0 18px 6px rgba(243,248,93,0.85),      /* outer neon glow */
+    inset 0 1px 3px rgba(255,255,255,0.70),   /* top inner highlight */
+    inset 0 -1px 4px rgba(0,0,0,0.12);        /* bottom inner shadow */
+}
+
+.neon-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  background: radial-gradient(
+              ellipse at 50% 0%,
+              rgba(255,255,255,0.75) 0%,
+              #f3f85d 30%,
+              #f3f85d 100%);
+  box-shadow:
+    0 2px 24px 10px rgba(243,248,93,0.95),
+    inset 0 1px 3px rgba(255,255,255,0.80),
+    inset 0 -1px 4px rgba(0,0,0,0.14);
+}
+
+.neon-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow:
+    0 0 14px 5px rgba(243,248,93,0.80),
+    inset 0 1px 5px rgba(0,0,0,0.18);
 }

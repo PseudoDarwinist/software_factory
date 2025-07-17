@@ -87,6 +87,175 @@ app.get('/api/projects/:id', (req, res) => {
   })
 })
 
+// Serve system map JSON for a project
+app.get('/api/projects/:id/system-map', (req, res) => {
+  const project = mockProjects.find(p => p.id === req.params.id)
+  if (!project) {
+    return res.status(404).json({ success: false, error: 'Project not found' })
+  }
+
+  if (!project.metadata?.systemMapPath) {
+    return res.status(404).json({ success: false, error: 'System map not generated yet' })
+  }
+
+  try {
+    const mapJson = require(project.metadata.systemMapPath)
+    return res.json({ success: true, data: mapJson })
+  } catch (e) {
+    console.error('Failed to load system map', e)
+    return res.status(500).json({ success: false, error: 'Failed to load map' })
+  }
+})
+
+// Add new project (from Add Project Modal)
+app.post('/api/projects', async (req, res) => {
+  try {
+    const { name, repoUrl } = req.body
+    
+    if (!name || !repoUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Project name and repository URL are required',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+      })
+    }
+    
+    // Generate new project ID
+    const projectId = `project_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    
+    // Create new project
+    const newProject = {
+      id: projectId,
+      name,
+      description: `Project created from ${repoUrl}`,
+      repoUrl,
+      health: 'amber', // Initially amber while indexing
+      unreadCount: 0,
+      lastActivity: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      systemMapStatus: 'in_progress',
+      metadata: {
+        repoUrl,
+        systemMapGenerated: false,
+        docsUploaded: false,
+      }
+    }
+    
+    // Add to mock projects
+    mockProjects.push(newProject)
+    dataStore.addProject(newProject)
+    
+    // Emit project creation event for real-time ingestion
+    io.emit('project.created', {
+      projectId,
+      repoUrl,
+      name,
+    })
+    
+    console.log(`New project created: ${name} (${projectId})`)
+    console.log(`Repository: ${repoUrl}`)
+    console.log(`Ingestion agent should now process this project...`)
+    
+    res.json({
+      success: true,
+      data: newProject,
+      timestamp: new Date().toISOString(),
+      version: '1.0.0',
+    })
+  } catch (error) {
+    console.error('Error creating project:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create project',
+      timestamp: new Date().toISOString(),
+      version: '1.0.0',
+    })
+  }
+})
+
+// Delete project
+app.delete('/api/projects/:id', (req, res) => {
+  const projectId = req.params.id
+  const idx = mockProjects.findIndex(p => p.id === projectId)
+  if (idx === -1) {
+    return res.status(404).json({ success: false, error: 'Project not found' })
+  }
+
+  const [removed] = mockProjects.splice(idx, 1)
+  dataStore.removeProject(projectId)
+
+  // Emit event so UI can update
+  io.emit('project.deleted', { projectId })
+
+  res.json({ success: true, data: removed, timestamp: new Date().toISOString() })
+})
+
+// Upload project documents
+app.post('/api/projects/docs', async (req, res) => {
+  try {
+    const { projectName } = req.body
+    
+    if (!projectName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Project name is required',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+      })
+    }
+    
+    // Find project by name
+    const project = mockProjects.find(p => p.name === projectName)
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        error: 'Project not found',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+      })
+    }
+    
+    // In a real implementation, you would:
+    // 1. Process uploaded files from req.files
+    // 2. Store files in a file system or cloud storage
+    // 3. Index documents for AI search
+    // 4. Trigger document ingestion process
+    
+    // For now, we'll just simulate the process
+    project.metadata.docsUploaded = true
+    project.metadata.docCount = Object.keys(req.body).filter(key => key.startsWith('doc_')).length
+    
+    // Emit document upload event
+    io.emit('project.docs.uploaded', {
+      projectId: project.id,
+      docCount: project.metadata.docCount,
+    })
+    
+    console.log(`Documents uploaded for project: ${projectName}`)
+    console.log(`Document count: ${project.metadata.docCount}`)
+    console.log(`Ingestion agent should now process these documents...`)
+    
+    res.json({
+      success: true,
+      data: {
+        projectId: project.id,
+        docCount: project.metadata.docCount,
+      },
+      timestamp: new Date().toISOString(),
+      version: '1.0.0',
+    })
+  } catch (error) {
+    console.error('Error uploading documents:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Failed to upload documents',
+      timestamp: new Date().toISOString(),
+      version: '1.0.0',
+    })
+  }
+})
+
 // Feed endpoints
 app.get('/api/feed', (req, res) => {
   const { projectId, severity, unread, limit = 20, cursor } = req.query

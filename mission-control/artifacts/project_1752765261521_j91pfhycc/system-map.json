@@ -1,0 +1,29 @@
+{
+  "timestamp": "2025-07-17T15:14:23.839Z",
+  "repository": "https://github.com/PseudoDarwinist/iropsagent.git",
+  "status": "basic_scan",
+  "note": "Manual system map generation - Goose integration pending",
+  "structure": {
+    "directories": [
+      ".git",
+      ".specstory",
+      "flight_agent"
+    ],
+    "files": [
+      ".gitignore",
+      "add_test_bookings.py",
+      "docs.md",
+      "flight_agent_app.py",
+      "requirements.txt",
+      "test_booking_import.py",
+      "travel_disruption.db"
+    ],
+    "languages": [
+      ".py",
+      ".md",
+      ".txt",
+      ".db"
+    ],
+    "frameworks": []
+  }
+}

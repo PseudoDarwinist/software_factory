@@ -249,15 +249,13 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                 </div>
                 
                 <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: calculateProgress(currentBrief) >= 80 ? 1.05 : 1 }}
+                  whileTap={{ scale: calculateProgress(currentBrief) >= 80 ? 0.95 : 1 }}
                   onClick={freezeBrief}
                   disabled={calculateProgress(currentBrief) < 80}
                   className={clsx(
-                    'px-6 py-2 rounded-lg font-medium transition-all',
-                    calculateProgress(currentBrief) >= 80
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                      : 'bg-white/10 text-white/50 cursor-not-allowed'
+                    'neon-btn transition-all',
+                    calculateProgress(currentBrief) < 80 && 'neon-btn--disabled'
                   )}
                 >
                   Freeze spec

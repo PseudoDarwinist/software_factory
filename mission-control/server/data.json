@@ -17,12 +17,20 @@
       "description": "Command center interface"
     },
     {
-      "id": "proj-3",
-      "name": "AI Agents",
-      "health": "red",
-      "unreadCount": 6,
-      "lastActivity": "2025-07-17T02:04:48.426Z",
-      "description": "Autonomous development agents"
+      "id": "project_1752767921128_4tcxh7e50",
+      "name": "iropsagent",
+      "description": "Project created from https://github.com/PseudoDarwinist/iropsagent.git",
+      "repoUrl": "https://github.com/PseudoDarwinist/iropsagent.git",
+      "health": "amber",
+      "unreadCount": 0,
+      "lastActivity": "2025-07-17T15:58:41.132Z",
+      "createdAt": "2025-07-17T15:58:41.132Z",
+      "systemMapStatus": "in_progress",
+      "metadata": {
+        "repoUrl": "https://github.com/PseudoDarwinist/iropsagent.git",
+        "systemMapGenerated": false,
+        "docsUploaded": false
+      }
     }
   ],
   "feedItems": [
@@ -36,7 +44,10 @@
       "createdAt": "2025-07-17T06:47:35Z",
       "linkedArtifactIds": [],
       "unread": true,
-      "actor": "U095W5T02TC"
+      "actor": "U095W5T02TC",
+      "metadata": {
+        "stage": "define"
+      }
     },
     {
       "id": "slack-1752732999.056579",
@@ -48,7 +59,10 @@
       "createdAt": "2025-07-17T06:16:39Z",
       "linkedArtifactIds": [],
       "unread": true,
-      "actor": "U095W5T02TC"
+      "actor": "U095W5T02TC",
+      "metadata": {
+        "stage": "define"
+      }
     },
     {
       "id": "slack-1752721756.517139",
@@ -60,7 +74,10 @@
       "createdAt": "2025-07-17T03:09:16Z",
       "linkedArtifactIds": [],
       "unread": true,
-      "actor": "U095W5T02TC"
+      "actor": "U095W5T02TC",
+      "metadata": {
+        "stage": "define"
+      }
     },
     {
       "id": "feed-1",
@@ -143,5 +160,158 @@
       }
     }
   ],
-  "conversations": {}
+  "conversations": {},
+  "stages": {
+    "proj-1": {
+      "think": [],
+      "define": [
+        "slack-1752734855.196359",
+        "slack-1752732999.056579",
+        "slack-1752721756.517139"
+      ],
+      "plan": [],
+      "build": [],
+      "validate": []
+    },
+    "project_1752767921128_4tcxh7e50": {
+      "think": [],
+      "define": [],
+      "plan": [],
+      "build": [],
+      "validate": []
+    }
+  },
+  "productBriefs": {
+    "brief-slack-1752734855.196359": {
+      "id": "brief-slack-1752734855.196359",
+      "itemId": "slack-1752734855.196359",
+      "projectId": "proj-1",
+      "problemStatement": "Can we make the fonts, colors, typography configurable in our website?",
+      "successMetrics": [
+        "User engagement increases by 20%",
+        "Feature adoption rate above 60%"
+      ],
+      "risks": [
+        "Technical complexity may delay delivery",
+        "User learning curve for new feature"
+      ],
+      "competitiveAnalysis": "Research needed on how competitors handle similar features related to: Can we make the fonts, colors, typography configurable in our website?",
+      "userStories": [
+        {
+          "id": "story-1",
+          "title": "As a user, I want can we make the fonts, colors, typography configurable in our website?",
+          "description": "User story derived from: Can we make the fonts, colors, typography configurable in our website?",
+          "acceptanceCriteria": [
+            "Feature is discoverable in the UI",
+            "Feature works on all supported devices",
+            "Feature has proper error handling"
+          ],
+          "priority": "high",
+          "status": "draft"
+        }
+      ],
+      "progress": 0.3,
+      "createdAt": "2025-07-17T09:39:20.656Z",
+      "updatedAt": "2025-07-17T09:39:20.656Z",
+      "version": 1,
+      "status": "draft"
+    },
+    "brief-slack-1752732999.056579": {
+      "id": "brief-slack-1752732999.056579",
+      "itemId": "slack-1752732999.056579",
+      "projectId": "proj-1",
+      "problemStatement": "Users are loving dark mode. can we implement it?",
+      "successMetrics": [
+        "User engagement increases by 20%",
+        "Feature adoption rate above 60%"
+      ],
+      "risks": [
+        "Technical complexity may delay delivery",
+        "User learning curve for new feature"
+      ],
+      "competitiveAnalysis": "Research needed on how competitors handle similar features related to: Users are loving dark mode. can we implement it?",
+      "userStories": [
+        {
+          "id": "story-1",
+          "title": "As a user, I want users are loving dark mode. can we implement it?",
+          "description": "User story derived from: Users are loving dark mode. can we implement it?",
+          "acceptanceCriteria": [
+            "Feature is discoverable in the UI",
+            "Feature works on all supported devices",
+            "Feature has proper error handling"
+          ],
+          "priority": "high",
+          "status": "draft"
+        }
+      ],
+      "progress": 0.3,
+      "createdAt": "2025-07-17T09:41:09.887Z",
+      "updatedAt": "2025-07-17T09:41:09.887Z",
+      "version": 1,
+      "status": "draft"
+    },
+    "brief-slack-1752721756.517139": {
+      "id": "brief-slack-1752721756.517139",
+      "itemId": "slack-1752721756.517139",
+      "projectId": "proj-1",
+      "problemStatement": "Test Again!",
+      "successMetrics": [
+        "User engagement increases by 20%",
+        "Feature adoption rate above 60%"
+      ],
+      "risks": [
+        "Technical complexity may delay delivery",
+        "User learning curve for new feature"
+      ],
+      "competitiveAnalysis": "Research needed on how competitors handle similar features related to: Test Again!",
+      "userStories": [
+        {
+          "id": "story-1",
+          "title": "As a user, I want test again!",
+          "description": "User story derived from: Test Again!",
+          "acceptanceCriteria": [
+            "Feature is discoverable in the UI",
+            "Feature works on all supported devices",
+            "Feature has proper error handling"
+          ],
+          "priority": "high",
+          "status": "draft"
+        }
+      ],
+      "progress": 0.3,
+      "createdAt": "2025-07-17T10:47:41.869Z",
+      "updatedAt": "2025-07-17T10:47:41.869Z",
+      "version": 1,
+      "status": "draft"
+    }
+  },
+  "stageTransitions": [
+    {
+      "id": "1752745160656",
+      "itemId": "slack-1752734855.196359",
+      "fromStage": "think",
+      "toStage": "define",
+      "projectId": "proj-1",
+      "timestamp": "2025-07-17T09:39:20.656Z",
+      "actor": "system"
+    },
+    {
+      "id": "1752745269886",
+      "itemId": "slack-1752732999.056579",
+      "fromStage": "think",
+      "toStage": "define",
+      "projectId": "proj-1",
+      "timestamp": "2025-07-17T09:41:09.886Z",
+      "actor": "system"
+    },
+    {
+      "id": "1752749261866",
+      "itemId": "slack-1752721756.517139",
+      "fromStage": "think",
+      "toStage": "define",
+      "projectId": "proj-1",
+      "timestamp": "2025-07-17T10:47:41.866Z",
+      "actor": "system"
+    }
+  ]
 }

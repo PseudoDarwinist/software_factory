@@ -27,10 +27,20 @@ export default defineConfig({
         target: `http://localhost:${process.env.SF_API_PORT || '5001'}`,
         changeOrigin: true,
       },
+      '/socket.io': {
+        // Proxy Socket.IO requests to backend
+        target: `http://localhost:${process.env.SF_API_PORT || '5001'}`,
+        changeOrigin: true,
+        ws: true, // Enable WebSocket proxying
+      },
     },
   },
   build: {
-    outDir: 'dist',
+    // Flask serves the SPA from ../../mission-control-dist
+    // Emit the production bundle straight there so the backend always
+    // picks up the latest build without a manual copy step.
+    outDir: resolve(__dirname, '..', 'mission-control-dist'),
+    emptyOutDir: true,
     sourcemap: true,
   },
 })
