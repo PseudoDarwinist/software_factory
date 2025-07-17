@@ -1,20 +1,447 @@
 #!/usr/bin/env python3
 """
-Simple HTTP server to test the Software Factory website locally.
-Run this script and it will automatically find an available port.
+Software Factory - Enhanced server with Goose + Gemini 2.5 Flash Integration
+Serves static files and provides API endpoints for AI-powered SDLC automation
 """
 
-import http.server
-import socketserver
+import subprocess
+import tempfile
 import os
+import json
 import socket
+from flask import Flask, request, jsonify, send_from_directory, send_file, redirect
+from typing import Dict, Any
+import time
 
-# Change to the directory containing the HTML file
-os.chdir('/Users/chetansingh/Documents/AI_Project/Software_Factory')
+# Change to the directory containing the HTML files
+BASE_DIR = '/Users/chetansingh/Documents/AI_Project/Software_Factory'
+os.chdir(BASE_DIR)
 
-def find_free_port():
-    """Find a free port starting from 8000"""
-    for port in range(8000, 8100):
+app = Flask(__name__)
+
+class GooseIntegration:
+    def __init__(self, project_path: str = None):
+        self.project_path = project_path or BASE_DIR
+        # Use Goose with filesystem and GitHub extensions enabled
+        self.goose_script = os.path.join(self.project_path, 'goose-gemini')
+        
+    def execute_goose_task(self, instruction: str, business_context: Dict = None, github_repo: Dict = None) -> Dict[str, Any]:
+        """Execute goose task with instruction and optional business context"""
+        try:
+            # Enhance instruction with business context if provided
+            enhanced_instruction = instruction
+            if business_context and any(business_context.values()):
+                context_str = self._format_business_context(business_context)
+                enhanced_instruction = f"""Business Context:
+{context_str}
+
+Task: {instruction}
+
+Please consider the business context above when providing your response."""
+
+            # Create temporary instruction file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                f.write(enhanced_instruction)
+                instruction_file = f.name
+            
+            # Run goose with enhanced instruction
+            result = subprocess.run(
+                [self.goose_script, 'run', '-i', instruction_file],
+                capture_output=True,
+                text=True,
+                cwd=self.project_path,
+                timeout=120  # 2 minute timeout
+            )
+            
+            # Cleanup
+            os.unlink(instruction_file)
+            
+            # Clean the output by removing Goose logging and technical info
+            cleaned_output = self._clean_goose_output(result.stdout)
+            
+            return {
+                'success': result.returncode == 0,
+                'output': cleaned_output,
+                'error': result.stderr,
+                'returncode': result.returncode,
+                'enhanced_instruction': enhanced_instruction
+            }
+            
+        except subprocess.TimeoutExpired:
+            return {
+                'success': False,
+                'output': '',
+                'error': 'Task timed out after 2 minutes',
+                'returncode': -1
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'output': '',
+                'error': str(e),
+                'returncode': -1
+            }
+    
+    def _format_business_context(self, context: Dict) -> str:
+        """Format business context for Goose prompts"""
+        formatted = []
+        if context.get('domain'):
+            formatted.append(f"Business Domain: {context['domain']}")
+        if context.get('useCase'):
+            formatted.append(f"Use Case: {context['useCase']}")
+        if context.get('targetAudience'):
+            formatted.append(f"Target Audience: {context['targetAudience']}")
+        if context.get('keyRequirements'):
+            formatted.append(f"Key Requirements: {context['keyRequirements']}")
+        if context.get('successMetrics'):
+            formatted.append(f"Success Metrics: {context['successMetrics']}")
+        
+        return '\n'.join(formatted)
+    
+    def _clean_goose_output(self, raw_output: str) -> str:
+        """Clean Goose output by removing technical logging and setup info"""
+        import re
+        
+        lines = raw_output.split('\n')
+        cleaned_lines = []
+        skip_until_content = True
+        
+        for line in lines:
+            # Remove ANSI color codes first
+            clean_line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+            
+            # Skip initial Goose setup and logging lines
+            if skip_until_content:
+                if (clean_line.startswith('🦆') or 
+                    clean_line.startswith('🎯') or 
+                    clean_line.startswith('🌐') or 
+                    clean_line.startswith('starting session') or 
+                    'logging to' in clean_line or 
+                    'working directory' in clean_line or
+                    clean_line.strip() == ''):
+                    continue
+                else:
+                    skip_until_content = False
+            
+            # Skip empty lines at the start
+            if not cleaned_lines and clean_line.strip() == '':
+                continue
+                
+            cleaned_lines.append(clean_line)
+        
+        # Join and clean up extra whitespace
+        result = '\n'.join(cleaned_lines).strip()
+        
+        # Remove multiple consecutive newlines
+        result = re.sub(r'\n\s*\n\s*\n+', '\n\n', result)
+        
+        # If result is empty or too short, return a default message
+        if not result or len(result.strip()) < 10:
+            return "I'm ready to help! Please provide more details about what you'd like assistance with."
+        
+        return result
+
+# Global goose instance
+goose = GooseIntegration()
+
+# Static file serving routes
+@app.route('/')
+def index():
+    return send_file('index.html')
+
+@app.route('/<path:filename>')
+def serve_static(filename):
+    return send_from_directory('.', filename)
+
+# Mission Control frontend – ensure trailing slash for correct relative asset resolution
+@app.route('/mission-control')
+@app.route('/mission-control/')
+@app.route('/mission-control/<path:path>')
+def mission_control_root(path=''):
+    """Serve the Mission Control React SPA.
+
+    We need the URL to end with a trailing slash so that the relative
+    asset paths generated by Vite ("./assets/…") resolve to
+    `/mission-control/assets/...` instead of `/assets/...`. If the user
+    hits `/mission-control` without the trailing slash, we redirect them
+    to `/mission-control/`.
+    """
+    # Redirect bare `/mission-control` (no trailing slash) to ensure
+    # relative asset paths load correctly.
+    if request.path == "/mission-control":
+        return redirect("/mission-control/", code=302)
+
+    # For all other mission-control routes serve the index so React Router
+    # can handle client-side routing.
+    return send_file('mission-control-dist/index.html', conditional=True)
+
+# Serve Mission Control static assets so /mission-control loads correctly
+@app.route('/mission-control/assets/<path:filename>')
+def mission_control_assets(filename):
+    return send_from_directory('mission-control-dist/assets', filename)
+
+@app.route('/mission-control/fonts/<path:filename>')
+def mission_control_fonts(filename):
+    return send_from_directory('mission-control-dist/fonts', filename)
+
+# API Routes for Goose Integration
+@app.route('/api/goose/execute', methods=['POST'])
+def execute_goose_task():
+    """Execute AI task using Goose + Gemini with business context and GitHub repository"""
+    try:
+        data = request.get_json()
+        instruction = data.get('instruction', '')
+        business_context = data.get('businessContext', {})
+        github_repo = data.get('githubRepo', None)
+        role = data.get('role', 'business')
+        
+        if not instruction:
+            return jsonify({
+                'success': False,
+                'error': 'No instruction provided'
+            })
+        
+        # Add role-specific prompting with GitHub context
+        enhanced_instruction = f"""Role: {role.upper()}
+
+{instruction}
+
+Please respond as a {role} expert, providing practical, actionable insights relevant to this role in the Software Development Lifecycle."""
+
+        if github_repo and github_repo.get('connected'):
+            enhanced_instruction += f"""
+
+REPOSITORY CONTEXT:
+- Repository: {github_repo.get('fullName', github_repo.get('name', 'Unknown'))}
+- Branch: {github_repo.get('branch', 'main')}
+- Visibility: {'Private' if github_repo.get('private') else 'Public'}
+
+You have filesystem access to analyze repository files and GitHub API access for repository operations. Use these tools to:
+- Analyze existing code structure and files
+- Suggest code improvements and new features
+- Create implementation plans based on actual codebase
+- Provide repository-specific guidance and recommendations
+
+When working with repositories, always examine the actual files to understand the codebase before making suggestions."""
+        
+        # Execute with goose
+        result = goose.execute_goose_task(enhanced_instruction, business_context, github_repo)
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'output': ''
+        })
+
+@app.route('/api/goose/status', methods=['GET'])
+def get_goose_status():
+    """Get system status and Goose availability"""
+    goose_available = os.path.exists(goose.goose_script)
+    
+    return jsonify({
+        'goose_available': goose_available,
+        'goose_script': goose.goose_script,
+        'project_path': goose.project_path,
+        'ai_model': 'gemini-2.5-flash',
+        'provider': 'google',
+        'roles_supported': ['business', 'po', 'designer', 'developer']
+    })
+
+@app.route('/api/model-garden/execute', methods=['POST'])
+def execute_model_garden_task():
+    """Execute AI task using Model Garden (company LLM proxy)"""
+    try:
+        data = request.get_json()
+        instruction = data.get('instruction', '')
+        product_context = data.get('productContext', {})
+        model = data.get('model', 'claude-opus-4')
+        role = data.get('role', 'po')
+        
+        if not instruction:
+            return jsonify({
+                'success': False,
+                'error': 'No instruction provided'
+            })
+        
+        # Company Model Garden API configuration
+        api_url = "https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions"
+        api_key = "b3540f69-5289-483e-91fe-942c4bfa458c"
+        
+        # Prepare enhanced instruction with context
+        enhanced_instruction = f"""Role: {role.upper()}
+
+{instruction}
+
+Please respond as a {role} expert, providing practical, actionable insights relevant to this role in the Software Development Lifecycle."""
+
+        if product_context and any(product_context.values()):
+            context_str = format_product_context(product_context)
+            enhanced_instruction += f"""
+
+Product Context:
+{context_str}
+
+Please consider the product context above when providing your response."""
+
+        # Call Model Garden API
+        headers = {
+            "Content-Type": "application/json",
+            "X-API-KEY": api_key
+        }
+        
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": enhanced_instruction}],
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "max_tokens": 2000
+        }
+        
+        import requests
+        response = requests.post(api_url, headers=headers, json=payload, timeout=60)
+        response.raise_for_status()
+        
+        result = response.json()
+        ai_output = result['choices'][0]['message']['content']
+        
+        return jsonify({
+            'success': True,
+            'output': ai_output,
+            'model': model,
+            'provider': 'model-garden'
+        })
+        
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            'success': False,
+            'error': f'Model Garden API error: {str(e)}',
+            'output': ''
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'output': ''
+        })
+
+# ──────────────────────────────── Slack Integration ────────────────────────────────
+
+
+# Simple endpoint to receive Slack Events API callbacks.
+# 1. Slack sends a POST with {type:"url_verification", challenge:"…"} when you
+#    first add the Request URL – we must echo the challenge value.
+# 2. After verification, Slack will send event_callback payloads.  For now we just
+#    log them; you can transform idea messages into Mission Control feed items via
+#    the dataStore helper.
+
+@app.route('/api/slack/events', methods=['POST'])
+def slack_events():
+    payload = request.get_json(silent=True) or {}
+
+    # 1) URL Verification handshake
+    if payload.get('type') == 'url_verification':
+        # Respond with the exact challenge string so Slack can confirm the endpoint
+        return jsonify({'challenge': payload.get('challenge')})
+
+    # 2) Actual events
+    if payload.get('type') == 'event_callback':
+        ev = payload.get('event', {})
+        print('[Slack] Received event:', ev)
+
+        # Example: turn messages from a specific channel into new feed items
+        try:
+            # Process messages from any mapped channel
+            if ev.get('type') == 'message' and 'subtype' not in ev:
+                channel_id = ev.get('channel')
+                
+                # Get project mapping for this channel
+                node_port = int(os.environ.get('SF_API_PORT', 5001))
+                project_id = None
+                
+                try:
+                    import requests
+                    # Check if channel is mapped to a project
+                    mapping_response = requests.get(f'http://localhost:{node_port}/api/channel-mapping/{channel_id}', timeout=2)
+                    if mapping_response.status_code == 200:
+                        project_id = mapping_response.json().get('projectId')
+                    else:
+                        # Default fallback - use main project
+                        project_id = 'proj-1'
+                        # Auto-create mapping for new channels
+                        requests.post(f'http://localhost:{node_port}/api/channel-mapping', 
+                                    json={'channelId': channel_id, 'projectId': project_id}, timeout=2)
+                except requests.exceptions.RequestException:
+                    project_id = 'proj-1'  # Final fallback
+                
+                if project_id:
+                    new_item = {
+                        'id': f'slack-{ev["ts"]}',
+                        'projectId': project_id,
+                        'severity': 'info',
+                        'kind': 'idea',
+                        'title': ev.get('text', '').split('\n')[0][:80] or 'New Slack idea',
+                        'summary': ev.get('text', '')[:140],
+                        'createdAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(float(ev['ts']))),
+                        'linkedArtifactIds': [],
+                        'unread': True,
+                        'actor': ev.get('user', 'Slack User'),
+                        'metadata': {
+                            'channelId': channel_id,
+                            'slackTs': ev['ts'],
+                            'source': 'slack'
+                        }
+                    }
+                    # Push to Mission Control Node API so it can persist & emit socket event
+                    try:
+                        requests.post(f'http://localhost:{node_port}/api/feed/import', json=new_item, timeout=2)
+                        print(f'[Slack] Sent idea to Mission Control API (project: {project_id})')
+                    except requests.exceptions.RequestException as e:
+                        print('Error sending idea to Node API:', e)
+        except Exception as e:
+            print('Error processing Slack event:', e)
+
+    return '', 200
+
+def format_product_context(context: Dict) -> str:
+    """Format product context for Model Garden prompts"""
+    formatted = []
+    if context.get('productVision'):
+        formatted.append(f"Product Vision: {context['productVision']}")
+    if context.get('targetUsers'):
+        formatted.append(f"Target Users: {context['targetUsers']}")
+    if context.get('sprintGoal'):
+        formatted.append(f"Sprint Goal: {context['sprintGoal']}")
+    if context.get('keyEpics'):
+        formatted.append(f"Key Epics: {context['keyEpics']}")
+    if context.get('acceptanceCriteria'):
+        formatted.append(f"Acceptance Criteria Framework: {context['acceptanceCriteria']}")
+    
+    return '\n'.join(formatted)
+
+@app.route('/api/goose/test', methods=['POST'])
+def test_goose_integration():
+    """Test goose integration with simple task"""
+    try:
+        test_instruction = "Hello! Please confirm you're working properly by explaining what you can help with in software development."
+        result = goose.execute_goose_task(test_instruction)
+        
+        return jsonify({
+            'success': result['success'],
+            'test_instruction': test_instruction,
+            'result': result
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+def find_free_port(start_port=8000):
+    """Find a free port starting from specified port"""
+    for port in range(start_port, start_port + 100):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(('', port))
@@ -23,19 +450,39 @@ def find_free_port():
             continue
     return None
 
-PORT = find_free_port()
-
-if PORT is None:
-    print("Could not find a free port between 8000-8099")
-    exit(1)
-
-Handler = http.server.SimpleHTTPRequestHandler
-
-with socketserver.TCPServer(("", PORT), Handler) as httpd:
-    print(f"Server running at http://localhost:{PORT}")
+if __name__ == '__main__':
+    print("🏭 Software Factory - AI-Native SDLC Platform")
+    print("=" * 60)
+    print("🦆 AI Provider 1: Goose (Repository-aware)")
+    print("🏢 AI Provider 2: Model Garden (Enterprise LLMs)")
+    print("🤖 Available Models: Claude Opus 4, Gemini 2.5 Flash, GPT-4o, Claude Sonnet 3.5")
+    print("🎨 UI Design: Glass-morphism with role-based architecture")
+    print("⚙️ Capabilities: Business analysis, PO planning, Design, Development")
+    print("")
+    
+    # Check goose availability
+    if os.path.exists(goose.goose_script):
+        print("✅ Goose integration ready")
+    else:
+        print("⚠️ Goose script not found - check goose-gemini file")
+    
+    # Allow overriding the port so external tunnels (Slack, ngrok) stay stable
+    PORT = int(os.environ.get('PORT', '0')) or find_free_port()
+    
+    if PORT is None:
+        print("❌ Could not find a free port between 8000-8099")
+        exit(1)
+    
+    print(f"🌐 Dashboard: http://localhost:{PORT}")
+    print("🔗 API Endpoints:")
+    print(f"   POST http://localhost:{PORT}/api/goose/execute")
+    print(f"   POST http://localhost:{PORT}/api/model-garden/execute")
+    print(f"   GET  http://localhost:{PORT}/api/goose/status")
+    print(f"   POST http://localhost:{PORT}/api/goose/test")
+    print("")
     print("Press Ctrl+C to stop the server")
+    
     try:
-        httpd.serve_forever()
+        app.run(debug=True, host='0.0.0.0', port=PORT)
     except KeyboardInterrupt:
-        print("\nServer stopped.")
-        httpd.shutdown()
+        print("\n🏭 Software Factory server stopped.")
