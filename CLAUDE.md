@@ -291,6 +291,35 @@ When building new features (dashboards, workflows, integrations):
 - Maintain role-based component organization
 - Ensure each feature demonstrates Software Factory's core values: organized, efficient, unified
 
+## 🚀 ARCHITECTURAL MIGRATION PLAN
+
+**CRITICAL**: This project has grown into an over-engineered 3-server architecture that contradicts our core mission of simplifying software development. A comprehensive migration plan has been created to unify the system.
+
+📋 **See `migration.md` for the complete architecture simplification plan**
+
+### **Current Architecture Problems**
+- **3 separate servers**: Flask (Python) + Mission Control (Node.js) + Ingestion Worker (Node.js)
+- **Complex Socket.IO**: Event chains causing reliability issues
+- **Multi-language complexity**: Python + Node.js + JavaScript
+- **Deployment nightmare**: Multiple processes, ports, and dependencies
+- **Debugging hell**: Logs scattered across 3+ processes
+
+### **Migration Goals**
+- **Single Process**: One `python app.py` command
+- **Single Language**: Python-only backend
+- **Single Database**: SQLite with proper transactions
+- **Simple Polling**: Replace Socket.IO with reliable REST polling
+- **Easy Deployment**: One Docker container
+
+### **Implementation Timeline**
+- **Phase 1**: Foundation (Day 1) - Unified Flask app
+- **Phase 2**: Core Features (Day 2) - Port existing functionality
+- **Phase 3**: AI Integration (Day 3) - Migrate AI services
+- **Phase 4**: Frontend (Day 4) - Remove Socket.IO complexity
+- **Phase 5**: Deploy (Day 5) - Testing and Docker
+
+**The migration plan in `migration.md` provides exhaustive details for each phase.**
+
 ## Implementation Progress
 
 ### ✅ Completed Features

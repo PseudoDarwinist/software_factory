@@ -10,8 +10,11 @@ import os
 import json
 import socket
 from flask import Flask, request, jsonify, send_from_directory, send_file, redirect
+from flask_socketio import SocketIO, emit
 from typing import Dict, Any
 import time
+import socketio
+import requests
 
 # -----------------------------------------------------------------------------
 # Path configuration
@@ -32,6 +35,71 @@ os.chdir(ROOT_DIR)
 BASE_DIR = ROOT_DIR
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'software-factory-secret-key'
+socketio_server = SocketIO(app, cors_allowed_origins="*")
+
+# Create a Socket.IO client to connect to Mission Control server
+mission_control_client = socketio.Client()
+
+def connect_to_mission_control():
+    """Connect to Mission Control server and set up event forwarding"""
+    try:
+        # Set up event handlers before connecting
+        @mission_control_client.event
+        def connect():
+            print("✅ Connected to Mission Control Socket.IO server")
+            
+        @mission_control_client.event
+        def connect_error(data):
+            print(f"⚠️  Connection error to Mission Control: {data}")
+            
+        @mission_control_client.event
+        def disconnect():
+            print("❌ Disconnected from Mission Control Socket.IO server")
+        
+        mission_control_client.on('project.indexed', handle_project_indexed)
+        mission_control_client.on('project.created', handle_project_created)
+        mission_control_client.on('project.update', handle_project_update)
+        mission_control_client.on('feed.update', handle_feed_update)
+        mission_control_client.on('feed.new', handle_feed_new)
+        
+        print("🔗 Connecting to Mission Control Socket.IO server...")
+        mission_control_client.connect('http://localhost:5001')
+        
+    except Exception as e:
+        print(f"⚠️  Failed to connect to Mission Control server: {e}")
+
+def handle_project_indexed(data):
+    """Handle project.indexed event from Mission Control"""
+    print(f"📡 RECEIVED project.indexed event from Mission Control: {data}")
+    print(f"🔄 FORWARDING project.indexed to frontend clients...")
+    socketio_server.emit('project.indexed', data)
+    print(f"✅ project.indexed event forwarded successfully")
+
+def handle_project_created(data):
+    """Handle project.created event from Mission Control"""
+    print(f"📡 RECEIVED project.created event from Mission Control: {data}")
+    print(f"🔄 FORWARDING project.created to frontend clients...")
+    socketio_server.emit('project.created', data)
+    print(f"✅ project.created event forwarded successfully")
+
+def handle_project_update(data):
+    """Handle project.update event from Mission Control"""
+    print(f"📡 RECEIVED project.update event from Mission Control: {data}")
+    socketio_server.emit('project.update', data)
+
+def handle_feed_update(data):
+    """Handle feed.update event from Mission Control"""
+    print(f"📡 RECEIVED feed.update event from Mission Control: {data}")
+    socketio_server.emit('feed.update', data)
+
+def handle_feed_new(data):
+    """Handle feed.new event from Mission Control"""
+    print(f"📡 RECEIVED feed.new event from Mission Control: {data}")
+    socketio_server.emit('feed.new', data)
+        
+# Connect to Mission Control on startup
+connect_to_mission_control()
 
 class GooseIntegration:
     def __init__(self, project_path: str = None):
@@ -455,6 +523,31 @@ def test_goose_integration():
             'error': str(e)
         })
 
+# ──────────────────────────────── Mission Control Proxy ────────────────────────────────
+
+@app.route('/api/projects', methods=['POST'])
+def proxy_create_project():
+    """Proxy project creation to Mission Control server"""
+    try:
+        # Forward the request to Mission Control server
+        response = requests.post(
+            'http://localhost:5001/api/projects',
+            json=request.get_json(),
+            timeout=30
+        )
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Socket.IO event handlers for client connections
+@socketio_server.on('connect')
+def handle_connect():
+    print(f"🔗 Frontend client connected")
+
+@socketio_server.on('disconnect')
+def handle_disconnect():
+    print(f"🔌 Frontend client disconnected")
+
 def find_free_port(start_port=8000):
     """Find a free port starting from specified port"""
     for port in range(start_port, start_port + 100):
@@ -499,6 +592,7 @@ if __name__ == '__main__':
     print("Press Ctrl+C to stop the server")
     
     try:
-        app.run(debug=True, host='0.0.0.0', port=PORT)
+        socketio_server.run(app, debug=True, host='0.0.0.0', port=PORT, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         print("\n🏭 Software Factory server stopped.")
+        mission_control_client.disconnect()
