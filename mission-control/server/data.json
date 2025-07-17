@@ -1,0 +1,147 @@
+{
+  "projects": [
+    {
+      "id": "proj-1",
+      "name": "Software Factory",
+      "health": "green",
+      "unreadCount": 0,
+      "lastActivity": "2025-07-17T03:04:48.426Z",
+      "description": "Main platform development"
+    },
+    {
+      "id": "proj-2",
+      "name": "Mission Control",
+      "health": "amber",
+      "unreadCount": 3,
+      "lastActivity": "2025-07-17T02:34:48.426Z",
+      "description": "Command center interface"
+    },
+    {
+      "id": "proj-3",
+      "name": "AI Agents",
+      "health": "red",
+      "unreadCount": 6,
+      "lastActivity": "2025-07-17T02:04:48.426Z",
+      "description": "Autonomous development agents"
+    }
+  ],
+  "feedItems": [
+    {
+      "id": "slack-1752734855.196359",
+      "projectId": "proj-1",
+      "severity": "info",
+      "kind": "idea",
+      "title": "Can we make the fonts, colors, typography configurable in our website?",
+      "summary": "Can we make the fonts, colors, typography configurable in our website?",
+      "createdAt": "2025-07-17T06:47:35Z",
+      "linkedArtifactIds": [],
+      "unread": true,
+      "actor": "U095W5T02TC"
+    },
+    {
+      "id": "slack-1752732999.056579",
+      "projectId": "proj-1",
+      "severity": "info",
+      "kind": "idea",
+      "title": "Users are loving dark mode. can we implement it?",
+      "summary": "Users are loving dark mode. can we implement it?",
+      "createdAt": "2025-07-17T06:16:39Z",
+      "linkedArtifactIds": [],
+      "unread": true,
+      "actor": "U095W5T02TC"
+    },
+    {
+      "id": "slack-1752721756.517139",
+      "projectId": "proj-1",
+      "severity": "info",
+      "kind": "idea",
+      "title": "Test Again!",
+      "summary": "Test Again!",
+      "createdAt": "2025-07-17T03:09:16Z",
+      "linkedArtifactIds": [],
+      "unread": true,
+      "actor": "U095W5T02TC"
+    },
+    {
+      "id": "feed-1",
+      "projectId": "proj-3",
+      "severity": "red",
+      "kind": "ci_fail",
+      "title": "Payment flow broke on Safari",
+      "summary": "Checkout test failing on Safari 17 with currency formatting error",
+      "createdAt": "2025-07-17T02:49:48.426Z",
+      "updatedAt": "2025-07-17T02:49:48.426Z",
+      "linkedArtifactIds": [
+        "pr-77",
+        "test-901"
+      ],
+      "unread": false,
+      "actor": "CI System",
+      "metadata": {
+        "browser": "Safari",
+        "testSuite": "checkout",
+        "errorType": "currency_format"
+      }
+    },
+    {
+      "id": "feed-2",
+      "projectId": "proj-2",
+      "severity": "amber",
+      "kind": "spec_change",
+      "title": "Spacing updated, review visual diffs?",
+      "summary": "Designer Sara updated button spacing in the header component",
+      "createdAt": "2025-07-17T02:19:48.426Z",
+      "updatedAt": "2025-07-17T02:19:48.426Z",
+      "linkedArtifactIds": [
+        "figma-123",
+        "design-456"
+      ],
+      "unread": true,
+      "actor": "Sara (Designer)",
+      "metadata": {
+        "component": "header",
+        "changeType": "spacing",
+        "figmaFrame": "frame-123"
+      }
+    },
+    {
+      "id": "feed-3",
+      "projectId": "proj-1",
+      "severity": "info",
+      "kind": "idea",
+      "title": "Offer users Dark Mode",
+      "summary": "Marketing says lots of users ask for dark mode support",
+      "createdAt": "2025-07-17T01:04:48.426Z",
+      "updatedAt": "2025-07-17T01:04:48.426Z",
+      "linkedArtifactIds": [],
+      "unread": true,
+      "actor": "Marketing Team",
+      "metadata": {
+        "source": "user_feedback",
+        "priority": "medium"
+      }
+    },
+    {
+      "id": "feed-4",
+      "projectId": "proj-2",
+      "severity": "amber",
+      "kind": "pr_review",
+      "title": "Liquid glass animations ready for review",
+      "summary": "New animation system for Mission Control interface",
+      "createdAt": "2025-07-17T00:04:48.426Z",
+      "updatedAt": "2025-07-17T00:04:48.426Z",
+      "linkedArtifactIds": [
+        "pr-89"
+      ],
+      "unread": false,
+      "actor": "Alex (Developer)",
+      "metadata": {
+        "prNumber": 89,
+        "changes": 15,
+        "additions": 234,
+        "deletions": 12
+      }
+    }
+  ],
+  "conversations": {}
+}

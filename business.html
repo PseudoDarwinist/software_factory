@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Software Factory - Business Flow Designer</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="business.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="nav-container">
+                <div class="nav-logo">
+                    <a href="index.html"><h1>Software Factory</h1></a>
+                </div>
+                <div class="user-profile">
+                    <div class="role-indicator business-role">Business</div>
+                    <div class="avatar">JP</div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="business-workspace">
+        <!-- Left Panel: Business Context -->
+        <aside class="context-panel left-panel">
+            <div class="panel-header">
+                <h3>Business Context</h3>
+                <div class="panel-actions">
+                    <button class="context-save">💾</button>
+                    <button class="github-connect" id="githubConnect">🔗</button>
+                </div>
+            </div>
+            
+            <!-- GitHub Repository Connection -->
+            <div class="github-section" id="githubSection">
+                <div class="github-status" id="githubStatus">
+                    <span class="status-indicator disconnected">○</span>
+                    <span class="status-text">No repository connected</span>
+                    <button class="btn-connect" id="connectRepo">Connect Repository</button>
+                </div>
+                
+                <div class="github-form hidden" id="githubForm">
+                    <div class="context-field">
+                        <label>GitHub Repository URL</label>
+                        <input type="text" id="repoUrl" placeholder="https://github.com/username/repo-name" />
+                    </div>
+                    <div class="context-field">
+                        <label>GitHub Token (optional for public repos)</label>
+                        <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxx" />
+                    </div>
+                    <div class="github-actions">
+                        <button class="btn-cancel" id="cancelConnect">Cancel</button>
+                        <button class="btn-save" id="saveRepo">Connect</button>
+                    </div>
+                </div>
+                
+                <div class="repo-info hidden" id="repoInfo">
+                    <div class="repo-details">
+                        <strong id="repoName">Repository Name</strong>
+                        <div class="repo-meta">
+                            <span id="repoBranch">main</span> • <span id="repoCommits">0 commits</span>
+                        </div>
+                    </div>
+                    <button class="btn-disconnect" id="disconnectRepo">Disconnect</button>
+                </div>
+            </div>
+            
+            <div class="context-form">
+                <div class="context-field">
+                    <label>Business Domain</label>
+                    <input type="text" id="businessDomain" placeholder="e.g., Travel, Healthcare, Finance" />
+                </div>
+                
+                <div class="context-field">
+                    <label>Use Case</label>
+                    <textarea id="useCase" rows="3" placeholder="e.g., Flight disruption communication platform"></textarea>
+                </div>
+                
+                <div class="context-field">
+                    <label>Target Audience</label>
+                    <input type="text" id="targetAudience" placeholder="e.g., Disrupted passengers" />
+                </div>
+                
+                <div class="context-field">
+                    <label>Key Requirements</label>
+                    <textarea id="keyRequirements" rows="4" placeholder="e.g., Real-time notifications, Multi-channel communication"></textarea>
+                </div>
+                
+                <div class="context-field">
+                    <label>Success Metrics</label>
+                    <textarea id="successMetrics" rows="3" placeholder="e.g., Response time, Customer satisfaction"></textarea>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Interface -->
+        <section class="chat-interface">
+            <div class="chat-header">
+                <div class="chat-title">
+                    <h2>Business Process Designer</h2>
+                    <p>Describe your business process and requirements</p>
+                </div>
+                <div class="chat-actions">
+                    <button class="action-btn secondary" id="exportChat">📄 Export</button>
+                    <button class="action-btn primary" id="generatePrototype">🚀 Generate</button>
+                </div>
+            </div>
+
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message ai-message">
+                        <div class="message-avatar">🤖</div>
+                        <div class="message-content">
+                            <p><strong>Software Factory Assistant</strong></p>
+                            <p>Welcome! I'll help you design your business process. Start by describing what you want to build.</p>
+                            <p>For example: <em>"I need a system that automatically notifies passengers when their flights are delayed or cancelled, sending personalized messages via email and SMS with rebooking options."</em></p>
+                        </div>
+                        <div class="message-timestamp">Just now</div>
+                    </div>
+                </div>
+
+                <div class="chat-input-area">
+                    <div class="input-container">
+                        <div class="input-wrapper">
+                            <textarea id="chatInput" placeholder="Describe your business process, requirements, or ask questions..." rows="3"></textarea>
+                            <div class="input-actions">
+                                <button class="input-btn" id="voiceInput" title="Voice input">🎤</button>
+                                <button class="input-btn" id="attachFile" title="Attach file">📎</button>
+                                <button class="send-btn" id="sendMessage" title="Send message">
+                                    <span class="send-icon">→</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="quick-suggestions">
+                        <button class="suggestion-btn">💡 Suggest improvements</button>
+                        <button class="suggestion-btn">🔄 Refine requirements</button>
+                        <button class="suggestion-btn">📋 Add acceptance criteria</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Minimal AI Provider Selector -->
+    <div class="ai-provider-floating">
+        <div class="provider-logo" id="gooseProvider" data-provider="goose">
+            <img src="images/goose.png" alt="Goose AI" />
+        </div>
+        <div class="provider-logo" id="aiStudioProvider" data-provider="ai-studio">
+            <img src="images/coforge.png" alt="AI Studio" />
+        </div>
+    </div>
+
+    <!-- Model Selection Popup -->
+    <div class="model-popup hidden" id="modelPopup">
+        <div class="popup-content">
+            <div class="popup-header">
+                <span class="popup-title">Select AI Model</span>
+                <button class="popup-close" id="popupClose">×</button>
+            </div>
+            <div class="model-list">
+                <div class="model-item" data-provider="goose" data-model="goose">
+                    <div class="model-icon">
+                        <img src="images/goose.png" alt="Goose AI" />
+                    </div>
+                    <div class="model-info">
+                        <span class="model-name">Goose</span>
+                        <span class="model-desc">Repository-aware coding assistant</span>
+                    </div>
+                </div>
+                <div class="model-item" data-provider="ai-studio" data-model="claude-opus-4">
+                    <div class="model-icon">
+                        <img src="images/coforge.png" alt="AI Studio" />
+                    </div>
+                    <div class="model-info">
+                        <span class="model-name">Claude Opus 4</span>
+                        <span class="model-desc">Latest • Most capable</span>
+                    </div>
+                </div>
+                <div class="model-item" data-provider="ai-studio" data-model="gpt-4o">
+                    <div class="model-icon">
+                        <img src="images/coforge.png" alt="AI Studio" />
+                    </div>
+                    <div class="model-info">
+                        <span class="model-name">GPT-4o</span>
+                        <span class="model-desc">Fast • Multimodal</span>
+                    </div>
+                </div>
+                <div class="model-item" data-provider="ai-studio" data-model="gemini-2-5-flash">
+                    <div class="model-icon">
+                        <img src="images/coforge.png" alt="AI Studio" />
+                    </div>
+                    <div class="model-info">
+                        <span class="model-name">Gemini 2.5 Flash</span>
+                        <span class="model-desc">Quick • Efficient</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="business.js"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# Goose with Gemini 2.5 Flash + GitHub Integration
+export GOOSE_PROVIDER=google
+export GOOSE_MODEL=gemini-2.5-flash
+export GOOGLE_API_KEY=AIzaSyD_49Jhf8WZ4irHzaK8KqiEHOw-ILQ3Cow
+export GOOSE_MODE=auto
+export GOOSE_SKIP_USAGE_CHECK=true
+
+# GitHub Integration Settings
+export GITHUB_TOKEN=${GITHUB_TOKEN:-"your_github_token_here"}
+export GOOSE_GITHUB_ENABLED=true
+
+# Repository Context
+REPO_NAME=$(basename `git rev-parse --show-toplevel` 2>/dev/null || echo "Software_Factory")
+BRANCH_NAME=$(git branch --show-current 2>/dev/null || echo "main")
+COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+echo "🦆 Goose configured with Gemini 2.5 Flash + GitHub"
+echo "🎯 Model: $GOOSE_MODEL"
+echo "🌐 Provider: Google"
+echo "📁 Repository: $REPO_NAME"
+echo "🌿 Branch: $BRANCH_NAME"
+echo "📝 Commit: $COMMIT_HASH"
+echo ""
+
+# Enhanced context for Goose
+export GOOSE_REPO_CONTEXT="Repository: $REPO_NAME, Branch: $BRANCH_NAME, Commit: $COMMIT_HASH"
+
+goose "$@"

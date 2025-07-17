@@ -1,0 +1,424 @@
+/**
+ * Global Styles for Mission Control
+ * 
+ * This file contains all global styles and CSS variables for the application.
+ * It implements the liquid glass morphism theme with proper fallbacks.
+ * 
+ * Why this file exists:
+ * - Provides global styling foundation
+ * - Implements design system tokens as CSS variables
+ * - Ensures consistent visual language
+ * - Provides accessibility and performance optimizations
+ * 
+ * For AI agents: This file contains all the global styles.
+ * Use these CSS variables for consistent styling across components.
+ */
+
+/* Reset and base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: #05080f !important;
+  background-image: radial-gradient(circle at 50% -20%, rgba(0, 140, 255, 0.25), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(0, 140, 255, 0.12) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(0, 140, 255, 0.12) 0 1px, transparent 1px 24px) !important;
+  background-blend-mode: screen !important;
+  color: #ffffff;
+  overflow-x: hidden;
+}
+
+/* Force navy blue grid background on everything */
+*, *::before, *::after {
+  background-color: transparent !important;
+}
+
+html {
+  background-color: #05080f !important;
+  background-image: radial-gradient(circle at 50% -20%, rgba(0, 140, 255, 0.25), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(0, 140, 255, 0.12) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(0, 140, 255, 0.12) 0 1px, transparent 1px 24px) !important;
+  background-blend-mode: screen !important;
+}
+
+/* CSS Variables for Design Tokens */
+:root {
+  /* Colors */
+  --color-black: #000000;
+  --color-white: #ffffff;
+  --color-transparent: transparent;
+  
+  /* Glass morphism */
+  --glass-primary: rgba(150, 179, 150, 0.15);
+  --glass-secondary: rgba(150, 179, 150, 0.08);
+  --glass-accent: rgba(150, 179, 150, 0.25);
+  --glass-neutral: rgba(255, 255, 255, 0.05);
+  --glass-dark: rgba(0, 0, 0, 0.2);
+  
+  /* Surfaces */
+  --surface-primary: #0a0a0a;
+  --surface-secondary: #1a1a1a;
+  --surface-tertiary: #2a2a2a;
+  --surface-quaternary: #3a3a3a;
+  --surface-glass: rgba(255, 255, 255, 0.02);
+  --surface-glass-hover: rgba(255, 255, 255, 0.05);
+  --surface-glass-active: rgba(255, 255, 255, 0.08);
+  
+  /* Text */
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.8);
+  --text-tertiary: rgba(255, 255, 255, 0.6);
+  --text-disabled: rgba(255, 255, 255, 0.4);
+  --text-on-glass: rgba(255, 255, 255, 0.9);
+  
+  /* Borders */
+  --border-primary: rgba(255, 255, 255, 0.1);
+  --border-secondary: rgba(255, 255, 255, 0.05);
+  --border-accent: rgba(150, 179, 150, 0.3);
+  --border-glass: rgba(255, 255, 255, 0.08);
+  
+  /* Status colors */
+  --status-green: #10b981;
+  --status-green-glass: rgba(16, 185, 129, 0.15);
+  --status-green-glow: rgba(16, 185, 129, 0.3);
+  --status-green-pulse: rgba(16, 185, 129, 0.5);
+  
+  --status-amber: #f59e0b;
+  --status-amber-glass: rgba(245, 158, 11, 0.15);
+  --status-amber-glow: rgba(245, 158, 11, 0.3);
+  --status-amber-pulse: rgba(245, 158, 11, 0.5);
+  
+  --status-red: #ef4444;
+  --status-red-glass: rgba(239, 68, 68, 0.15);
+  --status-red-glow: rgba(239, 68, 68, 0.3);
+  --status-red-pulse: rgba(239, 68, 68, 0.5);
+  
+  --status-info: #3b82f6;
+  --status-info-glass: rgba(59, 130, 246, 0.15);
+  --status-info-glow: rgba(59, 130, 246, 0.3);
+  --status-info-pulse: rgba(59, 130, 246, 0.5);
+  
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+  
+  /* Border radius */
+  --radius-sm: 0.125rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+  --radius-glass: 1rem;
+  --radius-full: 9999px;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  
+  /* Glass shadows */
+  --shadow-glass-light: 0 8px 32px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.1);
+  --shadow-glass-medium: 0 16px 64px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-glass-heavy: 0 32px 96px rgba(0, 0, 0, 0.2), 0 4px 8px rgba(0, 0, 0, 0.1);
+  
+  /* Glow effects */
+  --glow-green: 0 0 20px rgba(16, 185, 129, 0.3), 0 0 40px rgba(16, 185, 129, 0.1);
+  --glow-amber: 0 0 20px rgba(245, 158, 11, 0.3), 0 0 40px rgba(245, 158, 11, 0.1);
+  --glow-red: 0 0 20px rgba(239, 68, 68, 0.3), 0 0 40px rgba(239, 68, 68, 0.1);
+  --glow-accent: 0 0 20px rgba(150, 179, 150, 0.3), 0 0 40px rgba(150, 179, 150, 0.1);
+  
+  /* Backdrop filters */
+  --backdrop-blur-sm: blur(4px);
+  --backdrop-blur-md: blur(8px);
+  --backdrop-blur-lg: blur(12px);
+  --backdrop-blur-xl: blur(16px);
+  --backdrop-blur-2xl: blur(24px);
+  --backdrop-blur-3xl: blur(32px);
+  
+  /* Glass effects */
+  --backdrop-glass-light: blur(8px) saturate(1.2) brightness(1.1);
+  --backdrop-glass-medium: blur(12px) saturate(1.3) brightness(1.05);
+  --backdrop-glass-heavy: blur(16px) saturate(1.4) brightness(1.0);
+  
+  /* Transitions */
+  --transition-fast: 150ms ease-in-out;
+  --transition-normal: 300ms ease-in-out;
+  --transition-slow: 500ms ease-in-out;
+  --transition-glass: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  
+  /* Z-index */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-overlay: 1040;
+  --z-modal: 1050;
+  --z-toast: 1080;
+  --z-tooltip: 1090;
+}
+
+/* App container */
+.App {
+  min-height: 100vh !important;
+  /* Deep navy base */
+  background-color: #05080f !important;
+
+  /* Layer 1: subtle radial glow at the top */
+  background-image:
+    radial-gradient(circle at 50% -20%, rgba(0, 123, 255, 0.18), transparent 60%),
+    /* Layer 2-3: fine grid lines */
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 24px) !important;
+
+  background-blend-mode: overlay !important;
+  color: var(--text-primary);
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-secondary);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--glass-primary);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-glass);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--glass-accent);
+}
+
+/* Selection styles */
+::selection {
+  background: var(--glass-accent);
+  color: var(--text-primary);
+}
+
+::-moz-selection {
+  background: var(--glass-accent);
+  color: var(--text-primary);
+}
+
+/* Focus styles */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--border-accent);
+  outline-offset: 2px;
+}
+
+/* Glass morphism utility classes */
+.glass-light {
+  background: var(--glass-primary);
+  backdrop-filter: var(--backdrop-glass-light);
+  border: 1px solid var(--border-glass);
+}
+
+.glass-medium {
+  background: var(--glass-secondary);
+  backdrop-filter: var(--backdrop-glass-medium);
+  border: 1px solid var(--border-glass);
+}
+
+.glass-heavy {
+  background: var(--glass-neutral);
+  backdrop-filter: var(--backdrop-glass-heavy);
+  border: 1px solid var(--border-glass);
+}
+
+/* Animation utilities */
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-bounce {
+  animation: bounce 1s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(-25%);
+    animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+  }
+  50% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+}
+
+/* Breathing animation for health indicators */
+.animate-breathe {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+/* Glow animation */
+.animate-glow {
+  animation: glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+  from {
+    box-shadow: var(--glow-accent);
+  }
+  to {
+    box-shadow: var(--glow-accent), var(--glow-accent);
+  }
+}
+
+/* Utility classes */
+.text-gradient {
+  background: linear-gradient(135deg, var(--text-primary), var(--text-secondary));
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.border-gradient {
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, var(--border-primary), var(--border-secondary)) border-box;
+  mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+/* Performance optimizations */
+.gpu-accelerated {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* Accessibility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  :root {
+    --text-primary: #ffffff;
+    --text-secondary: #ffffff;
+    --border-primary: #ffffff;
+    --border-secondary: #ffffff;
+  }
+}
+
+/* Dark mode (already default) */
+@media (prefers-color-scheme: dark) {
+  /* Already using dark theme by default */
+}
+
+/* Print styles */
+@media print {
+  * {
+    background: transparent !important;
+    color: black !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+  
+  .App {
+    background: white !important;
+  }
+}

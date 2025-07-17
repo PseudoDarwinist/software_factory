@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Software Factory - Product Owner</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="po.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="nav-container">
+                <div class="nav-logo">
+                    <a href="index.html"><h1>Software Factory</h1></a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="po-workspace">
+        <!-- Floating Pill Controls -->
+        <div class="floating-controls">
+            <div class="pill-group">
+                <button class="pill-btn active" id="codeViewBtn">CODE</button>
+                <button class="pill-btn" id="previewViewBtn">PREVIEW</button>
+            </div>
+        </div>
+
+        <!-- Chat Interface -->
+        <section class="chat-interface" id="chatInterface">
+
+            <div class="chat-container">
+                <!-- Compact Stage Progress Bar -->
+                <div class="stage-progress-bar" id="stageProgressBar"></div>
+                <div class="chat-messages" id="chatMessages">
+                    <div class="welcome-message">
+                        <h1>What will you build today?</h1>
+                    </div>
+                </div>
+
+                <div class="chat-input-area">
+                    <div class="input-wrapper">
+                        <textarea id="chatInput" placeholder="Create PRD for software factory app..." rows="1"></textarea>
+                        <button class="send-btn" id="sendMessage">
+                            <span class="send-icon">→</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Resizable Split Panel -->
+        <div class="split-divider" id="splitDivider"></div>
+        
+        <!-- Document Panel -->
+        <section class="document-panel hidden" id="documentPanel">
+            <div class="document-header">
+                <div class="document-title">
+                    <span id="documentTitle">Document</span>
+                </div>
+                <button class="close-panel" id="closePanel">×</button>
+            </div>
+            
+            <!-- Stage Progression Controls -->
+            <div class="stage-controls" id="stageControls">
+                <button class="stage-btn" id="previousStage">← Previous</button>
+                <button class="stage-btn primary" id="approveStage">Approve & Continue</button>
+                <button class="stage-btn" id="nextStage">Next Stage →</button>
+            </div>
+            
+            <div class="document-content" id="documentContent">
+                <div class="code-view" id="codeView">
+                    <textarea id="markdownEditor" placeholder="Your markdown content will appear here..."></textarea>
+                </div>
+                <div class="preview-view hidden" id="previewView">
+                    <div class="rendered-content" id="renderedContent"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Minimal AI Provider Selector -->
+    <div class="ai-provider-floating">
+        <div class="provider-logo" id="gooseProvider" data-provider="goose">
+            <img src="images/goose.png" alt="Goose AI" />
+        </div>
+        <div class="provider-logo" id="aiStudioProvider" data-provider="ai-studio">
+            <img src="images/coforge.png" alt="AI Studio" />
+        </div>
+    </div>
+
+    <!-- Model Selection Popup -->
+    <div class="model-popup hidden" id="modelPopup">
+        <div class="popup-content">
+            <div class="popup-header">
+                <span class="popup-title">Select AI Model</span>
+                <button class="popup-close" id="popupClose">×</button>
+            </div>
+            <div class="model-list">
+                <div class="model-item" data-provider="goose" data-model="goose">
+                    <div class="model-icon">
+                        <img src="images/goose.png" alt="Goose AI" />
+                    </div>
+                    <div class="model-info">
+                        <span class="model-name">Goose</span>
+                        <span class="model-desc">Repository-aware coding assistant</span>
+                    </div>
+                </div>
+                <div class="model-item" data-provider="ai-studio" data-model="claude-opus-4">
+                    <div class="model-icon">
+                        <img src="images/coforge.png" alt="AI Studio" />
+                    </div>
+                    <div class="model-info">
+                        <span class="model-name">Claude Opus 4</span>
+                        <span class="model-desc">Latest • Most capable</span>
+                    </div>
+                </div>
+                <div class="model-item" data-provider="ai-studio" data-model="gpt-4o">
+                    <div class="model-icon">
+                        <img src="images/coforge.png" alt="AI Studio" />
+                    </div>
+                    <div class="model-info">
+                        <span class="model-name">GPT-4o</span>
+                        <span class="model-desc">Fast • Multimodal</span>
+                    </div>
+                </div>
+                <div class="model-item" data-provider="ai-studio" data-model="gemini-2-5-flash">
+                    <div class="model-icon">
+                        <img src="images/coforge.png" alt="AI Studio" />
+                    </div>
+                    <div class="model-info">
+                        <span class="model-name">Gemini 2.5 Flash</span>
+                        <span class="model-desc">Quick • Efficient</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="po.js"></script>
+</body>
+</html>

@@ -25,16 +25,44 @@
     <main>
         <section class="dashboard">
             <div class="dashboard-container">
-                <div class="role-toggles" data-active="developer">
-                    <button class="role-toggle" data-role="business">Business</button>
-                    <button class="role-toggle" data-role="po">PO</button>
-                    <button class="role-toggle" data-role="designer">Designer</button>
-                    <button class="role-toggle active" data-role="developer">Developer</button>
+                <div class="role-toggles" data-active="business">
+                    <a href="business.html" class="role-toggle active" data-role="business">Business</a>
+                    <a href="po.html" class="role-toggle" data-role="po">PO</a>
+                    <a href="designer.html" class="role-toggle" data-role="designer">Designer</a>
+                    <a href="developer.html" class="role-toggle" data-role="developer">Developer</a>
                 </div>
 
                 <div class="dashboard-content">
                     <h2>Welcome to Your Dashboard</h2>
-                    <p>Select your role to customize your experience.</p>
+                    <p>Select your role to access AI-powered SDLC tools with Goose + Gemini 2.5 Flash.</p>
+                    
+                    <!-- Mission Control Launch Button -->
+                    <div class="mission-control-section">
+                        <div class="mission-control-card">
+                            <h3>🚀 Mission Control</h3>
+                            <p>Launch the revolutionary liquid glass command center for your Software Factory. Experience the future of SDLC management.</p>
+                            <a href="mission-control" class="start-building-btn">Start Building</a>
+                        </div>
+                    </div>
+                    
+                    <div class="role-descriptions">
+                        <div class="role-card">
+                            <h3>💼 Business</h3>
+                            <p>Transform business ideas into technical specifications. Analyze requirements and define product roadmaps.</p>
+                        </div>
+                        <div class="role-card">
+                            <h3>📱 Product Owner</h3>
+                            <p>Create user stories, manage backlogs, and plan sprints. Bridge business needs with development execution.</p>
+                        </div>
+                        <div class="role-card">
+                            <h3>🎨 Designer</h3>
+                            <p>Design user interfaces, create wireframes, and define user experience flows. Focus on usability and accessibility.</p>
+                        </div>
+                        <div class="role-card">
+                            <h3>⚙️ Developer</h3>
+                            <p>Generate code, review implementations, design architecture, and setup CI/CD. Build robust, scalable solutions.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>

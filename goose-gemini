@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Goose with Gemini 2.5 Flash Integration
+export GOOSE_PROVIDER=google
+export GOOSE_MODEL=gemini-2.5-flash
+export GOOGLE_API_KEY=AIzaSyD_49Jhf8WZ4irHzaK8KqiEHOw-ILQ3Cow
+export GOOSE_MODE=auto
+export GOOSE_SKIP_USAGE_CHECK=true
+
+echo "🦆 Goose configured with Gemini 2.5 Flash"
+echo "🎯 Model: $GOOSE_MODEL"
+echo "🌐 Provider: Google"
+echo ""
+
+goose "$@"

@@ -1,0 +1,34 @@
+# Node.js dependencies
+node_modules/
+mission-control/node_modules/
+
+# Vite / React build output inside sub-app
+mission-control/dist/
+
+# Production / build outputs
+mission-control-dist/
+mission-control/mission-control-dist/
+
+# Asset maps
+*.map
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Logs and runtime files
+*.log
+server.log
+server-mission-control.log
+
+# Environment variables
+.env
+
+# OS / Editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Swap / temp
+*.swp 
