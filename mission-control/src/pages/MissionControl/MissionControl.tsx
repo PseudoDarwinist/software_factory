@@ -30,10 +30,9 @@ import {
 import { missionControlApi } from '@/services/api/missionControlApi'
 import { tokens } from '@/styles/tokens'
 import type { RealtimeEvent } from '@/types'
-import type { Socket } from 'socket.io-client'
 
 export const MissionControl: React.FC = () => {
-  const websocketRef = useRef<Socket | null>(null)
+  const pollingCleanupRef = useRef<(() => void) | null>(null)
   const actions = useActions()
   const ui = useUIState()
   const loading = useLoadingState()
@@ -45,12 +44,12 @@ export const MissionControl: React.FC = () => {
   // Initialize data on mount
   useEffect(() => {
     loadInitialData()
-    setupRealtimeUpdates()
+    setupPollingUpdates()
     
     return () => {
-      // Cleanup Socket.IO on unmount
-      if (websocketRef.current) {
-        websocketRef.current.disconnect()
+      // Cleanup polling on unmount
+      if (pollingCleanupRef.current) {
+        pollingCleanupRef.current()
       }
     }
   }, [])
@@ -131,58 +130,60 @@ export const MissionControl: React.FC = () => {
     }
   }
 
-  // Setup real-time updates
-  const setupRealtimeUpdates = () => {
+  // Setup polling updates
+  const setupPollingUpdates = () => {
     try {
-      websocketRef.current = missionControlApi.createSocketConnection(handleRealtimeEvent)
+      pollingCleanupRef.current = missionControlApi.startPolling(handlePollingEvent, 2000) // Poll every 2 seconds
     } catch (error) {
-      console.error('Failed to setup WebSocket connection:', error)
+      console.error('Failed to setup polling updates:', error)
     }
   }
 
-  // Handle real-time events
-  const handleRealtimeEvent = useCallback((event: RealtimeEvent) => {
+  // Handle polling events
+  const handlePollingEvent = useCallback((event: any) => {
     switch (event.type) {
-      case 'feed.update':
-        // Update specific feed item
-        if (event.payload.feedItemId) {
-          actions.updateFeedItem(event.payload.feedItemId, event.payload.fields)
+      case 'projects.updated':
+        // Refresh projects when updated
+        if (!loading.projects) {
+          loadProjects()
         }
         break
         
-      case 'conversation.update':
-        // Refresh conversation if it's currently open
-        if (ui.selectedFeedItem && event.payload.feedItemId === ui.selectedFeedItem) {
-          loadConversation(ui.selectedFeedItem)
+      case 'feed.updated':
+        // Refresh feed items when updated
+        if (!loading.feed) {
+          loadFeedItems(ui.selectedProject || undefined)
         }
         break
         
-      case 'project.update':
-        // Update specific project
-        if (event.payload.projectId) {
-          actions.updateProject(event.payload.projectId, event.payload.fields)
+      case 'jobs.active':
+        // Show system notification for active jobs
+        actions.addNotification({
+          id: `job-${Date.now()}`,
+          type: 'info',
+          title: 'Background Jobs',
+          message: `${event.payload.count} background jobs are running`,
+          timestamp: new Date().toISOString()
+        })
+        break
+        
+      case 'system.health':
+        // Show system health warning
+        if (event.payload.status !== 'healthy') {
+          actions.addNotification({
+            id: `health-${Date.now()}`,
+            type: 'warning',
+            title: 'System Health',
+            message: `System health: ${event.payload.status}`,
+            timestamp: new Date().toISOString()
+          })
         }
-        break
-        
-      case 'system.notification':
-        // Add system notification
-        actions.addNotification(event.payload)
-        break
-        
-      case 'stage.moved':
-        // Refresh feed items when stage moves happen
-        loadFeedItems(ui.selectedProject || undefined)
-        break
-        
-      case 'feed.new':
-        // Refresh feed items when new items arrive
-        loadFeedItems(ui.selectedProject || undefined)
         break
         
       default:
-        console.log('Unhandled real-time event:', event)
+        console.log('Unhandled polling event:', event)
     }
-  }, [ui.selectedFeedItem, actions])
+  }, [ui.selectedProject, actions, loading])
 
   // Event handlers
   const handleProjectSelect = useCallback((projectId: string | null) => {

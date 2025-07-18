@@ -1,0 +1,705 @@
+/* Liquid Glass Enhancements - Jony Ive on Acid Edition */
+/* Preserves existing aesthetics while adding enhanced effects */
+
+/* ===== ENHANCED LIQUID GLASS CONTAINER ===== */
+
+.liquid-glass-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 9999;
+    overflow: hidden;
+}
+
+.liquid-ripple {
+    position: absolute;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    opacity: 0;
+    transform: scale(0);
+    background: radial-gradient(circle, 
+        rgba(150, 179, 150, 0.3) 0%, 
+        rgba(150, 179, 150, 0.1) 50%, 
+        transparent 100%);
+    backdrop-filter: blur(10px);
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Enhanced Ripple Effects */
+.ripple-ai-response {
+    animation: liquidRippleAI 1.5s ease-out;
+    background: radial-gradient(circle, 
+        rgba(150, 179, 150, 0.4) 0%, 
+        rgba(150, 179, 150, 0.2) 50%, 
+        transparent 100%);
+}
+
+.ripple-user-message {
+    animation: liquidRippleUser 1.2s ease-out;
+    background: radial-gradient(circle, 
+        rgba(100, 149, 237, 0.3) 0%, 
+        rgba(100, 149, 237, 0.1) 50%, 
+        transparent 100%);
+}
+
+.ripple-context-update {
+    animation: liquidRippleContext 0.8s ease-out;
+    background: radial-gradient(circle, 
+        rgba(255, 215, 0, 0.3) 0%, 
+        rgba(255, 215, 0, 0.1) 50%, 
+        transparent 100%);
+}
+
+.ripple-ai-error {
+    animation: liquidRippleError 1.0s ease-out;
+    background: radial-gradient(circle, 
+        rgba(255, 99, 71, 0.3) 0%, 
+        rgba(255, 99, 71, 0.1) 50%, 
+        transparent 100%);
+}
+
+.ripple-ai-success {
+    animation: liquidRippleSuccess 1.2s ease-out;
+    background: radial-gradient(circle, 
+        rgba(144, 238, 144, 0.4) 0%, 
+        rgba(144, 238, 144, 0.2) 50%, 
+        transparent 100%);
+}
+
+/* Liquid Ripple Keyframes */
+@keyframes liquidRippleAI {
+    0% {
+        opacity: 0;
+        transform: scale(0) rotate(0deg);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(3) rotate(180deg);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(6) rotate(360deg);
+    }
+}
+
+@keyframes liquidRippleUser {
+    0% {
+        opacity: 0;
+        transform: scale(0);
+    }
+    70% {
+        opacity: 0.8;
+        transform: scale(2.5);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(4);
+    }
+}
+
+@keyframes liquidRippleContext {
+    0% {
+        opacity: 0;
+        transform: scale(0) skew(0deg);
+    }
+    60% {
+        opacity: 0.6;
+        transform: scale(1.5) skew(5deg);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(3) skew(-5deg);
+    }
+}
+
+@keyframes liquidRippleError {
+    0% {
+        opacity: 0;
+        transform: scale(0) rotate(0deg);
+    }
+    30% {
+        opacity: 0.8;
+        transform: scale(1) rotate(90deg);
+    }
+    60% {
+        opacity: 0.6;
+        transform: scale(2) rotate(180deg);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(3) rotate(270deg);
+    }
+}
+
+@keyframes liquidRippleSuccess {
+    0% {
+        opacity: 0;
+        transform: scale(0) rotate(0deg) skew(0deg);
+    }
+    40% {
+        opacity: 1;
+        transform: scale(1.5) rotate(120deg) skew(2deg);
+    }
+    80% {
+        opacity: 0.5;
+        transform: scale(3) rotate(240deg) skew(-2deg);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(5) rotate(360deg) skew(0deg);
+    }
+}
+
+/* ===== ENHANCED GLASS MORPHING ===== */
+
+.liquid-glass-enhanced {
+    position: relative;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.liquid-glass-enhanced::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(45deg, 
+        rgba(150, 179, 150, 0.1), 
+        rgba(150, 179, 150, 0.05), 
+        rgba(150, 179, 150, 0.1));
+    border-radius: inherit;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.liquid-glass-enhanced:hover::before {
+    opacity: 1;
+}
+
+.liquid-glass-enhanced:hover {
+    transform: translateY(-2px) scale(1.01);
+    box-shadow: 
+        var(--depth-3),
+        0 0 30px rgba(150, 179, 150, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* ===== ENHANCED TYPING INDICATOR ===== */
+
+.liquid-typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, 
+        rgba(150, 179, 150, 0.08), 
+        rgba(150, 179, 150, 0.04));
+    border-radius: 16px;
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid rgba(150, 179, 150, 0.1);
+}
+
+.typing-dots {
+    display: flex;
+    gap: 4px;
+}
+
+.typing-dots .dot {
+    width: 8px;
+    height: 8px;
+    background: linear-gradient(45deg, 
+        rgba(150, 179, 150, 0.6), 
+        rgba(150, 179, 150, 0.8));
+    border-radius: 50%;
+    animation: liquidTypingDot 1.4s infinite ease-in-out;
+}
+
+.typing-dots .dot:nth-child(1) {
+    animation-delay: -0.32s;
+}
+
+.typing-dots .dot:nth-child(2) {
+    animation-delay: -0.16s;
+}
+
+.typing-dots .dot:nth-child(3) {
+    animation-delay: 0s;
+}
+
+@keyframes liquidTypingDot {
+    0%, 80%, 100% {
+        transform: scale(0.8);
+        opacity: 0.5;
+    }
+    40% {
+        transform: scale(1.2);
+        opacity: 1;
+    }
+}
+
+.typing-text {
+    color: var(--text-glass);
+    font-size: 0.9rem;
+    font-weight: 500;
+    animation: liquidTypingText 2s infinite ease-in-out;
+}
+
+@keyframes liquidTypingText {
+    0%, 100% {
+        opacity: 0.7;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+/* ===== ENHANCED STATUS INDICATORS ===== */
+
+.system-health-indicator {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid transparent;
+}
+
+.status-healthy {
+    background: linear-gradient(135deg, 
+        rgba(144, 238, 144, 0.2), 
+        rgba(144, 238, 144, 0.1));
+    color: #2d5a2d;
+    border-color: rgba(144, 238, 144, 0.3);
+    box-shadow: 0 0 10px rgba(144, 238, 144, 0.2);
+}
+
+.status-degraded {
+    background: linear-gradient(135deg, 
+        rgba(255, 215, 0, 0.2), 
+        rgba(255, 215, 0, 0.1));
+    color: #8b6914;
+    border-color: rgba(255, 215, 0, 0.3);
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.2);
+}
+
+.status-unhealthy {
+    background: linear-gradient(135deg, 
+        rgba(255, 99, 71, 0.2), 
+        rgba(255, 99, 71, 0.1));
+    color: #8b2635;
+    border-color: rgba(255, 99, 71, 0.3);
+    box-shadow: 0 0 10px rgba(255, 99, 71, 0.2);
+}
+
+/* ===== ENHANCED AVAILABILITY INDICATORS ===== */
+
+.availability-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-left: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+
+.availability-dot::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.availability-dot.available {
+    background: linear-gradient(45deg, #4ade80, #22c55e);
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+}
+
+.availability-dot.available::before {
+    background: radial-gradient(circle, rgba(34, 197, 94, 0.3), transparent);
+    animation: liquidPulseGreen 2s infinite ease-in-out;
+}
+
+.availability-dot.unavailable {
+    background: linear-gradient(45deg, #f87171, #ef4444);
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.availability-dot.unavailable::before {
+    background: radial-gradient(circle, rgba(239, 68, 68, 0.3), transparent);
+    animation: liquidPulseRed 2s infinite ease-in-out;
+}
+
+@keyframes liquidPulseGreen {
+    0%, 100% {
+        opacity: 0;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(2);
+    }
+}
+
+@keyframes liquidPulseRed {
+    0%, 100% {
+        opacity: 0;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.8;
+        transform: scale(1.8);
+    }
+}
+
+/* ===== ENHANCED AI PROVIDER STATUS ===== */
+
+.status-pulse {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+.pulse-success {
+    background: radial-gradient(circle, #22c55e, #16a34a);
+    animation: liquidPulseSuccess 1s ease-out;
+}
+
+.pulse-error {
+    background: radial-gradient(circle, #ef4444, #dc2626);
+    animation: liquidPulseError 1s ease-out;
+}
+
+.pulse-processing {
+    background: radial-gradient(circle, #3b82f6, #2563eb);
+    animation: liquidPulseProcessing 2s infinite ease-in-out;
+}
+
+@keyframes liquidPulseSuccess {
+    0% {
+        opacity: 0;
+        transform: scale(0);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.5);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(2);
+    }
+}
+
+@keyframes liquidPulseError {
+    0% {
+        opacity: 0;
+        transform: scale(0) rotate(0deg);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.3) rotate(180deg);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(2) rotate(360deg);
+    }
+}
+
+@keyframes liquidPulseProcessing {
+    0%, 100% {
+        opacity: 0.3;
+        transform: scale(0.8);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+}
+
+/* ===== ENHANCED MESSAGE STYLING ===== */
+
+.liquid-strong {
+    background: linear-gradient(135deg, 
+        rgba(150, 179, 150, 0.1), 
+        rgba(150, 179, 150, 0.05));
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.liquid-em {
+    color: rgba(150, 179, 150, 0.9);
+    font-style: italic;
+    position: relative;
+}
+
+.liquid-em::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, 
+        transparent, 
+        rgba(150, 179, 150, 0.4), 
+        transparent);
+    animation: liquidUnderline 2s infinite ease-in-out;
+}
+
+@keyframes liquidUnderline {
+    0%, 100% {
+        transform: scaleX(0);
+    }
+    50% {
+        transform: scaleX(1);
+    }
+}
+
+.liquid-code {
+    background: linear-gradient(135deg, 
+        rgba(150, 179, 150, 0.08), 
+        rgba(150, 179, 150, 0.04));
+    border: 1px solid rgba(150, 179, 150, 0.1);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: 0.9em;
+    backdrop-filter: blur(10px);
+}
+
+.liquid-h1, .liquid-h2, .liquid-h3 {
+    background: linear-gradient(135deg, 
+        rgba(150, 179, 150, 0.8), 
+        rgba(150, 179, 150, 0.6));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 600;
+    margin: 16px 0 8px 0;
+    position: relative;
+}
+
+.liquid-h1::after, .liquid-h2::after, .liquid-h3::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, 
+        rgba(150, 179, 150, 0.6), 
+        rgba(150, 179, 150, 0.2), 
+        transparent);
+    border-radius: 1px;
+}
+
+.liquid-li {
+    position: relative;
+    padding-left: 20px;
+    margin: 4px 0;
+}
+
+.liquid-li::before {
+    content: '●';
+    position: absolute;
+    left: 0;
+    color: rgba(150, 179, 150, 0.7);
+    font-size: 0.8em;
+    animation: liquidBullet 3s infinite ease-in-out;
+}
+
+@keyframes liquidBullet {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.7;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 1;
+    }
+}
+
+/* ===== ENHANCED ERROR MESSAGES ===== */
+
+.error-message {
+    position: relative;
+    overflow: hidden;
+}
+
+.error-message::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, 
+        transparent, 
+        rgba(255, 99, 71, 0.1), 
+        transparent);
+    animation: liquidErrorSweep 3s infinite ease-in-out;
+}
+
+@keyframes liquidErrorSweep {
+    0% {
+        left: -100%;
+    }
+    50% {
+        left: 100%;
+    }
+    100% {
+        left: -100%;
+    }
+}
+
+/* ===== DYNAMIC BACKGROUND ENHANCEMENT ===== */
+
+.glass-morph-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at 30% 20%, 
+        rgba(150, 179, 150, 0.02) 0%, 
+        transparent 50%),
+    radial-gradient(circle at 70% 80%, 
+        rgba(150, 179, 150, 0.03) 0%, 
+        transparent 50%);
+    animation: liquidMorphBackground 10s infinite ease-in-out;
+    pointer-events: none;
+}
+
+@keyframes liquidMorphBackground {
+    0%, 100% {
+        transform: rotate(0deg) scale(1);
+        opacity: 0.5;
+    }
+    33% {
+        transform: rotate(120deg) scale(1.1);
+        opacity: 0.7;
+    }
+    66% {
+        transform: rotate(240deg) scale(0.9);
+        opacity: 0.3;
+    }
+}
+
+/* ===== ENHANCED TRANSITIONS ===== */
+
+.business-workspace * {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Preserve all existing styles while enhancing them */
+.context-panel.liquid-glass-enhanced,
+.chat-container.liquid-glass-enhanced {
+    will-change: transform, backdrop-filter;
+}
+
+/* ===== RESPONSIVE LIQUID EFFECTS ===== */
+
+@media (max-width: 768px) {
+    .liquid-ripple {
+        width: 150px;
+        height: 150px;
+    }
+    
+    .liquid-typing-indicator {
+        padding: 12px 16px;
+    }
+    
+    .typing-dots .dot {
+        width: 6px;
+        height: 6px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .liquid-ripple,
+    .liquid-typing-indicator,
+    .availability-dot::before,
+    .status-pulse,
+    .glass-morph-overlay {
+        animation: none;
+    }
+    
+    .liquid-glass-enhanced {
+        transition: none;
+    }
+}
+
+/* ===== REAL-TIME STATUS BAR ===== */
+
+.status-bar {
+    position: fixed;
+    top: 80px;
+    right: 24px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, 
+        rgba(255, 255, 255, 0.9), 
+        rgba(255, 255, 255, 0.7));
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid rgba(150, 179, 150, 0.1);
+    border-radius: 20px;
+    font-size: 0.75rem;
+    z-index: 1000;
+    box-shadow: var(--depth-2);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.status-bar:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--depth-3);
+}
+
+.connection-status {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.ai-providers-status {
+    display: flex;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.ai-providers-status span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* ===== PERFORMANCE OPTIMIZATIONS ===== */
+
+.liquid-glass-container,
+.liquid-ripple,
+.glass-morph-overlay {
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    perspective: 1000px;
+}

@@ -226,6 +226,7 @@ export interface SystemNotification {
   type: 'info' | 'warning' | 'error' | 'success'
   title: string
   message: string
+  timestamp: string
   actions?: Array<{
     label: string
     action: string

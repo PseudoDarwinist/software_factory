@@ -15,7 +15,6 @@
  */
 
 import axios, { AxiosInstance, AxiosError } from 'axios'
-import { io, Socket } from 'socket.io-client'
 import type { 
   ApiResponse, 
   PaginatedResponse, 
@@ -30,7 +29,7 @@ class MissionControlApi {
   private client: AxiosInstance
   private baseURL: string
 
-  constructor(baseURL: string = 'http://localhost:5001/api') {
+  constructor(baseURL: string = '/api') {
     this.baseURL = baseURL
     this.client = axios.create({
       baseURL,
@@ -72,7 +71,7 @@ class MissionControlApi {
   // Project endpoints
   async getProjects(): Promise<ProjectSummary[]> {
     try {
-      const response = await this.client.get<ApiResponse<ProjectSummary[]>>('/projects')
+      const response = await this.client.get<ApiResponse<ProjectSummary[]>>('/mission-control/projects')
       return response.data.data || []
     } catch (error) {
       console.error('Failed to fetch projects:', error)
@@ -82,7 +81,7 @@ class MissionControlApi {
 
   async getProject(projectId: string): Promise<ProjectSummary | null> {
     try {
-      const response = await this.client.get<ApiResponse<ProjectSummary>>(`/projects/${projectId}`)
+      const response = await this.client.get<ApiResponse<ProjectSummary>>(`/mission-control/projects/${projectId}`)
       return response.data.data || null
     } catch (error) {
       console.error('Failed to fetch project:', error)
@@ -92,7 +91,7 @@ class MissionControlApi {
 
   async createProject(data: { name: string; repoUrl: string }): Promise<ProjectSummary> {
     try {
-      const response = await this.client.post<ApiResponse<ProjectSummary>>('/projects', data)
+      const response = await this.client.post<ApiResponse<ProjectSummary>>('/mission-control/projects', data)
       return response.data.data!
     } catch (error) {
       console.error('Failed to create project:', error)
@@ -102,7 +101,7 @@ class MissionControlApi {
 
   async updateProject(projectId: string, updates: Partial<ProjectSummary>): Promise<ProjectSummary> {
     try {
-      const response = await this.client.patch<ApiResponse<ProjectSummary>>(`/projects/${projectId}`, updates)
+      const response = await this.client.patch<ApiResponse<ProjectSummary>>(`/mission-control/projects/${projectId}`, updates)
       return response.data.data!
     } catch (error) {
       console.error('Failed to update project:', error)
@@ -112,7 +111,7 @@ class MissionControlApi {
 
   async deleteProject(projectId: string): Promise<void> {
     try {
-      await this.client.delete(`/projects/${projectId}`)
+      await this.client.delete(`/mission-control/projects/${projectId}`)
     } catch (error) {
       console.error('Failed to delete project:', error)
       throw new Error('Failed to delete project')
@@ -121,7 +120,7 @@ class MissionControlApi {
 
   async uploadProjectDocs(projectName: string, formData: FormData): Promise<{ projectId: string; docCount: number }> {
     try {
-      const response = await this.client.post<ApiResponse<{ projectId: string; docCount: number }>>('/projects/docs', formData, {
+      const response = await this.client.post<ApiResponse<{ projectId: string; docCount: number }>>('/mission-control/projects/docs', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -298,62 +297,121 @@ class MissionControlApi {
     }
   }
 
-  // Socket.IO connection for real-time updates
-  createSocketConnection(onMessage: (event: any) => void): Socket {
-    // Always use current origin since Flask server proxies to Mission Control
-    const socketUrl = window.location.origin
+  // Polling-based updates system
+  private pollingInterval: NodeJS.Timeout | null = null
+  private pollingCallbacks: ((event: any) => void)[] = []
+  private lastUpdate: Record<string, number> = {}
+
+  startPolling(onMessage: (event: any) => void, interval: number = 3000): () => void {
+    this.pollingCallbacks.push(onMessage)
     
-    const socket = io(socketUrl, {
-      transports: ['websocket', 'polling'],
-      autoConnect: true,
+    // Start polling if not already started
+    if (!this.pollingInterval) {
+      this.pollingInterval = setInterval(() => {
+        this.pollForUpdates()
+      }, interval)
+      
+      console.log(`Started polling for updates (interval: ${interval}ms)`)
+    }
+    
+    // Return cleanup function
+    return () => {
+      this.pollingCallbacks = this.pollingCallbacks.filter(cb => cb !== onMessage)
+      
+      // Stop polling if no more callbacks
+      if (this.pollingCallbacks.length === 0 && this.pollingInterval) {
+        clearInterval(this.pollingInterval)
+        this.pollingInterval = null
+        console.log('Stopped polling for updates')
+      }
+    }
+  }
+
+  private async pollForUpdates(): Promise<void> {
+    try {
+      // Poll for system status and updates
+      const response = await this.client.get<ApiResponse<{
+        timestamp: string
+        projects_updated: number
+        feed_updated: number
+        active_jobs: number
+        system_health: string
+      }>>('/status')
+      
+      const status = response.data.data
+      if (!status) return
+      
+      const currentTime = Date.now()
+      
+      // Check for project updates
+      if (status.projects_updated > (this.lastUpdate.projects || 0)) {
+        this.lastUpdate.projects = status.projects_updated
+        this.notifyCallbacks({ type: 'projects.updated', payload: { timestamp: status.timestamp } })
+      }
+      
+      // Check for feed updates
+      if (status.feed_updated > (this.lastUpdate.feed || 0)) {
+        this.lastUpdate.feed = status.feed_updated
+        this.notifyCallbacks({ type: 'feed.updated', payload: { timestamp: status.timestamp } })
+      }
+      
+      // Check for active jobs
+      if (status.active_jobs > 0) {
+        this.notifyCallbacks({ type: 'jobs.active', payload: { count: status.active_jobs } })
+      }
+      
+      // Check system health
+      if (status.system_health !== 'healthy') {
+        this.notifyCallbacks({ type: 'system.health', payload: { status: status.system_health } })
+      }
+      
+    } catch (error) {
+      console.error('Polling error:', error)
+      // Don't notify callbacks about polling errors unless it's persistent
+    }
+  }
+
+  private notifyCallbacks(event: any): void {
+    this.pollingCallbacks.forEach(callback => {
+      try {
+        callback(event)
+      } catch (error) {
+        console.error('Error in polling callback:', error)
+      }
     })
-    
-    socket.on('connect', () => {
-      console.log('Socket.IO connection established')
-    })
-    
-    socket.on('disconnect', () => {
-      console.log('Socket.IO connection closed')
-    })
-    
-    socket.on('connect_error', (error) => {
-      console.error('Socket.IO connection error:', error)
-    })
-    
-    // Listen for real-time updates
-    socket.on('feed.update', (data) => {
-      onMessage({ type: 'feed.update', data })
-    })
-    
-    socket.on('feed.new', (data) => {
-      onMessage({ type: 'feed.new', data })
-    })
-    
-    socket.on('conversation.update', (data) => {
-      onMessage({ type: 'conversation.update', data })
-    })
-    
-    socket.on('project.update', (data) => {
-      onMessage({ type: 'project.update', data })
-    })
-    
-    socket.on('stage.moved', (data) => {
-      onMessage({ type: 'stage.moved', data })
-    })
-    
-    socket.on('brief.updated', (data) => {
-      onMessage({ type: 'brief.updated', data })
-    })
-    
-    socket.on('brief.frozen', (data) => {
-      onMessage({ type: 'brief.frozen', data })
-    })
-    
-    socket.on('project.indexed', (data) => {
-      onMessage({ type: 'project.indexed', data })
-    })
-    
-    return socket
+  }
+
+  // Check for specific data updates
+  async checkForUpdates(lastCheck?: Date): Promise<{
+    projects: boolean
+    feed: boolean
+    conversations: boolean
+  }> {
+    try {
+      const timestamp = lastCheck ? lastCheck.getTime() : 0
+      const response = await this.client.get<ApiResponse<{
+        projects_updated: number
+        feed_updated: number
+        conversations_updated: number
+      }>>('/updates', {
+        params: { since: timestamp }
+      })
+      
+      const updates = response.data.data || {
+        projects_updated: 0,
+        feed_updated: 0,
+        conversations_updated: 0
+      }
+      
+      return {
+        projects: updates.projects_updated > 0,
+        feed: updates.feed_updated > 0,
+        conversations: updates.conversations_updated > 0
+      }
+    } catch (error) {
+      console.error('Failed to check for updates:', error)
+      return { projects: false, feed: false, conversations: false }
+    }
   }
 }
 
