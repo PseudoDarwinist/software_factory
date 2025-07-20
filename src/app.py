@@ -8,102 +8,175 @@ import os
 import logging
 import signal
 import sys
-from flask import Flask
+import traceback
+import time
+from flask import Flask, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from concurrent.futures import ThreadPoolExecutor
 import atexit
+import redis
 
-# Import database instance from models
+# Grouped imports for better structure
 try:
     from .models import db
-except ImportError:
-    # Handle direct execution
-    import sys
-    import os
-    sys.path.insert(0, os.path.dirname(__file__))
+    from .core import database
+    from .services import (
+        distributed_cache,
+        background,
+        event_bus,
+        webhook_service,
+        integration_setup,
+        websocket_server,
+        vector_service,
+        ai_broker,
+        context_aware_ai,
+        ai_agents,
+        auth_service
+    )
+    from .api import (
+        projects,
+        system,
+        ai,
+        ai_broker as ai_broker_api,
+        mission_control,
+        conversations,
+        stages,
+        events,
+        graph,
+        vector,
+        webhooks,
+        cache,
+        intelligence
+    )
+except ImportError as e:
+    # Handle direct execution for scripts, etc.
+    print(f"Initial import failed, retrying for script context: {e}")
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from models import db
-migrate = Migrate()
+    import core.database as database
+    import services.distributed_cache as distributed_cache
+    import services.background as background
+    import services.event_bus as event_bus
+    import services.webhook_service as webhook_service
+    import services.integration_setup as integration_setup
+    import services.websocket_server as websocket_server
+    import services.vector_service as vector_service
+    import services.ai_broker as ai_broker
+    import services.context_aware_ai as context_aware_ai
+    import services.ai_agents as ai_agents
+    import services.auth_service as auth_service
+    from api import projects, system, ai, mission_control, conversations, stages, events, graph, vector, webhooks, cache, intelligence
+    from api import ai_broker as ai_broker_api
 
-# Global background job manager
+migrate = Migrate()
 job_manager = None
 
 
 class Config:
     """Application configuration management with environment variables"""
-    
-    # Database configuration
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///mission_control.db')
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'postgresql://sf_user:sf_password@localhost/software_factory')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    
-    # Flask configuration
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+        'pool_timeout': 20,
+        'max_overflow': 0
+    }
     SECRET_KEY = os.environ.get('SECRET_KEY', 'unified-flask-secret-key-change-in-production')
-    
-    # Application settings
     DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     HOST = os.environ.get('FLASK_HOST', '0.0.0.0')
     PORT = int(os.environ.get('FLASK_PORT', 8000))
-    
-    # Background job settings
     MAX_WORKERS = int(os.environ.get('MAX_WORKERS', 4))
-    
-    # Static files configuration
     STATIC_FOLDER = os.environ.get('STATIC_FOLDER', 'frontend/dist')
-    
-    # AI service configuration
     GOOSE_SCRIPT_PATH = os.environ.get('GOOSE_SCRIPT_PATH', './scripts/goose-gemini')
     MODEL_GARDEN_API_URL = os.environ.get('MODEL_GARDEN_API_URL', 'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions')
     MODEL_GARDEN_API_KEY = os.environ.get('MODEL_GARDEN_API_KEY', 'b3540f69-5289-483e-91fe-942c4bfa458c')
+    REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    REDIS_CACHE_DB = os.environ.get('REDIS_CACHE_DB', '1')
+    CACHE_DEFAULT_TTL = int(os.environ.get('CACHE_DEFAULT_TTL', 300))
+    SESSION_TTL = int(os.environ.get('SESSION_TTL', 3600))
+    WEBSOCKET_ASYNC_MODE = os.environ.get('WEBSOCKET_ASYNC_MODE', 'eventlet')
 
 
 def create_app(config_class=Config):
     """Flask application factory pattern"""
-    app = Flask(__name__, 
-                static_folder='../frontend',  # Serve from frontend directory
-                static_url_path='')         # Serve at root path
+    app = Flask(__name__, static_folder='../frontend', static_url_path='')
     app.config.from_object(config_class)
-    
-    # Configure logging
+
     setup_logging(app)
-    
-    # Initialize extensions
+
     db.init_app(app)
     migrate.init_app(app, db)
-    
-    # Initialize database system
-    try:
-        from .core import database
-    except ImportError:
-        from core import database
+
+    if app.config.get('SQLALCHEMY_ENGINE_OPTIONS'):
+        with app.app_context():
+            db.engine.pool._pre_ping = app.config['SQLALCHEMY_ENGINE_OPTIONS']['pool_pre_ping']
+
     database.init_database_system(app, db, migrate)
-    
-    # Initialize cache system
-    try:
-        from .services.cache import init_status_cache
-    except ImportError:
-        from services.cache import init_status_cache
-    init_status_cache(default_ttl=30, cleanup_interval=60)
-    
-    # Initialize background job manager
-    try:
-        from .services.background import init_job_manager
-    except ImportError:
-        from services.background import init_job_manager
+
+    cache_redis_url = f"redis://localhost:6379/{app.config['REDIS_CACHE_DB']}"
+    distributed_cache.init_distributed_cache(redis_url=cache_redis_url, default_ttl=app.config['CACHE_DEFAULT_TTL'])
+    app.logger.info("Distributed cache system initialized")
+
     global job_manager
-    job_manager = init_job_manager(app, max_workers=app.config['MAX_WORKERS'])
+    job_manager = background.init_job_manager(app, max_workers=app.config['MAX_WORKERS'])
+
+    event_bus_instance = event_bus.init_event_bus(app.config['REDIS_URL'], max_workers=app.config['MAX_WORKERS'])
+    webhook_service.init_webhook_service(event_bus_instance, max_workers=app.config['MAX_WORKERS'])
+
+    if not integration_setup.setup_integrations(app):
+        app.logger.warning("Some integrations failed to initialize")
+
+    # Initialize Auth Service FIRST, as WebSocketServer depends on it.
+    auth_service.init_auth_service(app)
+    app.logger.info("Authentication service initialized")
+
+    # Initialize WebSocket server
+    websocket_server.init_websocket_server(app)
+
+    if not vector_service.init_vector_service(db):
+        app.logger.warning("Vector service initialization failed")
     
-    # Register blueprints
+    # Initialize Vector Context Service
+    try:
+        from .services import vector_context_service
+        if vector_context_service.init_vector_context_service():
+            app.logger.info("Vector context service initialized successfully")
+        else:
+            app.logger.warning("Vector context service initialization failed")
+    except ImportError:
+        from services import vector_context_service
+        if vector_context_service.init_vector_context_service():
+            app.logger.info("Vector context service initialized successfully")
+        else:
+            app.logger.warning("Vector context service initialization failed")
+    except Exception as e:
+        app.logger.warning(f"Vector context service initialization failed: {e}")
+
+    try:
+        ai_broker.init_ai_broker()
+        app.logger.info("AI broker service initialized successfully")
+    except Exception as e:
+        app.logger.warning(f"AI broker initialization failed: {e}")
+
+    try:
+        context_aware_ai.init_context_aware_ai()
+        app.logger.info("Context-aware AI system initialized successfully")
+    except Exception as e:
+        app.logger.warning(f"Context-aware AI system initialization failed: {e}")
+
+    try:
+        # Corrected function call
+        ai_agents.init_ai_agents()
+        app.logger.info("AI agents initialized and started successfully")
+    except Exception as e:
+        app.logger.warning(f"AI agents initialization failed: {e}")
+
     register_blueprints(app)
-    
-    # Register frontend routes
     register_frontend_routes(app)
-    
-    # Register error handlers
     register_error_handlers(app)
-    
-    # Setup application lifecycle handlers
     setup_lifecycle_handlers(app)
-    
+
     app.logger.info("Unified Flask application created successfully")
     return app
 
@@ -111,262 +184,182 @@ def create_app(config_class=Config):
 def setup_logging(app):
     """Configure application logging"""
     if not app.debug:
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s %(levelname)s %(name)s: %(message)s',
-            handlers=[logging.StreamHandler(sys.stdout)]
-        )
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s', handlers=[logging.StreamHandler(sys.stdout)])
     else:
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s %(levelname)s %(name)s: %(message)s'
-        )
-    
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
     app.logger.info("Logging configured")
 
 
 def register_blueprints(app):
     """Register application blueprints"""
-    try:
-        try:
-            from .api.projects import projects_bp
-            from .api.system import system_bp
-            from .api.ai import ai_bp
-            from .api.mission_control import mission_control_bp
-            from .api.conversations import conversations_bp
-            from .api.stages import stages_bp
-        except ImportError:
-            from api.projects import projects_bp
-            from api.system import system_bp
-            from api.ai import ai_bp
-            from api.mission_control import mission_control_bp
-            from api.conversations import conversations_bp
-            from api.stages import stages_bp
-        
-        app.register_blueprint(projects_bp)
-        app.register_blueprint(system_bp)
-        app.register_blueprint(ai_bp)
-        app.register_blueprint(mission_control_bp)
-        app.register_blueprint(conversations_bp)
-        app.register_blueprint(stages_bp)
-        
-        app.logger.info("API blueprints registered successfully")
-        
-    except Exception as e:
-        app.logger.error(f"Failed to register blueprints: {e}")
-        raise
+    app.register_blueprint(projects.projects_bp)
+    app.register_blueprint(system.system_bp)
+    app.register_blueprint(ai.ai_bp)
+    app.register_blueprint(ai_broker_api.ai_broker_bp)
+    app.register_blueprint(mission_control.mission_control_bp)
+    app.register_blueprint(conversations.conversations_bp)
+    app.register_blueprint(stages.stages_bp)
+    app.register_blueprint(events.events_bp)
+    app.register_blueprint(graph.graph_bp)
+    app.register_blueprint(vector.vector_bp)
+    app.register_blueprint(webhooks.webhooks_bp)
+    app.register_blueprint(cache.cache_bp)
+    app.register_blueprint(intelligence.intelligence_bp)
+    app.logger.info("API blueprints registered successfully")
 
 
 def register_frontend_routes(app):
-    """Register frontend static file routes"""
-    from flask import send_from_directory, send_file, request
-    import os
-    
-    # Frontend directory paths
-    frontend_dir = os.path.join(app.root_path, '..', 'frontend')
-    mission_control_dir = os.path.join(app.root_path, '..', 'mission-control-dist')
-    
-    @app.route('/')
-    def index():
-        """Serve the main landing page"""
-        return send_from_directory(frontend_dir, 'index.html')
-    
-    @app.route('/dashboard.html')
-    @app.route('/dashboard')
-    def dashboard():
-        """Serve the role-based dashboard"""
-        return send_from_directory(frontend_dir, 'dashboard.html')
-    
-    @app.route('/business.html')
-    @app.route('/business')
-    def business():
-        """Serve the Business Analyst interface with liquid glass aesthetics"""
-        return send_from_directory(frontend_dir, 'business.html')
-    
-    @app.route('/po.html')
-    @app.route('/po')
-    def product_owner():
-        """Serve the Product Owner interface"""
-        return send_from_directory(frontend_dir, 'po.html')
-    
-    @app.route('/designer.html')
-    @app.route('/designer')
-    def designer():
-        """Serve the Designer interface (placeholder)"""
-        return send_from_directory(frontend_dir, 'dashboard.html')  # Fallback to dashboard
-    
-    @app.route('/developer.html')
-    @app.route('/developer')
-    def developer():
-        """Serve the Developer interface (placeholder)"""
-        return send_from_directory(frontend_dir, 'dashboard.html')  # Fallback to dashboard
-    
-    # Mission Control React App Routes
-    @app.route('/mission-control')
-    @app.route('/mission-control/')
-    def mission_control_root():
-        """Serve Mission Control React SPA root"""
-        return send_from_directory(mission_control_dir, 'index.html')
-    
-    @app.route('/mission-control/<path:path>')
-    def mission_control_spa(path):
-        """Serve Mission Control React SPA - handle React Router routes"""
-        app.logger.debug(f"Mission Control SPA route called with path: {path}")
-        
-        # Check if it's a static asset request
-        if path.startswith('assets/'):
-            # Serve assets directly from mission-control-dist/assets/
-            asset_file = path[7:]  # Remove 'assets/' prefix
-            asset_path = os.path.join(mission_control_dir, 'assets', asset_file)
-            app.logger.debug(f"Serving asset: {asset_path}, exists: {os.path.exists(asset_path)}")
-            return send_from_directory(os.path.join(mission_control_dir, 'assets'), asset_file)
-        elif path.startswith('fonts/'):
-            # Serve fonts directly from mission-control-dist/fonts/
-            font_file = path[6:]  # Remove 'fonts/' prefix
-            font_path = os.path.join(mission_control_dir, 'fonts', font_file)
-            app.logger.debug(f"Serving font: {font_path}, exists: {os.path.exists(font_path)}")
-            return send_from_directory(os.path.join(mission_control_dir, 'fonts'), font_file)
-        elif path in ['favicon.svg', 'favicon.ico']:
-            # Serve favicon from mission control directory if it exists, otherwise from main frontend
-            try:
-                return send_from_directory(mission_control_dir, path)
-            except:
-                return send_from_directory(frontend_dir, path)
+    """Serve frontend application and static files"""
+    frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend'))
+    # Correct the path to point to the mission-control-dist directory
+    mission_control_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'mission-control-dist'))
+
+    @app.route('/', defaults={'path': ''})
+    @app.route('/<path:path>')
+    def serve(path):
+        if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+            return send_from_directory(app.static_folder, path)
         else:
-            # All other paths are React Router routes, serve index.html
+            return send_from_directory(app.static_folder, 'index.html')
+
+    @app.route('/mission-control/', defaults={'path': 'index.html'})
+    @app.route('/mission-control/<path:path>')
+    def serve_mission_control(path):
+        app.logger.debug(f"Mission Control request for path: {path}")
+        app.logger.debug(f"Mission Control directory: {mission_control_dir}")
+        app.logger.debug(f"Directory exists: {os.path.exists(mission_control_dir)}")
+        
+        if path != "" and os.path.exists(os.path.join(mission_control_dir, path)):
+            app.logger.debug(f"Serving file: {path}")
+            return send_from_directory(mission_control_dir, path)
+        else:
             app.logger.debug(f"Serving index.html for path: {path}")
-            return send_from_directory(mission_control_dir, 'index.html')
-    
-    
-    # Serve CSS files with proper MIME type
-    @app.route('/<path:filename>')
-    def static_files(filename):
-        """Serve static files (CSS, JS, images, fonts)"""
-        return send_from_directory(frontend_dir, filename)
-    
+            index_path = os.path.join(mission_control_dir, 'index.html')
+            if os.path.exists(index_path):
+                return send_from_directory(mission_control_dir, 'index.html')
+            else:
+                app.logger.error(f"Mission Control index.html not found at: {index_path}")
+                return f"Mission Control not found. Expected at: {mission_control_dir}", 404
+
     app.logger.info("Frontend routes registered successfully")
 
 
 def register_error_handlers(app):
     """Register global error handlers"""
-    
     @app.errorhandler(404)
     def not_found_error(error):
         app.logger.warning(f"404 error: {error}")
         return {'error': 'Resource not found'}, 404
-    
+
     @app.errorhandler(500)
     def internal_error(error):
         app.logger.error(f"500 error: {error}")
         db.session.rollback()
         return {'error': 'Internal server error'}, 500
-    
+
     @app.errorhandler(Exception)
     def handle_exception(e):
+        try:
+            with open("error.log", "a") as f:
+                f.write(f"--- ERROR AT {time.time()} ---\n")
+                f.write(str(e) + "\n")
+                traceback.print_exc(file=f)
+                f.write("-------------------------------------\n")
+        except Exception as log_e:
+            print(f"FAILED TO WRITE TO LOG FILE: {log_e}", file=sys.stderr)
+
         app.logger.error(f"Unhandled exception: {e}", exc_info=True)
         db.session.rollback()
         return {'error': 'An unexpected error occurred'}, 500
-    
+
     app.logger.info("Error handlers registered")
 
 
 def setup_lifecycle_handlers(app):
     """Setup application initialization and teardown handlers"""
-    
     with app.app_context():
         try:
-            try:
-                from .core import database
-            except ImportError:
-                from core import database
             if database.create_all_tables(app):
                 app.logger.info("Database tables created/verified successfully")
             else:
                 app.logger.error("Database table creation failed")
         except Exception as e:
             app.logger.error(f"Database initialization failed: {e}")
-    
+
     @app.teardown_appcontext
     def shutdown_session(exception=None):
         if exception:
-            app.logger.error(f"Request ended with exception: {exception}")
             db.session.rollback()
-        else:
-            db.session.remove()
-    
+        db.session.remove()
+
     def cleanup_application():
         app.logger.info("Starting application cleanup...")
-        
-        # Shutdown background job manager
         if job_manager:
             job_manager.shutdown()
-        
-        # Shutdown cache system
-        try:
-            try:
-                from .services.cache import get_status_cache
-            except ImportError:
-                from services.cache import get_status_cache
-            cache = get_status_cache()
-            cache.shutdown()
-            app.logger.info("Cache system shutdown complete")
-        except Exception as e:
-            app.logger.error(f"Error shutting down cache system: {e}")
-        
-        # Close database connections
-        try:
-            with app.app_context():
-                db.session.close()
-            app.logger.info("Database connections closed")
-        except Exception as e:
-            app.logger.error(f"Error closing database connections: {e}")
-        
+
+        bus = event_bus.get_event_bus()
+        if bus:
+            bus.stop()
+
+        broker = ai_broker.get_ai_broker()
+        if broker:
+            broker.stop()
+
+        cache_instance = distributed_cache.get_distributed_cache()
+        if cache_instance:
+            cache_instance.cleanup_l1_cache()
+
         app.logger.info("Application cleanup complete")
-    
+
     atexit.register(cleanup_application)
-    
+
     def signal_handler(signum, frame):
         app.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         cleanup_application()
         sys.exit(0)
-    
+
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
-    
+
     app.logger.info("Lifecycle handlers configured")
 
 
 def main():
     """Main application entry point"""
-    print("🏭 Unified Flask Application - Architecture Simplification")
+    print("🏭 Software Factory - Event-Driven Architecture")
     print("=" * 60)
-    print("🔧 Single-process architecture")
-    print("🗄️  SQLite database with SQLAlchemy ORM")
-    print("🔄 Background job processing with Python threading")
-    print("🌐 REST API with polling-based frontend communication")
-    print("🎯 All functionality consolidated into one application")
-    print("")
-    
-    app = create_app()
-    
-    print(f"🌐 Server: http://{app.config['HOST']}:{app.config['PORT']}")
-    print(f"🗄️  Database: {app.config['SQLALCHEMY_DATABASE_URI']}")
-    print(f"👷 Background workers: {app.config['MAX_WORKERS']}")
-    print(f"📁 Static files: {app.config['STATIC_FOLDER']}")
-    print(f"🐛 Debug mode: {app.config['DEBUG']}")
-    print("")
-    print("Press Ctrl+C to stop the server")
-    print("")
-    
+
     try:
-        app.run(
-            host=app.config['HOST'],
-            port=app.config['PORT'],
-            debug=app.config['DEBUG'],
-            threaded=True
-        )
+        app = create_app()
+
+        print(f"🌐 Server: http://{app.config['HOST']}:{app.config['PORT']}")
+        print(f"🗄️  Database: {app.config['SQLALCHEMY_DATABASE_URI']}")
+        print(f"📡 Redis: {app.config['REDIS_URL']}")
+        print("Press Ctrl+C to stop the server\n")
+
+        bus = event_bus.get_event_bus()
+        if bus:
+            bus.start()
+            print("📡 Event bus started successfully")
+
+        ws = websocket_server.get_websocket_server()
+        if ws:
+            ws.socketio.run(
+                app,
+                host=app.config['HOST'],
+                port=app.config['PORT'],
+                debug=app.config['DEBUG']
+            )
+        else:
+            # Fallback to regular Flask app
+            app.run(
+                host=app.config['HOST'],
+                port=app.config['PORT'],
+                debug=app.config['DEBUG'],
+                threaded=True
+            )
     except KeyboardInterrupt:
-        print("\n🏭 Unified Flask application stopped.")
+        print("\n🏭 Software Factory application stopped.")
     except Exception as e:
         print(f"\n❌ Application failed to start: {e}")
         sys.exit(1)

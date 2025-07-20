@@ -11,6 +11,7 @@ from .feed_item import FeedItem
 from .mission_control_project import MissionControlProject
 from .stage import Stage, StageTransition, ProductBrief
 from .channel_mapping import ChannelMapping
+from .event_log import EventLog
 
 __all__ = [
     'db', 
@@ -23,5 +24,6 @@ __all__ = [
     'Stage',
     'StageTransition',
     'ProductBrief',
-    'ChannelMapping'
+    'ChannelMapping',
+    'EventLog'
 ]

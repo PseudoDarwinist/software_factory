@@ -7,11 +7,15 @@ from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 try:
     from ..models import Project, SystemMap, BackgroundJob, db
+    from ..core.events import create_event, EventType
+    from ..services.event_bus import publish_event
 except ImportError:
     import sys
     import os
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from models import Project, SystemMap, BackgroundJob, db
+    from core.events import create_event, EventType
+    from services.event_bus import publish_event
 from datetime import datetime
 import logging
 
@@ -133,6 +137,22 @@ def create_project():
         
         db.session.commit()
         
+        # Publish project created event for real-time updates
+        try:
+            event = create_event(
+                EventType.PROJECT_CREATED,
+                project_name=project.name,
+                project_id=project.id,
+                created_by="user",  # TODO: Get actual user from session
+                description=project.description,
+                repository_url=project.repository_url,
+                source="projects_api"
+            )
+            publish_event(event)
+            logger.info(f"Published PROJECT_CREATED event for project {project.id}")
+        except Exception as e:
+            logger.error(f"Failed to publish PROJECT_CREATED event: {e}")
+        
         # Start background job for repository processing if URL provided
         if project.repository_url:
             try:
@@ -204,6 +224,21 @@ def update_project(project_id):
         project.updated_at = datetime.utcnow()
         db.session.commit()
         
+        # Publish project updated event for real-time updates
+        try:
+            event = create_event(
+                EventType.PROJECT_UPDATED,
+                project_name=project.name,
+                project_id=project.id,
+                updated_by="user",  # TODO: Get actual user from session
+                changes=list(data.keys()),
+                source="projects_api"
+            )
+            publish_event(event)
+            logger.info(f"Published PROJECT_UPDATED event for project {project.id}")
+        except Exception as e:
+            logger.error(f"Failed to publish PROJECT_UPDATED event: {e}")
+        
         logger.info(f"Updated project {project.id}: {project.name}")
         return jsonify(project.to_dict())
         
@@ -239,6 +274,20 @@ def delete_project(project_id):
         # Delete project (cascade will handle related records)
         db.session.delete(project)
         db.session.commit()
+        
+        # Publish project deleted event for real-time updates
+        try:
+            event = create_event(
+                EventType.PROJECT_DELETED,
+                project_name=project_name,
+                project_id=project_id,
+                deleted_by="user",  # TODO: Get actual user from session
+                source="projects_api"
+            )
+            publish_event(event)
+            logger.info(f"Published PROJECT_DELETED event for project {project_id}")
+        except Exception as e:
+            logger.error(f"Failed to publish PROJECT_DELETED event: {e}")
         
         logger.info(f"Deleted project {project_id}: {project_name}")
         return jsonify({'message': f'Project "{project_name}" deleted successfully'})

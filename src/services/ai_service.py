@@ -311,23 +311,67 @@ class AIService:
         self.logger = logging.getLogger(__name__)
     
     def execute_goose_task(self, instruction: str, business_context: Dict = None, github_repo: Dict = None, role: str = 'business') -> Dict[str, Any]:
-        """Execute task using Goose AI with repository awareness"""
+        """Execute task using Goose AI with repository awareness and vector context"""
         self.logger.info(f"Executing Goose task for role: {role}")
         
-        # Add role-specific prompting
+        # Get relevant context from vector database
+        vector_context = self._get_vector_context(instruction, role)
+        
+        # Add role-specific prompting with vector context
         enhanced_instruction = f"""Role: {role.upper()}
 
-{instruction}
+{vector_context}{instruction}
 
 Please respond as a {role} expert, providing practical, actionable insights relevant to this role in the Software Development Lifecycle."""
         
         return self.goose.execute_task(enhanced_instruction, business_context, github_repo)
     
     def execute_model_garden_task(self, instruction: str, product_context: Dict = None, model: str = 'claude-opus-4', role: str = 'po') -> Dict[str, Any]:
-        """Execute task using Model Garden"""
+        """Execute task using Model Garden with vector context"""
         self.logger.info(f"Executing Model Garden task with model: {model}, role: {role}")
         
-        return self.model_garden.execute_task(instruction, product_context, model, role)
+        # Get relevant context from vector database
+        vector_context = self._get_vector_context(instruction, role)
+        
+        # Add vector context to instruction
+        if vector_context:
+            enhanced_instruction = f"{vector_context}{instruction}"
+        else:
+            enhanced_instruction = instruction
+        
+        return self.model_garden.execute_task(enhanced_instruction, product_context, model, role)
+    
+    def _get_vector_context(self, instruction: str, role: str = None) -> str:
+        """Get relevant context from vector database for AI model calls"""
+        try:
+            # Import vector service
+            from .vector_service import get_vector_service
+            vector_service = get_vector_service()
+            
+            if not vector_service:
+                return ""
+            
+            # Define document types based on role
+            document_types = []
+            if role in ['business', 'po']:
+                document_types = ['conversation', 'system_map', 'documentation']
+            elif role in ['developer', 'designer']:
+                document_types = ['code_file', 'documentation', 'system_map']
+            else:
+                document_types = None  # Search all types
+            
+            # Get AI context with appropriate token limit
+            context = vector_service.get_ai_context(
+                query=instruction,
+                max_tokens=1500,  # Leave room for instruction and response
+                document_types=document_types
+            )
+            
+            return context
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to get vector context: {e}")
+            return ""
     
     def get_service_status(self) -> Dict[str, Any]:
         """Get status of all AI services"""

@@ -384,27 +384,205 @@ def test_repository_processing():
 
 ## Migration Strategy
 
-### Phase 1: Parallel Implementation
+### Phase 1: Parallel Implementation ✅ COMPLETED
 - Build new Flask app alongside existing system
 - Implement core models and API endpoints
 - Set up database and basic functionality
 
-### Phase 2: Feature Parity
+### Phase 2: Feature Parity ✅ COMPLETED
 - Port all existing functionality to new system
 - Implement background job processing
 - Add comprehensive testing
 
-### Phase 3: Frontend Migration
+### Phase 3: Frontend Migration ✅ COMPLETED
 - Update React app to use new API endpoints
 - Remove Socket.IO dependencies
 - Implement polling-based updates
 
-### Phase 4: Cutover
+### Phase 4: Cutover ✅ COMPLETED
 - Switch traffic to new unified application
 - Migrate existing data to SQLite database
 - Decommission old servers
 
-### Phase 5: Cleanup
+### Phase 5: Cleanup ✅ COMPLETED
 - Remove old code and dependencies
 - Update documentation and deployment scripts
 - Performance optimization and monitoring
+
+## Event-Driven Architecture Evolution
+
+### Current Architecture (Unified Flask)
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 UNIFIED FLASK APPLICATION                    │
+├─────────────────────────────────────────────────────────────┤
+│  Static Files  │  API Routes  │  Background Jobs  │  AI     │
+│  (React Build) │  (REST only) │  (Python threads)│  (Goose)│
+└─────────────────────────────────────────────────────────────┘
+                               │
+                     ┌─────────────────┐
+                     │  SQLite Database │
+                     │  (Single source) │
+                     └─────────────────┘
+```
+
+### Target Architecture (Event-Driven)
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    EVENT BUS (Redis)                        │
+├─────────────────────────────────────────────────────────────┤
+│         idea.created │ spec.frozen │ tasks.created          │
+└─────────────────────────────────────────────────────────────┘
+           │                 │                 │
+    ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+    │   Capture   │   │   Define    │   │   Planner   │
+    │   Agent     │   │   Agent     │   │   Agent     │
+    └─────────────┘   └─────────────┘   └─────────────┘
+           │                 │                 │
+    ┌─────────────────────────────────────────────────────────┐
+    │              POSTGRESQL + GRAPH                         │
+    │         Projects │ Dependencies │ Code Relations        │
+    └─────────────────────────────────────────────────────────┘
+           │                 │                 │
+    ┌─────────────────────────────────────────────────────────┐
+    │                 VECTOR STORE                            │
+    │          Document Chunks │ Embeddings │ Context         │
+    └─────────────────────────────────────────────────────────┘
+```
+
+### Event-Driven Components
+
+#### 1. Event Bus (Redis Streams)
+```python
+# Event Publisher
+class EventPublisher:
+    def publish(self, event_type: str, payload: dict):
+        redis_client.xadd(f"events:{event_type}", payload)
+
+# Event Subscriber
+class EventSubscriber:
+    def subscribe(self, event_type: str, handler: callable):
+        # Listen to Redis stream and call handler
+        pass
+```
+
+**Event Schema:**
+- `idea.created`: {"project_id": "proj-123", "content": "...", "actor": "user@example.com"}
+- `spec.frozen`: {"project_id": "proj-123", "brief_id": "brief-456", "requirements": [...]}
+- `tasks.created`: {"project_id": "proj-123", "tasks": [...], "dependencies": [...]}
+- `pr.opened`: {"project_id": "proj-123", "pr_id": "pr-789", "branch": "feature/gate-change"}
+
+#### 2. Intelligent Agents
+```python
+class BaseAgent:
+    def __init__(self, event_types: List[str]):
+        self.event_types = event_types
+        self.subscriber = EventSubscriber()
+        
+    def start(self):
+        for event_type in self.event_types:
+            self.subscriber.subscribe(event_type, self.handle_event)
+    
+    def handle_event(self, event):
+        # Override in subclasses
+        pass
+
+class DefineAgent(BaseAgent):
+    def __init__(self):
+        super().__init__(['idea.created'])
+    
+    def handle_event(self, event):
+        # Create product brief from idea
+        # Publish spec.frozen event
+        pass
+```
+
+#### 3. WebSocket Real-time Updates
+```python
+from flask_socketio import SocketIO, emit
+
+socketio = SocketIO(app)
+
+class WebSocketEventBridge:
+    def __init__(self):
+        self.subscriber = EventSubscriber()
+        self.subscriber.subscribe('*', self.broadcast_to_clients)
+    
+    def broadcast_to_clients(self, event):
+        socketio.emit('event', event, broadcast=True)
+```
+
+#### 4. Graph Database Integration
+```python
+class GraphService:
+    def create_relationship(self, from_node, to_node, relationship_type):
+        # Use PostgreSQL graph extensions
+        query = """
+        MATCH (a), (b) 
+        WHERE a.id = $from_id AND b.id = $to_id
+        CREATE (a)-[:$relationship_type]->(b)
+        """
+        
+    def find_related_items(self, node_id, max_depth=3):
+        # Graph traversal query
+        pass
+```
+
+#### 5. Vector Search Service
+```python
+class VectorService:
+    def add_document(self, doc_id, content):
+        # Chunk document and create embeddings
+        chunks = self.chunk_document(content)
+        embeddings = self.create_embeddings(chunks)
+        self.store_embeddings(doc_id, embeddings)
+    
+    def semantic_search(self, query, top_k=10):
+        query_embedding = self.create_embedding(query)
+        similar_docs = self.find_similar(query_embedding, top_k)
+        return similar_docs
+```
+
+### Architecture Benefits
+
+1. **Real-time Reactivity**: Events trigger instant responses
+2. **Scalable Processing**: Agents run independently and can scale
+3. **Intelligent Relationships**: Graph queries reveal complex connections
+4. **Contextual AI**: Vector search provides relevant context
+5. **External Integration**: Webhooks translate to internal events
+6. **Comprehensive Monitoring**: All events are observable
+
+### Development Phases
+
+**Phase 1: Event Foundation**
+- Redis message queue setup
+- Basic event publishing/subscribing
+- WebSocket integration for real-time UI
+
+**Phase 2: Database Evolution**
+- PostgreSQL migration from SQLite
+- Graph extensions for relationship queries
+- Vector store for semantic search
+
+**Phase 3: Intelligent Agents**
+- Base agent framework
+- Define, Planner, Build agents
+- Event-driven workflow automation
+
+**Phase 4: External Integration**
+- GitHub, CI/CD webhook integration
+- External system notifications
+- Bidirectional event translation
+
+**Phase 5: Production Readiness**
+- Comprehensive monitoring
+- Performance optimization
+- Deployment automation
+
+### Performance Targets
+
+- **Event Processing**: < 100ms latency
+- **Graph Queries**: < 1 second response time
+- **Vector Search**: < 500ms for semantic queries
+- **WebSocket Updates**: < 50ms to client
+- **System Throughput**: 1000+ events/second

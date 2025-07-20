@@ -69,13 +69,14 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
   // Setup socket to listen for indexing completion
   useEffect(() => {
     console.log('🔌 Setting up Socket.IO connection...')
-    // Always use current origin since Flask server proxies to Mission Control
+    // Use same origin since Flask serves everything
     const socketUrl = window.location.origin
     console.log('🌐 Socket URL:', socketUrl)
     
     const socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
+      forceNew: true,
     })
 
     socket.on('connect', () => {
@@ -246,7 +247,8 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="modal-overlay"
+          style={{ pointerEvents: 'auto' }}
         >
           {/* Backdrop */}
           <motion.div
@@ -263,6 +265,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className={clsx(
+              'modal-content',
               'relative w-full max-w-2xl max-h-[90vh] overflow-hidden',
               'bg-[#1a1d29] backdrop-blur-xl',
               'border border-white/10 rounded-2xl shadow-2xl',
@@ -537,7 +540,27 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
     </AnimatePresence>
   )
 
-  return ReactDOM.createPortal(modalContent, document.body)
+  // Create a dedicated modal root if it doesn't exist
+  let modalRoot = document.getElementById('modal-root')
+  if (!modalRoot) {
+    modalRoot = document.createElement('div')
+    modalRoot.id = 'modal-root'
+    modalRoot.style.cssText = `
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      z-index: 9999 !important;
+      pointer-events: none !important;
+      transform: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    `
+    document.body.appendChild(modalRoot)
+  }
+
+  return ReactDOM.createPortal(modalContent, modalRoot)
 }
 
 interface StepHeaderProps {

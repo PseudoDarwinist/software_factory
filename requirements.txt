@@ -6,3 +6,13 @@ flask-sqlalchemy
 flask-migrate
 gitpython
 psutil
+redis
+flask-socketio
+eventlet
+psycopg2-binary
+pgvector
+sentence-transformers
+tiktoken
+numpy
+prometheus_client
+PyJWT

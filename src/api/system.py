@@ -7,12 +7,13 @@ from flask import Blueprint, jsonify, current_app, request
 try:
     from ..models import BackgroundJob, Project, SystemMap, Conversation, db
     from ..core.database import check_database_health, get_database_statistics
+    from ..core.events import create_event, EventType
+    from ..services.event_bus import publish_event
 except ImportError:
-    import sys
-    import os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from models import BackgroundJob, Project, SystemMap, Conversation, db
     from core.database import check_database_health, get_database_statistics
+    from core.events import create_event, EventType
+    from services.event_bus import publish_event
 from datetime import datetime, timedelta
 import logging
 import os
@@ -54,6 +55,22 @@ def system_status():
         
         # Generate fresh status data
         status_data = _generate_comprehensive_status()
+        
+        # Publish system status event for real-time updates
+        try:
+            event = create_event(
+                EventType.SYSTEM_HEALTH_CHECK,
+                status=status_data['status'],
+                active_jobs=len(status_data['jobs']['active']),
+                project_count=status_data['projects']['total_count'],
+                database_status=status_data['database_health']['status'],
+                uptime_seconds=status_data.get('uptime_seconds', 0),
+                source="system_api"
+            )
+            publish_event(event)
+            logger.debug(f"Published SYSTEM_HEALTH_CHECK event with status: {status_data['status']}")
+        except Exception as e:
+            logger.error(f"Failed to publish SYSTEM_HEALTH_CHECK event: {e}")
         
         # Cache the status data (excluding timestamp)
         cache_data = status_data.copy()

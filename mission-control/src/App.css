@@ -369,6 +369,36 @@ html {
   perspective: 1000px;
 }
 
+/* Modal positioning - Force full screen overlay */
+.modal-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 9999 !important;
+  padding: 1rem !important;
+  /* Force it to break out of any container */
+  transform: none !important;
+  margin: 0 !important;
+  /* Ensure it's above everything */
+  isolation: isolate !important;
+}
+
+.modal-content {
+  position: relative !important;
+  max-width: 90vw !important;
+  max-height: 90vh !important;
+  margin: auto !important;
+  /* Ensure proper stacking */
+  z-index: 1 !important;
+}
+
 /* Accessibility */
 .sr-only {
   position: absolute;

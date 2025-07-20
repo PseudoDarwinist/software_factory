@@ -121,66 +121,70 @@
 
 ## Event-Driven Architecture Transformation
 
-- [ ] 16. Implement Redis queue + WebSocket foundation (The Hallway)
+- [x] 16. Implement Redis-based message queue system
 
   - Set up Redis server connection and configuration management
   - Create event publisher service for publishing domain events (idea.created, spec.frozen, tasks.created, build.failed)
   - Implement event subscriber service with proper error handling and retry logic
   - Add event schema validation and serialization utilities
+  - Test basic pub/sub functionality with simple events
+  - _Requirements: Event-driven communication, real-time agent reactions_
+
+- [x] 17. Create event-driven domain model and event definitions
+
+  - Define comprehensive event schema for all domain events (project lifecycle, AI interactions, build status)
+  - Create event base classes with metadata (timestamp, correlation ID, event version)
+  - Implement event store for audit trail and event replay capabilities
+  - Add event routing and filtering mechanisms for targeted subscriptions
+  - Test event publishing and consumption across different event types
+  - _Requirements: Structured event communication, audit trail_
+
+- [x] 18. Replace polling with WebSocket-based real-time updates
+
   - Implement WebSocket server using Flask-SocketIO for real-time frontend communication
   - Create WebSocket event handlers that subscribe to Redis message queue
   - Replace frontend polling with WebSocket event listeners for instant updates
   - Add connection management, reconnection logic, and graceful degradation
-  - Test real-time updates: Redis event → WebSocket → UI update
-  - _Requirements: Event-driven communication foundation, real-time updates_
+  - Test real-time updates across multiple browser tabs and network interruptions
+  - _Requirements: Real-time UI updates, eliminate polling overhead_
 
-- [ ] 17. Migrate to PostgreSQL (Single-hop migration)
+- [x] 19. Implement PostgreSQL with graph extensions for relationship queries
 
-  - Set up PostgreSQL database with standard relational schema
-  - Create PostgreSQL models matching existing SQLite structure
-  - Implement data migration script: SQLite → PostgreSQL (one-time migration)
-  - Update SQLAlchemy configuration to use PostgreSQL
-  - Test all existing functionality works with PostgreSQL
-  - Keep SQLite for local development/testing only
-  - _Requirements: Production-ready database, foundation for event storage_
+  - Set up PostgreSQL database with graph query extensions (pg_graph or similar)
+  - Create graph schema for projects, dependencies, code relationships, and team connections
+  - Implement graph query service for complex relationship analysis
+  - Migrate existing SQLite data to PostgreSQL with graph relationships
+  - Test complex queries like "Show every pull request that fulfils the 'gate-change' spec"
+  - _Requirements: Complex relationship queries, graph-based intelligence_
 
-- [ ] 18. Create Docker infrastructure for event-driven services
+- [x] 20. Add vector database for semantic search and AI context
 
-  - Create Docker Compose setup for PostgreSQL, Redis, and Flask application
-  - Set up development environment with hot reload and volume mounting
-  - Add Docker networking for secure service-to-service communication
-  - Create environment-specific configurations (dev, staging, prod)
-  - Test complete stack running in containers with event flow
-  - _Requirements: Foundation for multi-service architecture, development efficiency_
+  - Set up vector database (pgvector in PostgreSQL)
+  - Implement document chunking and embedding generation for code repositories
+  - Create semantic search service for finding relevant code and documentation
+  - Add vector-based context retrieval for AI model calls
+  - Test semantic search across repository content and historical conversations
+  - _Requirements: Long-term memory for models, semantic code search_
 
-- [ ] 19. Add basic monitoring to event queue
-
-  - Implement Redis queue depth monitoring
-  - Add API latency metrics collection
-  - Create simple log-based metrics for event processing
-  - Add basic health check endpoints for Redis and PostgreSQL
-  - Test monitoring shows queue stalls and performance issues
-  - _Requirements: Event system observability, early problem detection_
-
-- [ ] 20. Create intelligent agent framework with event subscriptions
+- [x] 21. Create intelligent agent framework with event subscriptions
 
   - Implement base agent class that can subscribe to specific event types
-  - Create Capture agent that reacts to idea.created events for processing
-  - Build Define agent that triggers on spec.frozen events for automatic processing
-  - Add simple event-driven workflow: idea.created → capture → define → tasks.created
+  - Create Define agent that reacts to spec.frozen events for automatic processing
+  - Build Planner agent that triggers on tasks.created events for resource planning
+  - Add Build agent that responds to code.changed events for automated testing
   - Test agent coordination and prevent infinite event loops
   - _Requirements: Reactive agents, automated workflow orchestration_
 
-- [ ] 21. Implement external system integration via webhooks and events
+- [x] 22. Implement external system integration via webhooks and events
 
   - Create webhook receiver service for GitHub, CI/CD, and other external systems
   - Implement webhook-to-event translation for external system notifications
   - Add outbound webhook system for notifying external systems of internal events
-  - Create integration adapter for GitHub (webhook → event bus)
-  - Test bidirectional integration with GitHub webhooks
+  - Create integration adapters for common tools (GitHub, Jenkins, Slack, Figma)
+  - Test bidirectional integration with at least one external system
   - _Requirements: External system integration, webhook-based communication_
 
-- [ ] 22. Build AI broker service for model orchestration
+- [x] 23. Build AI broker service for model orchestration
 
   - Create AI broker service that manages multiple AI model connections (Goose, Gemini, Claude)
   - Implement model selection logic based on task type and context requirements
@@ -189,25 +193,7 @@
   - Test AI broker with different model types and concurrent requests
   - _Requirements: Intelligent model selection, context-aware AI interactions_
 
-- [ ] 23. Add graph extensions when needed (Feature-driven)
-
-  - Identify specific use case requiring graph queries (e.g., "jump from idea to all related commits")
-  - Add PostgreSQL graph extensions (pg_graph or similar) only if relational queries are insufficient
-  - Create graph schema for identified relationships
-  - Implement graph query service for specific use case
-  - Test complex queries like "Show every pull request that fulfils the 'gate-change' spec"
-  - _Requirements: Complex relationship queries (when needed)_
-
-- [ ] 24. Add vector database when needed (Feature-driven)
-
-  - Identify specific use case requiring semantic search (e.g., "find similar paragraphs for Claude context")
-  - Set up pgvector in PostgreSQL for unified database
-  - Implement document chunking and embedding generation for identified use case
-  - Create semantic search service for specific functionality
-  - Test semantic search for identified use case
-  - _Requirements: Semantic search and AI context (when needed)_
-
-- [ ] 25. Implement distributed caching and session management
+- [x] 24. Implement distributed caching and session management
 
   - Set up Redis-based distributed caching for frequently accessed data
   - Implement session management for multi-user concurrent access
@@ -216,34 +202,16 @@
   - Test cache performance and consistency across multiple application instances
   - _Requirements: Performance optimization, multi-user support_
 
-- [ ] 26. Expand monitoring and observability system
+- [ ] 25. Create comprehensive monitoring and observability system
 
   - Implement distributed tracing for event flows and AI interactions
   - Add metrics collection for event processing, database queries, and AI response times
-  - Expand health check endpoints for all system components (Redis, PostgreSQL, AI services)
+  - Create health check endpoints for all system components (Redis, PostgreSQL, AI services)
   - Build monitoring dashboard for system health, event throughput, and performance metrics
   - Test monitoring system under load and failure scenarios
   - _Requirements: System observability, performance monitoring_
 
-- [ ] 27. Integrate advanced AI capabilities with event context
-
-  - Implement context-aware AI that uses available data (PostgreSQL + Redis) for enhanced responses
-  - Create AI agents that can analyze code changes and predict impact across the system
-  - Add intelligent code review agent that triggers on pull.request.created events
-  - Implement AI-powered project health monitoring with predictive alerts
-  - Test AI accuracy and response quality with available contextual information
-  - _Requirements: Context-aware AI, predictive intelligence_
-
-- [ ] 28. Build intelligent project analysis and recommendation engine
-
-  - Implement project analysis using PostgreSQL relational queries (add graph later if needed)
-  - Create recommendation engine that suggests related projects, code patterns, and team connections
-  - Add intelligent project categorization based on code analysis and team activity
-  - Implement trend analysis for technology adoption and project success patterns
-  - Test recommendation accuracy and performance with real project data
-  - _Requirements: Intelligent recommendations, project insights_
-
-- [ ] 29. Implement event-driven testing and validation framework
+- [ ] 26. Implement event-driven testing and validation framework
 
   - Create event-driven test harness that can simulate complex event sequences
   - Implement integration tests for event flows and agent interactions
@@ -252,7 +220,16 @@
   - Test complete event-driven workflows from external trigger to final outcome
   - _Requirements: Event system reliability, comprehensive testing_
 
-- [ ] 30. Create event-driven deployment and scaling system
+- [x] 27. Build intelligent project analysis and recommendation engine
+
+  - Implement graph-based project analysis using PostgreSQL graph queries
+  - Create recommendation engine that suggests related projects, code patterns, and team connections
+  - Add intelligent project categorization based on code analysis and team activity
+  - Implement trend analysis for technology adoption and project success patterns
+  - Test recommendation accuracy and performance with real project data
+  - _Requirements: Graph-based intelligence, intelligent recommendations_
+
+- [ ] 28. Create event-driven deployment and scaling system
 
   - Implement container orchestration with event-driven scaling triggers
   - Create deployment pipeline that reacts to code.merged events for automated deployments
@@ -261,7 +238,16 @@
   - Test automated scaling and deployment under various load conditions
   - _Requirements: Automated deployment, event-driven scaling_
 
-- [ ] 31. Final event-driven system integration and performance optimization
+- [x] 29. Integrate advanced AI capabilities with event context
+
+  - Implement context-aware AI that uses graph relationships and vector search for enhanced responses
+  - Create AI agents that can analyze code changes and predict impact across the system
+  - Add intelligent code review agent that triggers on pull.request.created events
+  - Implement AI-powered project health monitoring with predictive alerts
+  - Test AI accuracy and response quality with rich contextual information
+  - _Requirements: Context-aware AI, predictive intelligence_
+
+- [ ] 30. Final event-driven system integration and performance optimization
 
   - Integrate all event-driven components into cohesive system architecture
   - Optimize event processing performance and reduce latency across the system
@@ -272,7 +258,7 @@
 
 ## Robustness and Production Readiness
 
-- [ ] 32. Implement comprehensive error handling and logging
+- [ ] 31. Implement comprehensive error handling and logging
 
   - Set up centralized error handling with proper HTTP status codes
   - Create unified logging system with structured log formatting
@@ -280,7 +266,15 @@
   - Implement graceful shutdown handling for all components
   - _Requirements: 2.1, 2.2, 2.3, 5.4_
 
-- [ ] 33. Add comprehensive testing suite
+- [ ] 17. Create database migration and data import utilities
+
+  - Implement migration scripts to convert existing JSON data to SQLite
+  - Create data validation and cleanup utilities for migration
+  - Add backup and restore functionality for database operations
+  - Implement database schema versioning and upgrade paths
+  - _Requirements: 3.1, 3.3, 8.1_
+
+- [ ] 18. Add comprehensive testing suite
 
   - Create unit tests for all database models and API endpoints
   - Implement integration tests for background job processing
@@ -288,15 +282,15 @@
   - Create performance tests for concurrent operations and database queries
   - _Requirements: 2.3, 9.1, 9.4, 10.3_
 
-- [ ] 34. Implement configuration management and deployment setup
+- [ ] 19. Implement configuration management and deployment setup
 
   - Create environment-based configuration system with validation
-  - Set up Docker containerization for event-driven deployment
+  - Set up Docker containerization for single-process deployment
   - Implement health check endpoints for monitoring and load balancing
   - Add startup scripts and process management utilities
   - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-- [ ] 35. Performance optimization and monitoring
+- [ ] 20. Performance optimization and monitoring
 
   - Implement database query optimization and indexing
   - Add request/response timing and performance metrics
@@ -304,7 +298,7 @@
   - Implement connection pooling and resource management
   - _Requirements: 9.1, 9.2, 9.3, 9.4_
 
-- [ ] 36. Final integration and cutover preparation
+- [ ] 21. Final integration and cutover preparation
   - Integrate all components and test complete system functionality
   - Create deployment scripts and documentation for production cutover
   - Implement data migration procedures from existing system

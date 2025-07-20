@@ -41,7 +41,7 @@ def init_database_system(app, database, migration):
 
 
 def create_all_tables(app):
-    """Create all database tables"""
+    """Create all database tables including graph extensions"""
     with app.app_context():
         try:
             # Import models to ensure they're registered
@@ -55,6 +55,26 @@ def create_all_tables(app):
             
             db.create_all()
             app.logger.info("All database tables created successfully")
+            
+            # Set up graph database extensions if using PostgreSQL
+            db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+            if db_uri.startswith('postgresql://'):
+                app.logger.info("Setting up PostgreSQL graph extensions...")
+                try:
+                    from ..utils.setup_graph_database import setup_graph_database
+                    if setup_graph_database(db_uri):
+                        app.logger.info("Graph database extensions set up successfully")
+                    else:
+                        app.logger.warning("Graph database extensions setup failed")
+                except ImportError:
+                    from utils.setup_graph_database import setup_graph_database
+                    if setup_graph_database(db_uri):
+                        app.logger.info("Graph database extensions set up successfully")
+                    else:
+                        app.logger.warning("Graph database extensions setup failed")
+                except Exception as e:
+                    app.logger.error(f"Failed to set up graph extensions: {e}")
+            
             return True
         except Exception as e:
             app.logger.error(f"Failed to create database tables: {e}")

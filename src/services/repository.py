@@ -488,6 +488,11 @@ class RepositoryService:
                 generation_time_seconds=generation_time
             )
             
+            context.update_progress(85, "Processing repository for semantic search")
+            
+            # Process repository for vector search
+            self._process_repository_for_vector_search(repo_path, project_id, context)
+            
             # Update project status
             project.status = 'analyzed'
             project.updated_at = datetime.utcnow()
@@ -600,6 +605,39 @@ class RepositoryService:
             
         except Exception as e:
             raise RepositoryAnalysisError(f"System map generation error: {str(e)}")
+    
+    def _process_repository_for_vector_search(self, repo_path: str, project_id: int, context: JobContext):
+        """
+        Process repository files for vector search and semantic indexing
+        
+        Args:
+            repo_path: Path to the cloned repository
+            project_id: ID of the project being processed
+            context: Job context for progress updates
+        """
+        try:
+            # Import vector service
+            from .vector_service import get_vector_service
+            vector_service = get_vector_service()
+            
+            if not vector_service:
+                self.logger.warning("Vector service not available, skipping semantic indexing")
+                return
+            
+            context.update_progress(87, "Indexing repository for semantic search")
+            
+            # Process the repository for vector search
+            success = vector_service.process_code_repository(repo_path, str(project_id))
+            
+            if success:
+                context.update_progress(95, "Repository indexed for semantic search")
+                self.logger.info(f"Repository {project_id} successfully indexed for semantic search")
+            else:
+                self.logger.warning(f"Failed to index repository {project_id} for semantic search")
+            
+        except Exception as e:
+            self.logger.warning(f"Vector search processing failed for project {project_id}: {e}")
+            # Don't fail the entire job if vector processing fails
     
     def _cleanup_temp_directory(self):
         """Clean up temporary directory used for repository cloning"""

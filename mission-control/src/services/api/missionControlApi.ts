@@ -29,7 +29,12 @@ class MissionControlApi {
   private client: AxiosInstance
   private baseURL: string
 
-  constructor(baseURL: string = '/api') {
+  constructor(baseURL?: string) {
+    // Always use same origin since Flask serves everything
+    if (!baseURL) {
+      baseURL = '/api'
+    }
+    
     this.baseURL = baseURL
     this.client = axios.create({
       baseURL,

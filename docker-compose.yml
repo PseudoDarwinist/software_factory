@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  postgresql:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_DB: software_factory
+      POSTGRES_USER: sf_user
+      POSTGRES_PASSWORD: sf_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/database/postgresql_setup.sql:/docker-entrypoint-initdb.d/01-setup.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sf_user -d software_factory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://sf_user:sf_password@postgresql:5432/software_factory
+      - REDIS_URL=redis://redis:6379/0
+      - FLASK_ENV=production
+      - FLASK_DEBUG=false
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./frontend:/app/frontend
+      - ./mission-control-dist:/app/mission-control-dist
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:
