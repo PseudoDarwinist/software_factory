@@ -31,4 +31,22 @@ server-mission-control.log
 .vscode/
 
 # Swap / temp
-*.swp 
+*.swp
+
+# Database files and backups
+*.db
+*.backup_*
+instance/
+
+# Development and test files
+*test*.html
+*test*.js
+check_*.py
+websocket-api-client.js
+
+# Temporary and history files
+.specstory/
+.kiro/steering/
+*_STATUS.md
+*_IMPLEMENTATION.md
+*.ini 
