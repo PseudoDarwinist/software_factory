@@ -210,7 +210,7 @@ class ModelSelector:
         return {
             TaskType.CODE_GENERATION: ['claude-sonnet-3.5', 'goose-gemini', 'gpt-4o'],
             TaskType.CODE_REVIEW: ['claude-opus-4', 'claude-sonnet-3.5', 'gpt-4o'],
-            TaskType.DOCUMENTATION: ['claude-opus-4', 'gpt-4o', 'claude-sonnet-3.5'],
+            TaskType.DOCUMENTATION: ['goose-gemini', 'claude-opus-4', 'gpt-4o', 'claude-sonnet-3.5'],
             TaskType.ANALYSIS: ['claude-opus-4', 'gpt-4o', 'claude-sonnet-3.5'],
             TaskType.CONVERSATION: ['claude-sonnet-3.5', 'gpt-4o', 'gemini-2.5-flash'],
             TaskType.PLANNING: ['claude-opus-4', 'gpt-4o', 'claude-sonnet-3.5'],

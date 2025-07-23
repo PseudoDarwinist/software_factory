@@ -553,10 +553,15 @@ def create_specification(item_id):
             promoted_by='user'  # TODO: get actual user
         )
         
-        # Initialize DefineAgent
+        # Initialize DefineAgent with proper app context
+        from flask import current_app
         event_bus = EventBus()
         ai_broker = AIBroker()
-        ai_broker.start()  # Start the AI broker worker threads
+        
+        # Ensure AI broker has app context for database operations
+        with current_app.app_context():
+            ai_broker.start()  # Start the AI broker worker threads
+        
         define_agent = DefineAgent(event_bus, ai_broker)
         
         # Process the event directly (synchronous for immediate feedback)
@@ -575,8 +580,8 @@ def create_specification(item_id):
                     'success': True,
                     'data': {
                         'spec_id': f"spec_{item_id}",
-                        'processing_time': result.processing_time,
-                        'artifacts_created': result.metadata.get('artifacts_created', 0)
+                        'processing_time': result.processing_time_seconds,
+                        'artifacts_created': result.result_data.get('artifacts_created', 0) if result.result_data else 0
                     },
                     'timestamp': datetime.utcnow().isoformat(),
                     'version': '1.0.0',

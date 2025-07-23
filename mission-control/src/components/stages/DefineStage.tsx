@@ -260,6 +260,49 @@ export const DefineStage: React.FC<DefineStageProps> = ({
     }
   }
 
+  // Resizable pane state
+  const [leftPaneWidth, setLeftPaneWidth] = useState(320) // 320px = w-80
+  const [rightPaneWidth, setRightPaneWidth] = useState(400) // 400px default
+  const [isDraggingLeft, setIsDraggingLeft] = useState(false)
+  const [isDraggingRight, setIsDraggingRight] = useState(false)
+
+  // Handle left pane resize
+  const handleLeftResize = useCallback((e: MouseEvent) => {
+    if (!isDraggingLeft) return
+    const newWidth = Math.max(200, Math.min(600, e.clientX))
+    setLeftPaneWidth(newWidth)
+  }, [isDraggingLeft])
+
+  // Handle right pane resize
+  const handleRightResize = useCallback((e: MouseEvent) => {
+    if (!isDraggingRight) return
+    const newWidth = Math.max(300, Math.min(800, window.innerWidth - e.clientX))
+    setRightPaneWidth(newWidth)
+  }, [isDraggingRight])
+
+  // Mouse event handlers
+  useEffect(() => {
+    if (isDraggingLeft || isDraggingRight) {
+      const handleMouseMove = isDraggingLeft ? handleLeftResize : handleRightResize
+      const handleMouseUp = () => {
+        setIsDraggingLeft(false)
+        setIsDraggingRight(false)
+      }
+
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove)
+        document.removeEventListener('mouseup', handleMouseUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+    }
+  }, [isDraggingLeft, isDraggingRight, handleLeftResize, handleRightResize])
+
   return (
     <div className="h-full flex">
       {/* Left Side - Ideas in Definition */}
@@ -267,7 +310,8 @@ export const DefineStage: React.FC<DefineStageProps> = ({
         initial={{ x: -300, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="w-80 bg-black/20 backdrop-blur-md border-r border-white/10 flex flex-col"
+        className="bg-black/20 backdrop-blur-md border-r border-white/10 flex flex-col flex-shrink-0"
+        style={{ width: `${leftPaneWidth}px` }}
       >
         <div className="p-4 border-b border-white/10">
           <h2 className="text-lg font-semibold text-white mb-2">Ideas in Definition</h2>
@@ -349,12 +393,20 @@ export const DefineStage: React.FC<DefineStageProps> = ({
         </div>
       </motion.div>
 
-      {/* Right Side - Three-Tab Specification Editor */}
+      {/* Left Resize Handle */}
+      <div
+        className="w-1 bg-white/10 hover:bg-purple-500/50 cursor-col-resize transition-colors relative group"
+        onMouseDown={() => setIsDraggingLeft(true)}
+      >
+        <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-purple-500/20" />
+      </div>
+
+      {/* Center - Three-Tab Specification Editor */}
       <motion.div
         initial={{ x: 300, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: 'easeOut', delay: 0.1 }}
-        className="flex-1 bg-black/10 backdrop-blur-sm flex flex-col"
+        className="flex-1 bg-black/10 backdrop-blur-sm flex flex-col min-w-0"
       >
         {currentSpec && (
           <>
@@ -455,20 +507,31 @@ export const DefineStage: React.FC<DefineStageProps> = ({
               {/* AI Assistant Panel */}
               <AnimatePresence>
                 {aiAssistantOpen && (
-                  <motion.div
-                    initial={{ width: 0, opacity: 0 }}
-                    animate={{ width: 400, opacity: 1 }}
-                    exit={{ width: 0, opacity: 0 }}
-                    transition={{ duration: 0.3, ease: 'easeOut' }}
-                    className="border-l border-white/10 bg-black/20 backdrop-blur-md"
-                  >
-                    <AIAssistantPanel
-                      currentSpec={currentSpec}
-                      activeTab={activeTab}
-                      onClose={() => setAiAssistantOpen(false)}
-                      onSuggestion={(content) => updateArtifact(activeTab, content)}
-                    />
-                  </motion.div>
+                  <>
+                    {/* Right Resize Handle */}
+                    <div
+                      className="w-1 bg-white/10 hover:bg-purple-500/50 cursor-col-resize transition-colors relative group"
+                      onMouseDown={() => setIsDraggingRight(true)}
+                    >
+                      <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-purple-500/20" />
+                    </div>
+
+                    <motion.div
+                      initial={{ width: 0, opacity: 0 }}
+                      animate={{ width: rightPaneWidth, opacity: 1 }}
+                      exit={{ width: 0, opacity: 0 }}
+                      transition={{ duration: 0.3, ease: 'easeOut' }}
+                      className="bg-black/20 backdrop-blur-md flex-shrink-0"
+                      style={{ width: `${rightPaneWidth}px` }}
+                    >
+                      <AIAssistantPanel
+                        currentSpec={currentSpec}
+                        activeTab={activeTab}
+                        onClose={() => setAiAssistantOpen(false)}
+                        onSuggestion={(content) => updateArtifact(activeTab, content)}
+                      />
+                    </motion.div>
+                  </>
                 )}
               </AnimatePresence>
             </div>
@@ -540,8 +603,14 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
   const [showReviewDialog, setShowReviewDialog] = useState(false)
 
   useEffect(() => {
-    setContent(artifact?.content || '')
-  }, [artifact])
+    const newContent = artifact?.content || ''
+    console.log(`Setting ${artifactType} content:`, {
+      length: newContent.length,
+      preview: newContent.substring(0, 100),
+      ending: newContent.substring(newContent.length - 100)
+    })
+    setContent(newContent)
+  }, [artifact, artifactType])
 
   const handleContentChange = (newContent: string) => {
     setContent(newContent)

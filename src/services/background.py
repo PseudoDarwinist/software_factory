@@ -373,10 +373,13 @@ class BackgroundJobManager:
         """Handle repository processing job using the repository service"""
         try:
             from .repository import get_repository_service
-            from ..models import Project
+            from ..models.project import Project
         except ImportError:
-            from repository import get_repository_service
-            from models import Project
+            import sys
+            import os
+            sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+            from services.repository import get_repository_service
+            from models.project import Project
         
         # Get repository URL from project
         project = Project.query.get(project_id)

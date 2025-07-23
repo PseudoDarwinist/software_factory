@@ -190,6 +190,43 @@ def create_mission_control_project():
             print("DEBUG: No slack channels provided or empty array")
             logger.info("No slack channels provided")
         
+        # Trigger repository processing in background (like regular projects)
+        if repo_url:
+            try:
+                # Create a corresponding regular project for repository processing
+                from ..models.project import Project
+                from ..services.background import get_job_manager, BackgroundJob
+                
+                regular_project = Project.create(
+                    name=name,
+                    repository_url=repo_url,
+                    description=f"Auto-created for Mission Control project {project_id}"
+                )
+                db.session.commit()
+                
+                # Store the mapping between MC project and regular project
+                if not project.meta_data:
+                    project.meta_data = {}
+                project.meta_data['regular_project_id'] = regular_project.id
+                db.session.commit()
+                
+                # Submit repository processing job
+                job_manager = get_job_manager()
+                job_id = job_manager.submit_job(
+                    job_type=BackgroundJob.TYPE_REPOSITORY_PROCESSING,
+                    project_id=regular_project.id,
+                    repository_url=regular_project.repository_url
+                )
+                
+                # Update status to in_progress
+                project.update_system_map_status('in_progress')
+                
+                logger.info(f"Repository processing job {job_id} submitted for project {project_id}")
+                
+            except Exception as e:
+                logger.error(f"Failed to submit repository processing job for project {project_id}: {e}")
+                # Don't fail project creation, just log the error
+        
         logger.info(f"New Mission Control project created: {name} ({project_id})")
         
         return jsonify({

@@ -17,8 +17,15 @@ from collections import defaultdict, Counter
 import git
 from git import Repo, InvalidGitRepositoryError, GitCommandError
 
-from ..models import SystemMap, Project, db
-from .background import JobContext, JobResult
+try:
+    from ..models import SystemMap, Project, db
+    from .background import JobContext, JobResult
+except ImportError:
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from models import SystemMap, Project, db
+    from services.background import JobContext, JobResult
 
 
 class RepositoryAnalysisError(Exception):

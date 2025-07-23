@@ -402,10 +402,27 @@ class BaseAgent(ABC):
                 logger.warning(f"Project {project_id} not found")
                 return ProjectContext(project_id=project_id)
             
-            # Get system map - for now, skip system map lookup since Mission Control projects
-            # use string IDs but system_map table expects integer IDs
-            # TODO: Update system_map table to support string project IDs or create mapping
+            # Get system map by finding the regular project ID stored in metadata
             system_map_data = None
+            regular_project_id = None
+            
+            if project.meta_data and project.meta_data.get('regular_project_id'):
+                regular_project_id = project.meta_data.get('regular_project_id')
+                logger.info(f"Found regular project ID {regular_project_id} for Mission Control project {project_id}")
+                
+                # Get the latest system map for this regular project
+                system_map = SystemMap.query.filter_by(project_id=regular_project_id)\
+                                          .order_by(SystemMap.generated_at.desc())\
+                                          .first()
+                
+                if system_map:
+                    system_map_data = system_map.content
+                    logger.info(f"Retrieved system map for project {regular_project_id}")
+                else:
+                    logger.warning(f"No system map found for regular project {regular_project_id}")
+            else:
+                logger.warning(f"No regular project ID mapping found for Mission Control project {project_id}")
+            
             actual_project_id = project.id
             
             return ProjectContext(

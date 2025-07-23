@@ -303,20 +303,15 @@ class DefineAgent(BaseAgent):
             # Prepare context for AI
             ai_context = self._prepare_ai_context(idea_content, project_context, context_data)
             
-            # Generate requirements.md
+            # Generate only requirements.md first (sequential workflow like Kiro)
             requirements_md = self._generate_requirements(idea_content, ai_context)
             if not requirements_md:
                 return None
             
-            # Generate design.md
-            design_md = self._generate_design(idea_content, requirements_md, ai_context)
-            if not design_md:
-                return None
-            
-            # Generate tasks.md
-            tasks_md = self._generate_tasks(idea_content, requirements_md, design_md, ai_context)
-            if not tasks_md:
-                return None
+            # Store requirements first and wait for user approval
+            # Design and tasks will be generated in separate user-triggered actions
+            design_md = None
+            tasks_md = None
             
             return {
                 'requirements': requirements_md,
@@ -330,137 +325,180 @@ class DefineAgent(BaseAgent):
     
     def _prepare_ai_context(self, idea_content: str, project_context: ProjectContext,
                            context_data: Dict[str, Any]) -> str:
-        """Prepare comprehensive context for AI specification generation"""
+        """Prepare comprehensive context for AI specification generation with Kiro-style repository awareness"""
         context_parts = []
+        
+        # Add Kiro-style repository analysis instruction
+        context_parts.append("=== REPOSITORY ANALYSIS INSTRUCTION ===")
+        context_parts.append("You have full filesystem access to analyze this repository. Before generating specifications:")
+        context_parts.append("1. Examine the project structure and existing patterns")
+        context_parts.append("2. Review similar features and their implementations")
+        context_parts.append("3. Understand the technology stack and dependencies")
+        context_parts.append("4. Identify integration points and existing APIs")
+        context_parts.append("5. Follow established coding conventions and patterns")
+        context_parts.append("")
         
         # Add project information
         if project_context.system_map:
             context_parts.append("=== PROJECT SYSTEM MAP ===")
             context_parts.append(str(project_context.system_map))
+            context_parts.append("")
         
-        # Add similar specifications
+        # Add similar specifications with enhanced context
         if context_data.get('similar_specs'):
-            context_parts.append("=== SIMILAR SPECIFICATIONS ===")
+            context_parts.append("=== SIMILAR SPECIFICATIONS (Reference These Patterns) ===")
             for spec in context_data['similar_specs']:
                 context_parts.append(f"[{spec.get('relevance_reason', 'Similar spec')}]")
                 context_parts.append(spec.get('content', '')[:500] + "...")
+                context_parts.append("")
         
-        # Add related documentation
+        # Add related documentation with enhanced context
         if context_data.get('related_docs'):
-            context_parts.append("=== RELATED DOCUMENTATION ===")
+            context_parts.append("=== RELATED DOCUMENTATION (Follow These Patterns) ===")
             for doc in context_data['related_docs']:
                 context_parts.append(f"[{doc.get('relevance_reason', 'Related doc')}]")
                 context_parts.append(doc.get('content', '')[:300] + "...")
+                context_parts.append("")
         
         # Add similar code for implementation context
         if context_data.get('similar_code'):
-            context_parts.append("=== SIMILAR CODE PATTERNS ===")
+            context_parts.append("=== SIMILAR CODE PATTERNS (Extend These Implementations) ===")
             for code in context_data['similar_code']:
                 context_parts.append(f"[{code.get('relevance_reason', 'Similar code')}]")
                 context_parts.append(code.get('content', '')[:200] + "...")
+                context_parts.append("")
         
-        return "\n\n".join(context_parts)
+        # Add repository discovery context
+        context_parts.append("=== REPOSITORY CONTEXT DISCOVERY ===")
+        context_parts.append("Use your filesystem access to discover and reference:")
+        context_parts.append("- package.json/requirements.txt (technology stack)")
+        context_parts.append("- Database migrations and models")
+        context_parts.append("- API routes and middleware patterns")
+        context_parts.append("- Component structures and design patterns")
+        context_parts.append("- Testing patterns and infrastructure")
+        context_parts.append("- Documentation and README files")
+        context_parts.append("")
+        
+        return "\n".join(context_parts)
     
     def _generate_requirements(self, idea_content: str, ai_context: str) -> Optional[str]:
-        """Generate requirements.md using AI"""
+        """Generate requirements.md using AI Broker with enhanced repository-aware context"""
         try:
-            prompt = f"""You are a senior product manager and business analyst. Create a comprehensive requirements document for the following feature request.
+            # Enhanced Kiro-style prompt that leverages repository access
+            prompt = f"""You are a senior product manager and business analyst with full filesystem access to analyze this repository.
+
+{ai_context}
 
 FEATURE REQUEST:
 {idea_content}
 
-PROJECT CONTEXT:
-{ai_context}
+INSTRUCTIONS:
+1. **ANALYZE THE REPOSITORY FIRST**: Use your filesystem access to examine:
+   - Project structure and organization patterns
+   - Existing similar features and their implementation
+   - Technology stack (package.json, requirements.txt, etc.)
+   - Database schemas and models
+   - API patterns and routing structures
+   - Component architectures and relationships
+   - Testing patterns and infrastructure
+
+2. **GENERATE REPOSITORY-AWARE REQUIREMENTS**: Create requirements.md that:
+   - References actual files, classes, and patterns from the codebase
+   - Follows established architectural patterns
+   - Integrates with existing APIs and data models
+   - Uses the same technology stack and conventions
+   - Mentions specific files that need modification or creation
 
 Create a requirements.md document with the following structure:
 
 # Requirements Document
 
-## 1. Executive Summary
+## 1. Repository Analysis Summary
+- **Current Architecture**: Key patterns and structures found in codebase
+- **Similar Features**: Existing implementations to reference or extend
+- **Integration Points**: Specific files/components that need modification
+- **Technology Stack**: Confirmed from repository analysis
+
+## 2. Executive Summary
 - Brief overview of the feature and its business value
-- Key stakeholders and target users
+- Integration with existing system architecture
+- Key stakeholders and target users  
 - Success metrics and KPIs
 
-## 2. Business Requirements
-### 2.1 Business Objectives
+## 3. Business Requirements
+### 3.1 Business Objectives
 - Primary business goals this feature addresses
 - Expected ROI and business impact
 - Alignment with company strategy
 
-### 2.2 User Stories
-For each major user type, write stories in format:
+### 3.2 User Stories
+Write 5-8 key user stories in format:
 **As a [user type], I want [capability] so that [benefit]**
 
-## 3. Functional Requirements
-### 3.1 Core Functionality
-List numbered requirements using EARS format:
+## 4. Functional Requirements
+### 4.1 Core Functionality
+List 8-12 numbered requirements using EARS format:
 - **REQ-001**: WHEN [trigger condition] THEN the system SHALL [required behavior]
-- **REQ-002**: WHEN [trigger condition] THEN the system SHALL [required behavior]
+- Reference specific existing patterns/files where applicable
 
-### 3.2 User Interface Requirements
-- Screen layouts and navigation flows
-- Input validation and error handling
-- Accessibility requirements (WCAG 2.1 AA compliance)
+### 4.2 API Requirements
+- Endpoint specifications following existing API patterns
+- Request/response formats matching current schemas
+- Authentication/authorization using existing middleware
 
-### 3.3 Integration Requirements
-- External system integrations
-- API requirements and data formats
-- Third-party service dependencies
+### 4.3 Database Requirements
+- Table schemas following existing migration patterns
+- Relationships with existing entities
+- Data access patterns matching current repository structure
 
-## 4. Non-Functional Requirements
-### 4.1 Performance Requirements
-- Response time requirements
-- Throughput and scalability targets
-- Resource utilization limits
+### 4.4 UI/UX Requirements
+- Component specifications following existing UI patterns
+- Integration with current design system
+- User interface workflows
 
-### 4.2 Security Requirements
-- Authentication and authorization
-- Data protection and privacy
-- Compliance requirements (GDPR, SOX, etc.)
+## 5. Non-Functional Requirements
+### 5.1 Performance & Scalability
+### 5.2 Security & Compliance  
+### 5.3 Reliability & Availability
 
-### 4.3 Reliability Requirements
-- Availability targets (uptime %)
-- Error handling and recovery
-- Backup and disaster recovery
+## 6. Implementation Context
+### 6.1 Files to Modify
+- List specific files that need changes
+- Explain integration points with existing code
 
-## 5. Acceptance Criteria
-For each requirement, define testable acceptance criteria:
-- **Given** [initial context]
-- **When** [action is performed]
-- **Then** [expected outcome]
+### 6.2 New Files to Create
+- Specify new components/modules needed
+- Follow existing naming conventions and patterns
 
-## 6. Constraints and Assumptions
-### 6.1 Technical Constraints
-- Technology stack limitations
-- Infrastructure constraints
-- Legacy system dependencies
+### 6.3 Dependencies and Integration
+- New packages/libraries needed
+- Version compatibility with existing stack
+- Integration with existing services
 
-### 6.2 Business Constraints
-- Budget limitations
-- Timeline constraints
-- Resource availability
+## 7. Acceptance Criteria (5-8 criteria)
+**Given** [context] **When** [action] **Then** [outcome]
 
-## 7. Risks and Mitigation
-- Identified risks and their impact
-- Mitigation strategies
-- Contingency plans
+## 8. Technical Constraints and Considerations
+- Architecture limitations and opportunities
+- Technology constraints and requirements
+- Integration requirements and dependencies
 
-Generate a professional, comprehensive requirements document following this exact structure."""
+Generate a comprehensive, repository-aware requirements document that demonstrates deep understanding of the existing codebase and seamlessly integrates with established patterns."""
             
+            # Use your existing AI Broker pattern
             ai_request = AIRequest(
                 request_id=f"requirements_{uuid.uuid4().hex[:8]}",
                 task_type=TaskType.DOCUMENTATION,
                 instruction=prompt,
                 priority=Priority.HIGH,
-                max_tokens=3000,
+                max_tokens=32000,
                 timeout_seconds=300.0,
-                preferred_models=['claude-opus-4'],
-                metadata={'agent': self.config.agent_id, 'type': 'requirements'}
+                preferred_models=['goose-gemini', 'claude-opus-4'],  # Try Goose first, then fallback
+                metadata={'agent': self.config.agent_id, 'type': 'requirements', 'approach': 'kiro_style'}
             )
             
-            logger.info(f"Submitting AI request with model: {ai_request.preferred_models}, timeout: 300s")
-            logger.info(f"Request ID: {ai_request.request_id}, Task type: {ai_request.task_type}")
-            logger.info(f"Prompt length: {len(prompt)} characters")
+            logger.info(f"Submitting enhanced AI request with models: {ai_request.preferred_models}")
+            logger.info(f"Request ID: {ai_request.request_id}, Enhanced context length: {len(prompt)}")
             
             import time
             start_time = time.time()
@@ -477,7 +515,7 @@ Generate a professional, comprehensive requirements document following this exac
                 logger.error(f"AI request failed - Response: {response.__dict__}")
             
             if response.success:
-                logger.info(f"Generated requirements using {response.model_used}")
+                logger.info(f"Generated repository-aware requirements using {response.model_used}")
                 return response.content
             else:
                 logger.error(f"Failed to generate requirements: {response.error_message}")
@@ -487,6 +525,323 @@ Generate a professional, comprehensive requirements document following this exac
             logger.error(f"Error generating requirements: {e}")
             return None
     
+    def _generate_requirements_DUPLICATE(self, idea_content: str, ai_context: str) -> Optional[str]:
+        """Generate requirements.md using AI Broker with enhanced repository-aware context"""
+        try:
+            # Enhanced Kiro-style prompt that leverages repository access
+            prompt = f"""You are a senior product manager and business analyst with full filesystem access to analyze this repository.
+
+{ai_context}
+
+FEATURE REQUEST:
+{idea_content}
+
+INSTRUCTIONS:
+1. **ANALYZE THE REPOSITORY FIRST**: Use your filesystem access to examine:
+   - Project structure and organization patterns
+   - Existing similar features and their implementation
+   - Technology stack (package.json, requirements.txt, etc.)
+   - Database schemas and models
+   - API patterns and routing structures
+   - Component architectures and relationships
+   - Testing patterns and infrastructure
+
+2. **GENERATE REPOSITORY-AWARE REQUIREMENTS**: Create requirements.md that:
+   - References actual files, classes, and patterns from the codebase
+   - Follows established architectural patterns
+   - Integrates with existing APIs and data models
+   - Uses the same technology stack and conventions
+   - Mentions specific files that need modification or creation
+
+Create a requirements.md document with the following structure:
+
+# Requirements Document
+
+## 1. Repository Analysis Summary
+- **Current Architecture**: Key patterns and structures found in codebase
+- **Similar Features**: Existing implementations to reference or extend
+- **Integration Points**: Specific files/components that need modification
+- **Technology Stack**: Confirmed from repository analysis
+
+## 2. Executive Summary
+- Brief overview of the feature and its business value
+- Integration with existing system architecture
+- Key stakeholders and target users  
+- Success metrics and KPIs
+
+## 3. Business Requirements
+### 3.1 Business Objectives
+- Primary business goals this feature addresses
+- Expected ROI and business impact
+- Alignment with company strategy
+
+### 3.2 User Stories
+Write 5-8 key user stories in format:
+**As a [user type], I want [capability] so that [benefit]**
+
+## 4. Functional Requirements
+### 4.1 Core Functionality
+List 8-12 numbered requirements using EARS format:
+- **REQ-001**: WHEN [trigger condition] THEN the system SHALL [required behavior]
+- Reference specific existing patterns/files where applicable
+
+### 4.2 API Requirements
+- Endpoint specifications following existing API patterns
+- Request/response formats matching current schemas
+- Authentication/authorization using existing middleware
+
+### 4.3 Database Requirements
+- Table schemas following existing migration patterns
+- Relationships with existing entities
+- Data access patterns matching current repository structure
+
+### 4.4 User Interface Requirements
+- Component specifications following existing UI patterns
+- Integration with current design system
+- User workflow specifications
+
+## 5. Non-Functional Requirements
+### 5.1 Performance & Scalability
+### 5.2 Security & Compliance
+### 5.3 Reliability & Availability
+
+## 6. Implementation Context
+### 6.1 Files to Modify
+- List specific files that need changes
+- Explain integration points with existing code
+
+### 6.2 New Files to Create
+- Specify new components/modules needed
+- Follow existing naming conventions and patterns
+
+### 6.3 Dependencies and Integration
+- New packages/libraries needed
+- Version compatibility with existing stack
+
+## 7. Acceptance Criteria
+Define 5-8 key acceptance criteria using Given/When/Then format:
+- **Given** [initial context] **When** [action is performed] **Then** [expected outcome]
+
+## 8. Technical Constraints and Considerations
+- Architecture limitations and opportunities
+- Technology constraints and requirements
+- Integration requirements and dependencies
+
+Generate a comprehensive, repository-aware requirements document that demonstrates deep understanding of the existing codebase and follows established patterns."""
+            
+            # Use your existing AI Broker pattern
+            ai_request = AIRequest(
+                request_id=f"requirements_{uuid.uuid4().hex[:8]}",
+                task_type=TaskType.DOCUMENTATION,
+                instruction=prompt,
+                priority=Priority.HIGH,
+                max_tokens=32000,
+                timeout_seconds=300.0,
+                preferred_models=['goose-gemini', 'claude-opus-4'],  # Try Goose first, then fallback
+                metadata={'agent': self.config.agent_id, 'type': 'requirements', 'approach': 'kiro_style'}
+            )
+            
+            logger.info(f"Submitting enhanced AI request with models: {ai_request.preferred_models}")
+            logger.info(f"Request ID: {ai_request.request_id}, Enhanced context length: {len(prompt)}")
+            
+            import time
+            start_time = time.time()
+            response = self.ai_broker.submit_request_sync(ai_request, timeout=300.0)
+            elapsed_time = time.time() - start_time
+            
+            logger.info(f"AI response received after {elapsed_time:.2f}s - Success: {response.success}")
+            logger.info(f"Response model: {getattr(response, 'model_used', 'unknown')}")
+            logger.info(f"Response content length: {len(getattr(response, 'content', ''))}")
+            
+            if response.success:
+                logger.info(f"Generated repository-aware requirements using {response.model_used}")
+                return response.content
+            else:
+                logger.error(f"Failed to generate requirements: {response.error_message}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error generating requirements: {e}")
+            return None
+    
+    def _generate_design(self, idea_content: str, requirements_md: str, ai_context: str) -> Optional[str]:
+        """Generate design.md using Kiro-style approach"""
+        try:
+            from ..services.kiro_style_spec_generator import get_kiro_spec_generator
+            kiro_generator = get_kiro_spec_generator()
+            
+            # Combine idea content with requirements for design context
+            design_context = f"REQUIREMENTS:\n{requirements_md}\n\nORIGINAL IDEA:\n{idea_content}"
+            
+            project_id = getattr(self, 'current_project_id', 'unknown')
+            design_content = kiro_generator.generate_specification(
+                idea_content=design_context,
+                project_id=project_id,
+                artifact_type='design'
+            )
+            
+            if design_content:
+                logger.info("Successfully generated design using Kiro-style approach")
+                return design_content
+            else:
+                logger.error("Failed to generate design with Kiro-style approach")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error generating design: {e}")
+            return None
+    
+    def _generate_tasks(self, idea_content: str, requirements_md: str, 
+                       design_md: str, ai_context: str) -> Optional[str]:
+        """Generate tasks.md using Kiro-style approach"""
+        try:
+            from ..services.kiro_style_spec_generator import get_kiro_spec_generator
+            kiro_generator = get_kiro_spec_generator()
+            
+            # Combine all context for tasks generation
+            tasks_context = f"""REQUIREMENTS:
+{requirements_md}
+
+DESIGN:
+{design_md}
+
+ORIGINAL IDEA:
+{idea_content}"""
+            
+            project_id = getattr(self, 'current_project_id', 'unknown')
+            tasks_content = kiro_generator.generate_specification(
+                idea_content=tasks_context,
+                project_id=project_id,
+                artifact_type='tasks'
+            )
+            
+            if tasks_content:
+                logger.info("Successfully generated tasks using Kiro-style approach")
+                return tasks_content
+            else:
+                logger.error("Failed to generate tasks with Kiro-style approach")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error generating tasks: {e}")
+            return None
+    
+    def process_event(self, event: BaseEvent) -> EventProcessingResult:
+        """Process idea.promoted events and generate specifications using Kiro approach"""
+        start_time = datetime.utcnow()
+        
+        try:
+            if not isinstance(event, IdeaPromotedEvent):
+                return EventProcessingResult(
+                    success=False,
+                    agent_id=self.config.agent_id,
+                    event_id=event.metadata.event_id,
+                    event_type=event.get_event_type(),
+                    processing_time_seconds=0.0,
+                    error_message="Event is not an IdeaPromotedEvent"
+                )
+            
+            logger.info(f"Processing idea promotion for idea {event.aggregate_id} in project {event.project_id}")
+            
+            # Store project ID for use in generation methods
+            self.current_project_id = str(event.project_id)
+            
+            # Get project context
+            project_context = self.get_project_context(event.project_id)
+            
+            # Get the original idea content from the event or retrieve it
+            idea_content = self._get_idea_content(event)
+            if not idea_content:
+                return EventProcessingResult(
+                    success=False,
+                    agent_id=self.config.agent_id,
+                    event_id=event.metadata.event_id,
+                    event_type=event.get_event_type(),
+                    processing_time_seconds=(datetime.utcnow() - start_time).total_seconds(),
+                    error_message="Could not retrieve idea content"
+                )
+            
+            # Retrieve context using pgvector
+            context_data = self._retrieve_context(idea_content, event.project_id, project_context)
+            
+            # Generate specifications using Kiro-style approach
+            specifications = self._generate_specifications(
+                idea_content=idea_content,
+                project_context=project_context,
+                context_data=context_data,
+                promoted_by=event.promoted_by
+            )
+            
+            if not specifications:
+                return EventProcessingResult(
+                    success=False,
+                    agent_id=self.config.agent_id,
+                    event_id=event.metadata.event_id,
+                    event_type=event.get_event_type(),
+                    processing_time_seconds=(datetime.utcnow() - start_time).total_seconds(),
+                    error_message="Failed to generate specifications"
+                )
+            
+            # Create spec ID based on the idea ID
+            spec_id = f"spec_{event.aggregate_id}"
+            
+            # Store specifications
+            self._store_specifications(spec_id, event.project_id, specifications)
+            
+            # Create spec.frozen event
+            spec_frozen_event = SpecFrozenEvent(
+                spec_id=spec_id,
+                project_id=event.project_id,
+                frozen_by=f"define_agent:{event.promoted_by}"
+            )
+            
+            # Add metadata about the generation process
+            spec_frozen_event.original_idea_id = event.aggregate_id
+            spec_frozen_event.promoted_by = event.promoted_by
+            spec_frozen_event.ai_generated = True
+            spec_frozen_event.human_reviewed = False
+            spec_frozen_event.context_sources = context_data.get('sources', [])
+            spec_frozen_event.generation_agent = self.config.agent_id
+            spec_frozen_event.generation_method = 'kiro_style'  # New metadata
+            
+            processing_time = (datetime.utcnow() - start_time).total_seconds()
+            
+            logger.info(f"Generated specifications for idea {event.aggregate_id} as spec {spec_id} using Kiro-style approach")
+            
+            return EventProcessingResult(
+                success=True,
+                agent_id=self.config.agent_id,
+                event_id=event.metadata.event_id,
+                event_type=event.get_event_type(),
+                processing_time_seconds=processing_time,
+                result_data={
+                    'spec_id': spec_id,
+                    'idea_id': event.aggregate_id,
+                    'specifications_generated': list(specifications.keys()),
+                    'context_sources_count': len(context_data.get('sources', [])),
+                    'ai_generated': True,
+                    'generation_method': 'kiro_style'
+                },
+                generated_events=[spec_frozen_event]
+            )
+            
+        except Exception as e:
+            processing_time = (datetime.utcnow() - start_time).total_seconds()
+            logger.error(f"Failed to process idea promotion: {e}")
+            
+            return EventProcessingResult(
+                success=False,
+                agent_id=self.config.agent_id,
+                event_id=event.metadata.event_id,
+                event_type=event.get_event_type(),
+                processing_time_seconds=processing_time,
+                error_message=str(e)
+            )
+    
+    # Remove the old implementation and replace with this comment
+    # The old _generate_requirements method has been replaced above 
+
+
     def _generate_design(self, idea_content: str, requirements_md: str, ai_context: str) -> Optional[str]:
         """Generate design.md using AI"""
         try:
@@ -666,7 +1021,7 @@ Generate a professional, comprehensive technical design document following this 
                 task_type=TaskType.ARCHITECTURE,
                 instruction=prompt,
                 priority=Priority.HIGH,
-                max_tokens=4000,
+                max_tokens=8000,
                 timeout_seconds=300.0,
                 preferred_models=['claude-opus-4'],
                 metadata={'agent': self.config.agent_id, 'type': 'design'}
@@ -854,7 +1209,7 @@ Generate a professional, comprehensive implementation plan following this exact 
                 task_type=TaskType.PLANNING,
                 instruction=prompt,
                 priority=Priority.HIGH,
-                max_tokens=3000,
+                max_tokens=8000,
                 timeout_seconds=300.0,
                 preferred_models=['claude-opus-4'],
                 metadata={'agent': self.config.agent_id, 'type': 'tasks'}
@@ -888,20 +1243,39 @@ Generate a professional, comprehensive implementation plan following this exact 
             stored_artifacts = []
             
             for spec_type, content in specifications.items():
-                if spec_type in artifact_type_mapping:
+                if spec_type in artifact_type_mapping and content is not None:
                     artifact_type = artifact_type_mapping[spec_type]
                     
                     # Create specification artifact
-                    artifact = SpecificationArtifact.create_artifact(
-                        spec_id=spec_id,
-                        project_id=project_id,  # Keep as string, don't convert to int
-                        artifact_type=artifact_type,
-                        content=content,
-                        created_by=self.config.agent_id,
-                        ai_generated=True,
-                        ai_model_used="claude-opus-4",  # This would come from the AI response
-                        context_sources=[]  # This would come from the context data
-                    )
+                    logger.info(f"Storing {spec_type} artifact with {len(content)} characters")
+                    logger.info(f"Content preview: {content[:100]}...")
+                    logger.info(f"Content ending: ...{content[-100:]}")
+                    
+                    # Check if artifact already exists and update it, or create new one
+                    artifact_id = f"{spec_id}_{artifact_type.value}"
+                    existing_artifact = SpecificationArtifact.query.get(artifact_id)
+                    
+                    if existing_artifact:
+                        # Update existing artifact
+                        logger.info(f"Updating existing {spec_type} artifact")
+                        existing_artifact.content = content
+                        existing_artifact.updated_by = self.config.agent_id
+                        existing_artifact.updated_at = datetime.utcnow()
+                        existing_artifact.ai_model_used = "claude-opus-4"
+                        artifact = existing_artifact
+                    else:
+                        # Create new artifact
+                        logger.info(f"Creating new {spec_type} artifact")
+                        artifact = SpecificationArtifact.create_artifact(
+                            spec_id=spec_id,
+                            project_id=project_id,  # Keep as string, don't convert to int
+                            artifact_type=artifact_type,
+                            content=content,
+                            created_by=self.config.agent_id,
+                            ai_generated=True,
+                            ai_model_used="claude-opus-4",  # This would come from the AI response
+                            context_sources=[]  # This would come from the context data
+                        )
                     
                     stored_artifacts.append(artifact)
                     logger.debug(f"Created {spec_type} artifact: {len(content)} characters")

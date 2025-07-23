@@ -37,11 +37,12 @@ def goose_execute():
                 'error': 'No JSON data provided'
             }), 400
         
-        prompt = data.get('prompt', data.get('instruction', ''))
-        if not prompt:
+        instruction = data.get('instruction', data.get('prompt', ''))
+        role = data.get('role', 'po')
+        if not instruction:
             return jsonify({
                 'success': False,
-                'error': 'No prompt or instruction provided'
+                'error': 'No instruction or prompt provided'
             }), 400
 
         # Get AI service
@@ -54,13 +55,15 @@ def goose_execute():
 
         # Execute with Goose/Gemini - return in PO interface format
         try:
-            response = ai_service.execute_goose_task(prompt)
+            response = ai_service.execute_goose_task(instruction, role=role)
             # Check if response indicates failure
             if isinstance(response, dict) and response.get('success') == False:
                 raise Exception(f"Goose failed: {response.get('error', 'Unknown error')}")
             
             # Extract actual response content from the response dict
-            if isinstance(response, dict) and 'response' in response:
+            if isinstance(response, dict) and 'output' in response:
+                response_content = response['output']
+            elif isinstance(response, dict) and 'response' in response:
                 response_content = response['response']
             else:
                 response_content = str(response)
@@ -88,7 +91,7 @@ def goose_execute():
                     "messages": [
                         {
                             "role": "user", 
-                            "content": prompt
+                            "content": instruction
                         }
                     ],
                     "max_tokens": 4000,
@@ -683,35 +686,47 @@ def test_goose_only():
         }), 500
 
 
-# Legacy endpoint compatibility (from old backend)
-@ai_bp.route('/api/goose/execute', methods=['POST'])
-def legacy_goose_execute():
-    """Legacy endpoint for backward compatibility"""
-    return execute_goose_task()
+# Legacy endpoint compatibility removed - using main goose_execute function
 
 
 @ai_bp.route('/api/goose/status', methods=['GET'])
-def legacy_goose_status():
-    """Legacy Goose status endpoint for backward compatibility"""
+def goose_status():
+    """Get Goose AI status for frontend"""
     try:
         ai_service = get_ai_service()
+        if not ai_service:
+            return jsonify({
+                'success': False,
+                'available': False,
+                'error': 'AI service not available',
+                'status': 'error'
+            }), 500
+        
         status = ai_service.get_service_status()
-        goose_status = status['goose']
+        goose_status = status.get('goose', {})
         
         return jsonify({
-            'goose_available': goose_status['available'],
-            'goose_script': goose_status['script_path'],
-            'project_path': goose_status['project_path'],
-            'ai_model': goose_status['model'],
-            'provider': goose_status['provider'],
-            'roles_supported': goose_status['roles_supported']
+            'success': True,
+            'available': goose_status.get('available', False),
+            'script_path': goose_status.get('script_path', '/Users/chetansingh/bin/goose'),
+            'project_path': goose_status.get('project_path', ''),
+            'model': goose_status.get('model', 'claude-code'),
+            'provider': goose_status.get('provider', 'claude'),
+            'roles_supported': goose_status.get('roles_supported', ['po', 'business']),
+            'status': 'ready' if goose_status.get('available') else 'unavailable',
+            'goose_available': goose_status.get('available', False),  # Legacy compatibility
+            'goose_script': goose_status.get('script_path', '/Users/chetansingh/bin/goose'),  # Legacy compatibility
+            'ai_model': goose_status.get('model', 'claude-code')  # Legacy compatibility
         })
         
     except Exception as e:
-        logger.error(f"Error getting legacy Goose status: {e}")
+        logger.error(f"Error getting Goose status: {e}")
         return jsonify({
-            'goose_available': False,
-            'error': str(e)
+            'success': False,
+            'available': False,
+            'error': str(e),
+            'status': 'error',
+            'goose_available': False  # Legacy compatibility
         }), 500
 
 
@@ -729,7 +744,7 @@ def legacy_model_garden_execute():
 
 @ai_bp.route('/api/ai/assistant', methods=['POST'])
 def ai_assistant():
-    """Context-aware AI assistant for specification help"""
+    """Kiro-style context-aware AI assistant for specification help"""
     try:
         data = request.get_json()
         if not data:
@@ -749,31 +764,53 @@ def ai_assistant():
         
         # Extract context information
         spec_id = context.get('spec_id')
-        artifact_type = context.get('artifact_type')
+        artifact_type = context.get('artifact_type', 'requirements')
         current_content = context.get('current_content', '')
         
-        # Get AI service and generate contextual response
+        # Use Goose directly for assistant responses (Model Garden is down)
         ai_service = get_ai_service()
         
-        # Build context-aware prompt
-        system_prompt = f"""You are an AI assistant helping with software specification writing. 
-        You are currently helping with the {artifact_type} section of a specification.
+        # Use the same enhanced Kiro-style prompt from define_agent.py
+        assistant_query = f"""You are a senior product manager and business analyst with full filesystem access to analyze this repository.
+
+CURRENT {artifact_type.upper()} CONTENT:
+{current_content}
+
+USER REQUEST:
+{query}
+
+INSTRUCTIONS:
+1. **ANALYZE THE REPOSITORY FIRST**: Use your filesystem access to examine:
+   - Project structure and organization patterns
+   - Existing similar features and their implementation
+   - Technology stack (package.json, requirements.txt, etc.)
+   - Database schemas and models
+   - API patterns and routing structures
+
+2. **PROVIDE REPOSITORY-AWARE ADVICE**: Give specific suggestions that:
+   - Reference actual files, classes, and patterns from the codebase
+   - Follow established architectural patterns
+   - Integrate with existing APIs and data models
+   - Use the same technology stack and conventions
+
+Provide actionable advice for improving this {artifact_type} specification based on your repository analysis."""
         
-        Current content:
-        {current_content}
-        
-        Please provide helpful, specific advice for improving this {artifact_type} specification.
-        Focus on best practices, completeness, and clarity."""
-        
-        # Use Model Garden for better responses
-        result = ai_service.execute_model_garden_task(
-            instruction=query,
-            product_context={'current_content': current_content, 'artifact_type': artifact_type},
-            model='claude-opus-4',
-            role='po'
+        # Use Goose directly without extra context to avoid timeouts
+        result = ai_service.goose.execute_task(
+            instruction=assistant_query,
+            business_context={
+                'domain': 'Software Development Lifecycle Platform',
+                'useCase': f'Improve {artifact_type} specification'
+            },
+            github_repo={
+                'connected': True,
+                'name': 'Software Factory',
+                'branch': 'main',
+                'private': True
+            }
         )
         
-        if result['success']:
+        if result.get('success') and result.get('output'):
             return jsonify({
                 'success': True,
                 'data': {
@@ -783,7 +820,7 @@ def ai_assistant():
         else:
             return jsonify({
                 'success': False,
-                'error': result.get('error', 'AI assistant failed to generate response')
+                'error': f"AI assistant failed: {result.get('error', 'Unknown error')}"
             }), 500
         
     except Exception as e:

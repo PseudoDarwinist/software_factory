@@ -38,7 +38,7 @@ class MissionControlApi {
     this.baseURL = baseURL
     this.client = axios.create({
       baseURL,
-      timeout: 30000, // 30s for Define stage operations that trigger AI processing
+      timeout: 120000, // 2 minutes for AI-powered specification generation
       headers: {
         'Content-Type': 'application/json',
       },

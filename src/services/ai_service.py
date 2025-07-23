@@ -25,11 +25,19 @@ class GooseIntegration:
     
     def __init__(self, project_path: str = None):
         self.project_path = project_path or os.getcwd()
-        self.goose_script = os.environ.get('GOOSE_SCRIPT_PATH', './goose-gemini')
+        # Use the actual Goose binary path from installation
+        self.goose_script = os.environ.get('GOOSE_SCRIPT_PATH', '/Users/chetansingh/bin/goose')
+        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__)
         
     def execute_task(self, instruction: str, business_context: Dict = None, github_repo: Dict = None) -> Dict[str, Any]:
         """Execute goose task with instruction and optional business context"""
         try:
+            # Check if Goose is available
+            if not self.is_available():
+                logger.warning("Goose binary not found, falling back to direct API call")
+                return self._fallback_to_direct_api(instruction, business_context)
+            
             # Enhance instruction with business context if provided
             enhanced_instruction = self._enhance_instruction(instruction, business_context, github_repo)
             
@@ -38,49 +46,70 @@ class GooseIntegration:
                 f.write(enhanced_instruction)
                 instruction_file = f.name
             
-            # Run goose with enhanced instruction
-            result = subprocess.run(
-                [self.goose_script, 'run', '-i', instruction_file],
-                capture_output=True,
-                text=True,
-                cwd=self.project_path,
-                timeout=120  # 2 minute timeout
-            )
-            
-            # Cleanup
-            os.unlink(instruction_file)
-            
-            # Clean the output by removing Goose logging and technical info
-            cleaned_output = self._clean_goose_output(result.stdout)
-            
-            return {
-                'success': result.returncode == 0,
-                'output': cleaned_output,
-                'error': result.stderr,
-                'returncode': result.returncode,
-                'enhanced_instruction': enhanced_instruction,
-                'provider': 'goose',
-                'model': 'gemini-2.5-flash'
-            }
-            
-        except subprocess.TimeoutExpired:
-            logger.error("Goose task timed out after 2 minutes")
-            return {
-                'success': False,
-                'output': '',
-                'error': 'Task timed out after 2 minutes',
-                'returncode': -1,
-                'provider': 'goose'
-            }
+            try:
+                logger.info(f"Executing Goose with command: {self.goose_script} run -i - --no-session --quiet")
+                logger.info(f"Working directory: {self.project_path}")
+                logger.info(f"Instruction length: {len(enhanced_instruction)} characters")
+                
+                # Run goose with enhanced instruction using run command for non-interactive execution
+                result = subprocess.run(
+                    [self.goose_script, 'run', '-i', '-', '--no-session', '--quiet'],
+                    input=enhanced_instruction,
+                    capture_output=True,
+                    text=True,
+                    cwd=self.project_path,
+                    timeout=30  # Reduced to 30 seconds timeout for faster feedback
+                )
+                
+                logger.info(f"Goose execution completed with return code: {result.returncode}")
+                logger.info(f"Stdout length: {len(result.stdout)} characters")
+                logger.info(f"Stderr length: {len(result.stderr)} characters")
+                if result.stderr:
+                    logger.warning(f"Goose stderr: {result.stderr[:500]}...")
+                if result.stdout:
+                    logger.info(f"Goose stdout preview: {result.stdout[:200]}...")
+                
+                # Cleanup
+                os.unlink(instruction_file)
+                
+                # Clean the output by removing Goose logging and technical info
+                cleaned_output = self._clean_goose_output(result.stdout)
+                
+                # Debug: Log both raw and cleaned output
+                logger.info(f"Raw output length: {len(result.stdout)}")
+                logger.info(f"Cleaned output length: {len(cleaned_output)}")
+                logger.info(f"Cleaned output preview: {cleaned_output[:300]}...")
+                
+                return {
+                    'success': result.returncode == 0,
+                    'output': cleaned_output,
+                    'error': result.stderr,
+                    'returncode': result.returncode,
+                    'enhanced_instruction': enhanced_instruction,
+                    'provider': 'goose',
+                    'model': 'claude-code'
+                }
+                
+            except subprocess.TimeoutExpired:
+                logger.error("Goose task timed out after 2 minutes")
+                # Cleanup
+                os.unlink(instruction_file)
+                return self._fallback_to_direct_api(instruction, business_context)
+                
         except Exception as e:
             logger.error(f"Goose execution failed: {e}")
-            return {
-                'success': False,
-                'output': '',
-                'error': str(e),
-                'returncode': -1,
-                'provider': 'goose'
-            }
+            return self._fallback_to_direct_api(instruction, business_context)
+    
+    def _fallback_to_direct_api(self, instruction: str, business_context: Dict = None) -> Dict[str, Any]:
+        """Fallback disabled - Model Garden is down, return error instead"""
+        logger.error("Goose failed and Model Garden fallback is disabled (API is down)")
+        return {
+            'success': False,
+            'output': '',
+            'error': 'Goose execution failed and Model Garden fallback is disabled (API down)',
+            'returncode': -1,
+            'provider': 'goose-fallback-disabled'
+        }
     
     def _enhance_instruction(self, instruction: str, business_context: Dict = None, github_repo: Dict = None) -> str:
         """Enhance instruction with context and repository information"""
@@ -176,7 +205,21 @@ When working with repositories, always examine the actual files to understand th
     
     def is_available(self) -> bool:
         """Check if Goose is available"""
-        return os.path.exists(self.goose_script)
+        try:
+            # Check if the binary exists and is executable
+            if not os.path.exists(self.goose_script):
+                return False
+            
+            # Try to run goose --help to verify it's working
+            result = subprocess.run(
+                [self.goose_script, '--help'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
 
 
 class ModelGardenIntegration:
