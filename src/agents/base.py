@@ -13,9 +13,17 @@ from enum import Enum
 from typing import Dict, List, Optional, Any, Set, Callable
 from concurrent.futures import ThreadPoolExecutor, Future
 
-from ..events.base import BaseEvent, EventFilter
-from ..events.event_router import EventBus, SubscriptionType
-from ..services.metrics_service import get_metrics_service
+try:
+    from ..events.base import BaseEvent, EventFilter
+    from ..events.event_router import EventBus, SubscriptionType
+    from ..services.metrics_service import get_metrics_service
+except ImportError:
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from events.base import BaseEvent, EventFilter
+    from events.event_router import EventBus, SubscriptionType
+    from services.metrics_service import get_metrics_service
 
 
 logger = logging.getLogger(__name__)
@@ -375,32 +383,35 @@ class BaseAgent(ABC):
         """Retrieve project context for AI processing."""
         try:
             # Import here to avoid circular imports
-            from ..models import Project, SystemMap
-            from ..models.base import db
-            
-            # Convert project_id to int if it's a string representation of an integer
             try:
-                project_id_int = int(project_id)
-                project = Project.query.get(project_id_int)
-            except (ValueError, TypeError):
-                # If conversion fails, try as string (for future string-based IDs)
-                project = Project.query.filter_by(id=project_id).first()
+                from ..models.mission_control_project import MissionControlProject
+                from ..models import SystemMap
+                from ..models.base import db
+            except ImportError:
+                import sys
+                import os
+                sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+                from models.mission_control_project import MissionControlProject
+                from models import SystemMap
+                from models.base import db
+            
+            # Use MissionControlProject which has string IDs
+            project = MissionControlProject.query.filter_by(id=project_id).first()
             
             if not project:
                 logger.warning(f"Project {project_id} not found")
                 return ProjectContext(project_id=project_id)
             
-            # Get system map using the actual project ID
-            actual_project_id = project.id
-            system_map = SystemMap.query.filter_by(project_id=actual_project_id).first()
+            # Get system map - for now, skip system map lookup since Mission Control projects
+            # use string IDs but system_map table expects integer IDs
+            # TODO: Update system_map table to support string project IDs or create mapping
             system_map_data = None
-            if system_map:
-                system_map_data = system_map.content
+            actual_project_id = project.id
             
             return ProjectContext(
                 project_id=str(actual_project_id),
                 system_map=system_map_data,
-                git_repository=project.repository_url,
+                git_repository=project.repo_url,
                 external_integrations={}
             )
             

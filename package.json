@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@types/node": "^24.0.15",
+    "playwright": "^1.54.1"
+  }
+}

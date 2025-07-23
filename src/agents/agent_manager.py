@@ -10,12 +10,17 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from collections import defaultdict
 
-from .base import BaseAgent, AgentStatus
-from .define_agent import DefineAgent
-from .planner_agent import PlannerAgent
-from .build_agent import BuildAgent
-from ..events.base import BaseEvent
-from ..events.event_router import EventBus
+try:
+    from .base import BaseAgent, AgentStatus
+    from ..events.base import BaseEvent
+    from ..events.event_router import EventBus
+except ImportError:
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from agents.base import BaseAgent, AgentStatus
+    from events.base import BaseEvent
+    from events.event_router import EventBus
 
 
 logger = logging.getLogger(__name__)
@@ -421,18 +426,25 @@ class AgentManager:
         logger.warning("Loop detection disabled - use with caution!")
     
     @classmethod
-    def create_default_setup(cls, event_bus: EventBus, ai_service=None) -> 'AgentManager':
+    def create_default_setup(cls, event_bus: EventBus, ai_broker=None) -> 'AgentManager':
         """Create agent manager with default agents."""
         manager = cls(event_bus)
         
-        # Create and register default agents
-        define_agent = DefineAgent(event_bus, ai_service)
-        planner_agent = PlannerAgent(event_bus)
-        build_agent = BuildAgent(event_bus)
+        # Import agents here to avoid circular imports
+        try:
+            from .define_agent import create_define_agent
+            from .capture_agent import create_capture_agent
+        except ImportError:
+            from define_agent import create_define_agent
+            from capture_agent import create_capture_agent
         
-        manager.register_agent(define_agent)
-        manager.register_agent(planner_agent)
-        manager.register_agent(build_agent)
+        # Create and register available agents
+        if ai_broker:
+            define_agent = create_define_agent(event_bus, ai_broker)
+            manager.register_agent(define_agent)
+            
+            capture_agent = create_capture_agent(event_bus, ai_broker)
+            manager.register_agent(capture_agent)
         
-        logger.info("Created agent manager with default agents")
+        logger.info("Created agent manager with available agents")
         return manager

@@ -23,13 +23,13 @@ export default defineConfig({
     port: parseInt(process.env.SF_FRONTEND_PORT || '5175', 10),
     proxy: {
       '/api': {
-        // Allow overriding backend port via env variable (default 5001)
-        target: `http://localhost:${process.env.SF_API_PORT || '5001'}`,
+        // Proxy to Flask server on port 8000
+        target: `http://localhost:${process.env.SF_API_PORT || '8000'}`,
         changeOrigin: true,
       },
       '/socket.io': {
-        // Proxy Socket.IO requests to backend
-        target: `http://localhost:${process.env.SF_API_PORT || '5001'}`,
+        // Proxy Socket.IO requests to Flask server
+        target: `http://localhost:${process.env.SF_API_PORT || '8000'}`,
         changeOrigin: true,
         ws: true, // Enable WebSocket proxying
       },

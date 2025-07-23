@@ -18,6 +18,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { QueryClient, QueryClientProvider } from 'react-query'
 import { ReactQueryDevtools } from 'react-query/devtools'
 import { MissionControl } from '@/pages/MissionControl/MissionControl'
+import { Settings } from '@/pages/Settings/Settings'
 import './App.css'
 
 // Create React Query client
@@ -42,6 +43,8 @@ function App() {
             <Route path="/" element={<MissionControl />} />
             {/* Optional alias */}
             <Route path="/mission-control" element={<MissionControl />} />
+            {/* Settings page */}
+            <Route path="/settings" element={<Settings />} />
             {/* Fallback 404 -> root */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

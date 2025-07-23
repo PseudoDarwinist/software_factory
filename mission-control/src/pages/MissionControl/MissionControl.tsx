@@ -54,19 +54,19 @@ export const MissionControl: React.FC = () => {
     }
   }, [])
 
-  // Auto-refresh data periodically
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (!loading.projects) {
-        loadProjects()
-      }
-      if (!loading.feed) {
-        loadFeedItems()
-      }
-    }, 30000) // Refresh every 30 seconds
+  // Auto-refresh data periodically - DISABLED to reduce API load
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     if (!loading.projects) {
+  //       loadProjects()
+  //     }
+  //     if (!loading.feed) {
+  //       loadFeedItems()
+  //     }
+  //   }, 30000) // Refresh every 30 seconds
 
-    return () => clearInterval(interval)
-  }, [loading.projects, loading.feed])
+  //   return () => clearInterval(interval)
+  // }, [loading.projects, loading.feed])
 
   // Load conversation when feed item is selected
   useEffect(() => {
@@ -133,7 +133,7 @@ export const MissionControl: React.FC = () => {
   // Setup polling updates
   const setupPollingUpdates = () => {
     try {
-      pollingCleanupRef.current = missionControlApi.startPolling(handlePollingEvent, 2000) // Poll every 2 seconds
+      pollingCleanupRef.current = missionControlApi.startPolling(handlePollingEvent, 30000) // Poll every 30 seconds (reduced from 10)
     } catch (error) {
       console.error('Failed to setup polling updates:', error)
     }
@@ -272,7 +272,9 @@ export const MissionControl: React.FC = () => {
 
       // Attempt the server mutation. If it fails, the error toast will inform the
       // user and the optimistic UI can be rolled back manually if desired.
+      console.log('[MissionControl] Calling moveItemToStage API...', { itemId, toStage, fromStage, projectId })
       const result = await missionControlApi.moveItemToStage(itemId, toStage, fromStage, projectId)
+      console.log('[MissionControl] moveItemToStage API success:', result)
 
       // If the backend returns a brief in response, you might choose to do
       // something with it here (e.g., store it in state). This is left as a TODO

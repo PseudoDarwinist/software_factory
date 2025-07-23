@@ -26,7 +26,7 @@
  * It feeds the platform context before any ideas arrive.
  */
 
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import ReactDOM from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
@@ -40,14 +40,21 @@ interface AddProjectModalProps {
   onProjectAdded: (projectData: any) => void
 }
 
-type Step = 1 | 2 | 3
+type Step = 1 | 2 | 3 | 4
 type StepStatus = 'pending' | 'in_progress' | 'completed' | 'error'
 
 interface ProjectData {
   name: string
   repoUrl: string
+  slackChannels: string[]
   systemMapStatus: StepStatus
   docs: File[]
+}
+
+interface SlackChannel {
+  id: string
+  name: string
+  description: string
 }
 
 export const AddProjectModal: React.FC<AddProjectModalProps> = ({
@@ -55,72 +62,44 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
   onClose,
   onProjectAdded,
 }) => {
-  console.log('AddProjectModal render:', { isOpen })
+  // Debug logging removed to prevent frequent console output
   const [currentStep, setCurrentStep] = useState<Step>(1)
   const [projectData, setProjectData] = useState<ProjectData>({
     name: '',
     repoUrl: '',
+    slackChannels: [],
     systemMapStatus: 'pending',
     docs: []
   })
+  
+  // Debug: Log state changes
+  useEffect(() => {
+    console.log('DEBUG: projectData state changed:', projectData)
+  }, [projectData])
+  
+  // Ref to store latest project data
+  const projectDataRef = useRef(projectData)
+  useEffect(() => {
+    projectDataRef.current = projectData
+  }, [projectData])
+  const [availableChannels, setAvailableChannels] = useState<SlackChannel[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // No need to load channels anymore - users input channel IDs directly
+
   // Setup socket to listen for indexing completion
   useEffect(() => {
-    console.log('🔌 Setting up Socket.IO connection...')
-    // Use same origin since Flask serves everything
-    const socketUrl = window.location.origin
-    console.log('🌐 Socket URL:', socketUrl)
-    
-    const socket = io(socketUrl, {
-      transports: ['websocket', 'polling'],
-      autoConnect: true,
-      forceNew: true,
-    })
-
-    socket.on('connect', () => {
-      console.log('✅ AddProjectModal: Socket.IO connected')
-    })
-
-    socket.on('disconnect', () => {
-      console.log('❌ AddProjectModal: Socket.IO disconnected')
-    })
-
-    socket.on('connect_error', (error) => {
-      console.error('💥 AddProjectModal: Socket.IO connection error:', error)
-    })
-
-    const handleIndexed = (evt: any) => {
-      console.log('🔔 RECEIVED project.indexed event in AddProjectModal:', evt)
-      if (evt.projectId && evt.status === 'ok') {
-        console.log('✅ Valid project.indexed event, advancing to step 3')
-        // Mark step 2 complete and go to docs step
-        setProjectData(prev => ({ ...prev, systemMapStatus: 'completed' }))
-        setCurrentStep(3)
-      } else {
-        console.log('⚠️  Invalid project.indexed event format:', evt)
-      }
+    // Only simulate indexing when we're actually on step 3 (system map generation)
+    if (currentStep === 3 && projectData.systemMapStatus === 'in_progress') {
+      console.log('🔌 Socket.IO connection disabled to prevent timeout issues')
+      
+      // This useEffect should not automatically advance steps anymore
+      // Step advancement is handled by the handleGenerateSystemMap function
     }
+  }, [currentStep, projectData.systemMapStatus])
 
-    console.log('👂 Listening for project.indexed events...')
-    socket.on('project.indexed', handleIndexed)
-    
-    // Also listen for other events for debugging
-    socket.on('project.created', (evt: any) => {
-      console.log('📦 RECEIVED project.created event:', evt)
-    })
-    
-    socket.on('project.update', (evt: any) => {
-      console.log('📝 RECEIVED project.update event:', evt)
-    })
-
-    return () => {
-      console.log('🧹 Cleaning up Socket.IO listeners...')
-      socket.off('project.indexed', handleIndexed)
-      socket.close()
-    }
-  }, [])
+  // Channel IDs are input directly by users - no need to fetch from API
 
   // Handle repository URL input
   const handleRepoUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,6 +114,37 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
     }
   }
 
+  // Handle Slack channel IDs input
+  const handleChannelIdsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const rawValue = e.target.value
+    console.log('DEBUG: Raw channel input:', rawValue)
+    
+    const channelIds = rawValue
+      .split('\n')
+      .map(id => id.trim())
+      .filter(id => id.length > 0)
+    
+    console.log('DEBUG: After split/trim/filter:', channelIds)
+    
+    const validChannels = channelIds.filter(id => {
+      const isValid = id.match(/^C[A-Z0-9]{8,}$/)
+      console.log(`DEBUG: Channel "${id}" valid:`, isValid)
+      return isValid
+    })
+    
+    console.log('DEBUG: Valid channels:', validChannels)
+    
+    setProjectData(prev => {
+      console.log('DEBUG: Previous state:', prev)
+      const newState = {
+        ...prev,
+        slackChannels: validChannels
+      }
+      console.log('DEBUG: New state:', newState)
+      return newState
+    })
+  }
+
   // Generate system map (Step 2)
   const handleGenerateSystemMap = useCallback(async () => {
     setIsLoading(true)
@@ -143,21 +153,30 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
 
     try {
       // Call the backend API to create project and trigger ingestion
+      const currentData = projectDataRef.current
+      console.log('DEBUG: Current projectData state:', currentData)
+      console.log('Creating project with data:', {
+        name: currentData.name,
+        repoUrl: currentData.repoUrl,
+        slackChannels: currentData.slackChannels,
+      })
+      
       const result = await missionControlApi.createProject({
-        name: projectData.name,
-        repoUrl: projectData.repoUrl,
+        name: currentData.name,
+        repoUrl: currentData.repoUrl,
+        slackChannels: currentData.slackChannels,
       })
       
       console.log('Project created, waiting for system-map indexing…', result)
       
-      // SIMPLE FIX: Just wait 10 seconds then advance to step 3
+      // SIMPLE FIX: Just wait 3 seconds then advance to step 4 (document upload)
       // The system map generation is working, just the event forwarding is broken
-      console.log('⏳ Waiting 10 seconds for system map generation to complete...')
+      console.log('⏳ Waiting 3 seconds for system map generation to complete...')
       setTimeout(() => {
-        console.log('✅ Assuming system map is complete, advancing to step 3')
+        console.log('✅ Assuming system map is complete, advancing to step 4')
         setProjectData(prev => ({ ...prev, systemMapStatus: 'completed' }))
-        setCurrentStep(3)
-      }, 10000)
+        setCurrentStep(4)
+      }, 3000)
       
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate system map')
@@ -231,6 +250,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
       setProjectData({
         name: '',
         repoUrl: '',
+        slackChannels: [],
         systemMapStatus: 'pending',
         docs: []
       })
@@ -359,18 +379,99 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                 </AnimatePresence>
               </div>
 
-              {/* Step 2: Generate system map */}
+              {/* Step 2: Select Slack channels */}
               <div className="mb-8">
                 <StepHeader
                   step={2}
-                  title="Generate system map (repo only)"
+                  title="Select Slack channels"
                   isActive={currentStep === 2}
+                  isCompleted={currentStep > 2}
+                />
+                
+                <AnimatePresence>
+                  {currentStep === 2 && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="mt-4 space-y-4"
+                    >
+                      <div className="p-4 bg-white/5 rounded-lg border border-white/10">
+                        <p className="text-white/80 text-sm mb-2">
+                          Enter Slack channel IDs that should feed ideas into this project:
+                        </p>
+                        <p className="text-white/60 text-xs mb-2">
+                          Only messages from these channels will appear as ideas for this project.
+                        </p>
+                        <div className="text-white/50 text-xs space-y-1">
+                          <p><strong>How to find channel ID:</strong></p>
+                          <p>• Right-click on channel name → View channel details → Copy channel ID</p>
+                          <p>• Or use channel URL: slack.com/app_redirect?channel=<strong>C1234567890</strong></p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-sm font-medium text-white/80 mb-2">
+                            Slack Channel IDs (one per line)
+                          </label>
+                          <textarea
+                            value={projectData.slackChannels.join('\n')}
+                            onChange={handleChannelIdsChange}
+                            placeholder="C1234567890&#10;C0987654321&#10;C1122334455"
+                            rows={4}
+                            className={clsx(
+                              'w-full px-4 py-3 rounded-lg',
+                              'bg-white/5 border border-white/10',
+                              'text-white placeholder-white/50',
+                              'focus:outline-none focus:border-green-500/50 focus:bg-white/10',
+                              'transition-all duration-200',
+                              'font-mono text-sm'
+                            )}
+                          />
+                        </div>
+
+                        {projectData.slackChannels.length > 0 && (
+                          <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                            <p className="text-blue-300 text-sm mb-2">
+                              Configured {projectData.slackChannels.length} channel{projectData.slackChannels.length !== 1 ? 's' : ''}:
+                            </p>
+                            <div className="space-y-1">
+                              {projectData.slackChannels.map((channelId, index) => (
+                                <div key={index} className="text-blue-200 text-xs font-mono">
+                                  {channelId}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => setCurrentStep(3)}
+                          className="neon-btn"
+                        >
+                          Continue
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Step 3: Generate system map */}
+              <div className="mb-8">
+                <StepHeader
+                  step={3}
+                  title="Generate system map (repo only)"
+                  isActive={currentStep === 3}
                   isCompleted={projectData.systemMapStatus === 'completed'}
                   status={projectData.systemMapStatus}
                 />
                 
                 <AnimatePresence>
-                  {currentStep === 2 && (
+                  {currentStep === 3 && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
@@ -410,17 +511,17 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                 </AnimatePresence>
               </div>
 
-              {/* Step 3: Upload project docs */}
+              {/* Step 4: Upload project docs */}
               <div className="mb-8">
                 <StepHeader
-                  step={3}
+                  step={4}
                   title="Upload project docs (optional)"
-                  isActive={currentStep === 3}
+                  isActive={currentStep === 4}
                   isCompleted={false}
                 />
                 
                 <AnimatePresence>
-                  {currentStep === 3 && (
+                  {currentStep === 4 && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}

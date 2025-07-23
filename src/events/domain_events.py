@@ -595,16 +595,12 @@ class SpecFrozenEvent(DomainEvent):
         self,
         spec_id: str,
         project_id: str,
-        requirements_md: str,
-        design_md: str,
-        tasks_md: str,
+        frozen_by: str,
         **kwargs
     ):
         super().__init__(spec_id, "spec", **kwargs)
         self.project_id = project_id
-        self.requirements_md = requirements_md
-        self.design_md = design_md
-        self.tasks_md = tasks_md
+        self.frozen_by = frozen_by
     
     def get_event_type(self) -> str:
         return "spec.frozen"
@@ -616,9 +612,7 @@ class SpecFrozenEvent(DomainEvent):
         payload = super().get_payload()
         payload.update({
             'project_id': self.project_id,
-            'requirements_md': self.requirements_md,
-            'design_md': self.design_md,
-            'tasks_md': self.tasks_md
+            'frozen_by': self.frozen_by
         })
         return payload
 
@@ -813,38 +807,6 @@ class IdeaCreatedEvent(DomainEvent):
             'project_id': self.project_id,
             'content': self.content,
             'tags': self.tags
-        })
-        return payload
-
-
-class SpecFrozenEvent(DomainEvent):
-    """Event fired when a specification is frozen/finalized."""
-    
-    def __init__(
-        self,
-        spec_id: str,
-        project_id: str,
-        requirements: List[Dict[str, Any]],
-        design_document: str,
-        **kwargs
-    ):
-        super().__init__(spec_id, "spec", **kwargs)
-        self.project_id = project_id
-        self.requirements = requirements
-        self.design_document = design_document
-    
-    def get_event_type(self) -> str:
-        return "spec.frozen"
-    
-    def get_version(self) -> str:
-        return EventVersion.V1.value
-    
-    def get_payload(self) -> Dict[str, Any]:
-        payload = super().get_payload()
-        payload.update({
-            'project_id': self.project_id,
-            'requirements': self.requirements,
-            'design_document': self.design_document
         })
         return payload
 

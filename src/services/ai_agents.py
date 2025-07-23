@@ -41,6 +41,7 @@ class AgentType(Enum):
     """Types of AI agents"""
     CODE_IMPACT_ANALYZER = "code_impact_analyzer"
     PROJECT_HEALTH_MONITOR = "project_health_monitor"
+    DEFINE_AGENT = "define_agent"
     ARCHITECTURE_ADVISOR = "architecture_advisor"
     SECURITY_SCANNER = "security_scanner"
     PERFORMANCE_OPTIMIZER = "performance_optimizer"
@@ -717,6 +718,15 @@ def get_ai_agent_manager() -> AIAgentManager:
         # Register default agents
         ai_agent_manager.register_agent(CodeImpactAnalyzer())
         ai_agent_manager.register_agent(ProjectHealthMonitor())
+        
+        # Register DefineAgent bridge
+        try:
+            from .define_agent_bridge import get_define_agent_bridge
+            define_agent_bridge = get_define_agent_bridge()
+            ai_agent_manager.register_agent(define_agent_bridge)
+            logger.info("DefineAgent bridge registered successfully")
+        except Exception as e:
+            logger.error(f"Failed to register DefineAgent bridge: {e}")
         
     return ai_agent_manager
 

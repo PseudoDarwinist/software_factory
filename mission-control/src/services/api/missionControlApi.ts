@@ -38,7 +38,7 @@ class MissionControlApi {
     this.baseURL = baseURL
     this.client = axios.create({
       baseURL,
-      timeout: 30000,
+      timeout: 30000, // 30s for Define stage operations that trigger AI processing
       headers: {
         'Content-Type': 'application/json',
       },
@@ -94,13 +94,23 @@ class MissionControlApi {
     }
   }
 
-  async createProject(data: { name: string; repoUrl: string }): Promise<ProjectSummary> {
+  async createProject(data: { name: string; repoUrl: string; slackChannels?: string[] }): Promise<ProjectSummary> {
     try {
       const response = await this.client.post<ApiResponse<ProjectSummary>>('/mission-control/projects', data)
       return response.data.data!
     } catch (error) {
       console.error('Failed to create project:', error)
       throw new Error('Failed to create project')
+    }
+  }
+
+  async getSlackChannels(): Promise<Array<{ id: string; name: string; description: string }>> {
+    try {
+      const response = await this.client.get<ApiResponse<Array<{ id: string; name: string; description: string }>>>('/slack/channels')
+      return response.data.data || []
+    } catch (error) {
+      console.error('Failed to fetch Slack channels:', error)
+      throw new Error('Failed to fetch Slack channels')
     }
   }
 
@@ -232,7 +242,87 @@ class MissionControlApi {
     }
   }
 
-  // Product Brief endpoints
+  // Specification endpoints
+  async getSpecification(itemId: string, projectId: string): Promise<any> {
+    try {
+      const response = await this.client.get<ApiResponse<any>>(`/specification/${itemId}`, {
+        params: { projectId }
+      })
+      return response.data.data || null
+    } catch (error) {
+      console.error('Failed to fetch specification:', error)
+      throw new Error('Failed to fetch specification')
+    }
+  }
+
+  async updateSpecificationArtifact(
+    specId: string, 
+    projectId: string, 
+    artifactType: 'requirements' | 'design' | 'tasks', 
+    content: string
+  ): Promise<any> {
+    try {
+      const response = await this.client.put<ApiResponse<any>>(`/specification/${specId}/artifact/${artifactType}`, {
+        content,
+        projectId
+      })
+      return response.data.data
+    } catch (error) {
+      console.error('Failed to update specification artifact:', error)
+      throw new Error('Failed to update specification artifact')
+    }
+  }
+
+  async markArtifactReviewed(
+    specId: string, 
+    projectId: string, 
+    artifactType: 'requirements' | 'design' | 'tasks', 
+    reviewNotes?: string
+  ): Promise<any> {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(`/specification/${specId}/artifact/${artifactType}/review`, {
+        projectId,
+        reviewNotes
+      })
+      return response.data.data
+    } catch (error) {
+      console.error('Failed to mark artifact as reviewed:', error)
+      throw new Error('Failed to mark artifact as reviewed')
+    }
+  }
+
+  async createSpecification(itemId: string, projectId: string): Promise<{ spec_id: string; processing_time: number; artifacts_created: number }> {
+    try {
+      const response = await this.client.post<ApiResponse<{ spec_id: string; processing_time: number; artifacts_created: number }>>(`/idea/${itemId}/create-spec`, {
+        projectId
+      })
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to create specification:', error)
+      throw new Error('Failed to create specification')
+    }
+  }
+
+  async freezeSpecification(specId: string, projectId: string): Promise<void> {
+    try {
+      await this.client.post(`/specification/${specId}/freeze`, { projectId })
+    } catch (error) {
+      console.error('Failed to freeze specification:', error)
+      throw new Error('Failed to freeze specification')
+    }
+  }
+
+  async askAIAssistant(request: { query: string; context: any }): Promise<{ response: string }> {
+    try {
+      const response = await this.client.post<ApiResponse<{ response: string }>>('/ai/assistant', request)
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to ask AI assistant:', error)
+      throw new Error('Failed to ask AI assistant')
+    }
+  }
+
+  // Product Brief endpoints (legacy - keeping for backward compatibility)
   async getProductBrief(briefId: string): Promise<any> {
     try {
       const response = await this.client.get<ApiResponse<any>>(`/product-brief/${briefId}`)

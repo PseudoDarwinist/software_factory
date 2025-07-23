@@ -11,8 +11,7 @@
     "test:watch": "jest --watch",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "server": "node server/index.js",
-    "start": "concurrently \"npm run server\" \"npm run dev\"",
+    "start": "npm run dev",
     "worker": "node worker/ingestionWorker.js"
   },
   "dependencies": {
@@ -31,10 +30,11 @@
     "react-router-dom": "^6.8.0",
     "react-spring": "^9.7.0",
     "react-use": "^17.4.0",
+    "recharts": "^3.1.0",
+    "simple-git": "^3.22.0",
     "socket.io-client": "^4.6.1",
     "three": "^0.150.1",
-    "zustand": "^4.3.6",
-    "simple-git": "^3.22.0"
+    "zustand": "^4.3.6"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^5.16.5",

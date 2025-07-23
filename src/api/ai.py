@@ -26,6 +26,193 @@ logger = logging.getLogger(__name__)
 ai_bp = Blueprint('ai', __name__)
 
 
+@ai_bp.route('/api/goose/execute', methods=['POST'])
+def goose_execute():
+    """Simple Goose execution endpoint for frontend compatibility"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No JSON data provided'
+            }), 400
+        
+        prompt = data.get('prompt', data.get('instruction', ''))
+        if not prompt:
+            return jsonify({
+                'success': False,
+                'error': 'No prompt or instruction provided'
+            }), 400
+
+        # Get AI service
+        ai_service = get_ai_service()
+        if not ai_service:
+            return jsonify({
+                'success': False,
+                'error': 'AI service not available'
+            }), 500
+
+        # Execute with Goose/Gemini - return in PO interface format
+        try:
+            response = ai_service.execute_goose_task(prompt)
+            # Check if response indicates failure
+            if isinstance(response, dict) and response.get('success') == False:
+                raise Exception(f"Goose failed: {response.get('error', 'Unknown error')}")
+            
+            # Extract actual response content from the response dict
+            if isinstance(response, dict) and 'response' in response:
+                response_content = response['response']
+            else:
+                response_content = str(response)
+            
+            # Return in the format PO interface expects
+            return jsonify({
+                'success': True,
+                'output': response_content,
+                'provider': 'goose',
+                'model': 'gemini-2.5-flash'
+            })
+        except Exception as e:
+            logger.error(f"Goose execution failed: {e}")
+            
+            # Since Goose isn't configured, let's also call Model Garden directly as fallback
+            try:
+                import requests
+                import json
+                
+                model_garden_url = 'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions'
+                api_key = 'b3540f69-5289-483e-91fe-942c4bfa458c'
+                
+                payload = {
+                    "model": "claude-opus-4",
+                    "messages": [
+                        {
+                            "role": "user", 
+                            "content": prompt
+                        }
+                    ],
+                    "max_tokens": 4000,
+                    "temperature": 0.7
+                }
+                
+                headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {api_key}'
+                }
+                
+                resp = requests.post(model_garden_url, headers=headers, json=payload, timeout=60)
+                resp.raise_for_status()
+                
+                result = resp.json()
+                
+                if 'choices' in result and len(result['choices']) > 0:
+                    ai_response = result['choices'][0]['message']['content']
+                    
+                    return jsonify({
+                        'success': True,
+                        'output': ai_response,
+                        'provider': 'goose-fallback',
+                        'model': 'claude-opus-4'
+                    })
+                else:
+                    raise Exception("No response from fallback API")
+                    
+            except Exception as direct_api_error:
+                logger.error(f"Goose fallback API call failed: {direct_api_error}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Both Goose and fallback API failed: {str(direct_api_error)}'
+                }), 500
+
+    except Exception as e:
+        logger.error(f"Goose execute endpoint error: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+
+@ai_bp.route('/api/model-garden/execute', methods=['POST'])
+def model_garden_execute():
+    """Model Garden execution endpoint for frontend compatibility - Direct API calls only"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No JSON data provided'
+            }), 400
+        
+        prompt = data.get('prompt', data.get('instruction', ''))
+        model = data.get('model', 'claude-opus-4')
+        role = data.get('role', 'user')
+        
+        if not prompt:
+            return jsonify({
+                'success': False,
+                'error': 'No prompt or instruction provided'
+            }), 400
+
+        # Call the actual Model Garden API directly for speed
+        try:
+            import requests
+            import json
+            
+            model_garden_url = 'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions'
+            api_key = 'b3540f69-5289-483e-91fe-942c4bfa458c'
+            
+            payload = {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user", 
+                        "content": prompt
+                    }
+                ],
+                "max_tokens": 4000,
+                "temperature": 0.7
+            }
+            
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {api_key}'
+            }
+            
+            logger.info(f"Making direct Model Garden API call with model: {model}")
+            resp = requests.post(model_garden_url, headers=headers, json=payload, timeout=45)
+            resp.raise_for_status()
+            
+            result = resp.json()
+            
+            if 'choices' in result and len(result['choices']) > 0:
+                ai_response = result['choices'][0]['message']['content']
+                
+                logger.info(f"Model Garden API successful, response length: {len(ai_response)}")
+                return jsonify({
+                    'success': True,
+                    'output': ai_response,
+                    'provider': 'model-garden-direct',
+                    'model': model,
+                    'role': role
+                })
+            else:
+                raise Exception("No response from Model Garden")
+                
+        except Exception as direct_api_error:
+            logger.error(f"Direct Model Garden API call failed: {direct_api_error}")
+            return jsonify({
+                'success': False,
+                'error': f'Model Garden API failed: {str(direct_api_error)}'
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Model Garden execute endpoint error: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error'
+        }), 500
+
+
 @ai_bp.route('/api/ai/goose/execute', methods=['POST'])
 def execute_goose_task():
     """Execute AI task using Goose + Gemini with business context and GitHub repository"""
@@ -538,3 +725,70 @@ def legacy_goose_test():
 def legacy_model_garden_execute():
     """Legacy Model Garden endpoint for backward compatibility"""
     return execute_model_garden_task()
+
+
+@ai_bp.route('/api/ai/assistant', methods=['POST'])
+def ai_assistant():
+    """Context-aware AI assistant for specification help"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No JSON data provided'
+            }), 400
+        
+        query = data.get('query', '')
+        context = data.get('context', {})
+        
+        if not query:
+            return jsonify({
+                'success': False,
+                'error': 'No query provided'
+            }), 400
+        
+        # Extract context information
+        spec_id = context.get('spec_id')
+        artifact_type = context.get('artifact_type')
+        current_content = context.get('current_content', '')
+        
+        # Get AI service and generate contextual response
+        ai_service = get_ai_service()
+        
+        # Build context-aware prompt
+        system_prompt = f"""You are an AI assistant helping with software specification writing. 
+        You are currently helping with the {artifact_type} section of a specification.
+        
+        Current content:
+        {current_content}
+        
+        Please provide helpful, specific advice for improving this {artifact_type} specification.
+        Focus on best practices, completeness, and clarity."""
+        
+        # Use Model Garden for better responses
+        result = ai_service.execute_model_garden_task(
+            instruction=query,
+            product_context={'current_content': current_content, 'artifact_type': artifact_type},
+            model='claude-opus-4',
+            role='po'
+        )
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'data': {
+                    'response': result['output']
+                }
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'AI assistant failed to generate response')
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error in AI assistant: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500

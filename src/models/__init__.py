@@ -12,6 +12,16 @@ from .mission_control_project import MissionControlProject
 from .stage import Stage, StageTransition, ProductBrief
 from .channel_mapping import ChannelMapping
 from .event_log import EventLog
+from .specification_artifact import SpecificationArtifact, ArtifactType, ArtifactStatus
+from .task import Task, TaskStatus, TaskPriority
+from .monitoring_metrics import (
+    MonitoringMetrics, 
+    AgentStatus, 
+    SystemHealth, 
+    AlertHistory, 
+    IntegrationStatus, 
+    DashboardConfig
+)
 
 __all__ = [
     'db', 
@@ -25,5 +35,17 @@ __all__ = [
     'StageTransition',
     'ProductBrief',
     'ChannelMapping',
-    'EventLog'
+    'EventLog',
+    'SpecificationArtifact',
+    'ArtifactType',
+    'ArtifactStatus',
+    'Task',
+    'TaskStatus',
+    'TaskPriority',
+    'MonitoringMetrics',
+    'AgentStatus',
+    'SystemHealth',
+    'AlertHistory',
+    'IntegrationStatus',
+    'DashboardConfig'
 ]

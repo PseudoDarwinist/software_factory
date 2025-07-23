@@ -54,21 +54,23 @@ class Stage(db.Model):
             db.session.commit()
         return stage
     
-    def add_item(self, item_id):
+    def add_item(self, item_id, commit=True):
         """Add item to stage"""
         if not self.item_ids:
             self.item_ids = []
         if item_id not in self.item_ids:
             self.item_ids.append(item_id)
             self.updated_at = datetime.utcnow()
-            db.session.commit()
+            if commit:
+                db.session.commit()
     
-    def remove_item(self, item_id):
+    def remove_item(self, item_id, commit=True):
         """Remove item from stage"""
         if self.item_ids and item_id in self.item_ids:
             self.item_ids.remove(item_id)
             self.updated_at = datetime.utcnow()
-            db.session.commit()
+            if commit:
+                db.session.commit()
 
 
 class StageTransition(db.Model):
@@ -162,8 +164,14 @@ class ProductBrief(db.Model):
     
     @classmethod
     def create_for_item(cls, item_id, project_id, brief_data):
-        """Create a new product brief for a feed item"""
+        """Create a new product brief for a feed item or return existing one"""
         brief_id = f"brief-{item_id}"
+        
+        # Check if brief already exists
+        existing_brief = cls.query.get(brief_id)
+        if existing_brief:
+            return existing_brief
+        
         brief = cls(
             id=brief_id,
             item_id=item_id,

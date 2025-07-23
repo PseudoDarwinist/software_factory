@@ -157,9 +157,19 @@ class WebhookReceiver:
                     logger.error(f"Error processing webhook from {source_system}: {e}")
             
             logger.info(f"Successfully processed webhook from {source_system}: {webhook_type}")
+            
+            # Handle different return types from event bus
+            event_id = None
+            if isinstance(result, dict) and 'event_id' in result:
+                event_id = result['event_id']
+            elif hasattr(webhook_event, 'event_id'):
+                event_id = webhook_event.event_id
+            elif hasattr(webhook_event, 'metadata') and hasattr(webhook_event.metadata, 'event_id'):
+                event_id = webhook_event.metadata.event_id
+            
             return {
                 'status': 'success',
-                'event_id': result['event_id'],
+                'event_id': event_id,
                 'message': 'Webhook processed successfully'
             }
             

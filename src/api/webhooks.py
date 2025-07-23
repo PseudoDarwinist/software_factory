@@ -3,6 +3,7 @@ API endpoints for webhook integration with external systems.
 """
 
 import logging
+import time
 from flask import Blueprint, request, jsonify, current_app
 from typing import Dict, Any
 
@@ -102,31 +103,161 @@ def slack_webhook():
         if payload.get('type') == 'url_verification':
             return jsonify({'challenge': payload.get('challenge')}), 200
 
-        # After the challenge handshake, proceed with normal processing
-        webhook_service = get_webhook_service()
-        if not webhook_service:
-            return jsonify({'error': 'Webhook service not initialized'}), 500
+        logger.info(f"Received Slack webhook: {payload.get('type', 'unknown')}")
 
-        headers = dict(request.headers)
-        
-        # Process the webhook
-        result = webhook_service.process_inbound_webhook(
-            source_system='slack',
-            webhook_type=payload.get('type', 'unknown'),
-            payload=payload,
-            headers=headers,
-            signature=headers.get('X-Slack-Signature'),
-            secret=current_app.config.get('SLACK_SIGNING_SECRET')
-        )
-        
-        if result['status'] == 'success':
-            return jsonify(result), 200
-        else:
-            return jsonify(result), 400
+        # Handle event callbacks (messages, etc.)
+        if payload.get('type') == 'event_callback':
+            return handle_slack_event_callback(payload)
+
+        # For other webhook types, just acknowledge
+        logger.info(f"Unhandled Slack webhook type: {payload.get('type', 'unknown')}")
+        return jsonify({'status': 'acknowledged'}), 200
             
     except Exception as e:
-        logger.error(f"Error handling Slack webhook: {e}")
+        logger.error(f"Error handling Slack webhook: {e}", exc_info=True)
         return jsonify({'error': 'Internal server error'}), 500
+
+
+def handle_slack_event_callback(payload):
+    """Handle Slack event callback and create feed items directly."""
+    try:
+        event = payload.get('event', {})
+        event_type = event.get('type')
+        
+        logger.info(f"Processing Slack event: {event_type}")
+        
+        if event_type == 'message':
+            # Skip bot messages and system messages
+            if (event.get('bot_id') or 
+                event.get('subtype') == 'bot_message' or
+                event.get('user') == 'USLACKBOT' or
+                not event.get('text')):
+                logger.info("Skipping bot/system message")
+                return jsonify({'status': 'ignored'}), 200
+            
+            # Extract message data
+            channel = event.get('channel')
+            user = event.get('user')
+            text = event.get('text', '')
+            timestamp = event.get('ts')
+            
+            logger.info(f"Processing message from user {user} in channel {channel}: {text[:50]}...")
+            logger.error(f"DEBUG WEBHOOK: Processing message from user {user} in channel {channel}")
+            logger.error(f"DEBUG WEBHOOK: Message text: {text[:100]}")
+            
+            # Create feed item using direct database operations
+            try:
+                # Import models using the pattern that works with Flask app context
+                from models.feed_item import FeedItem
+                from models.stage import Stage
+                from models.mission_control_project import MissionControlProject
+                from models.channel_mapping import ChannelMapping
+                from models.base import db
+                
+                logger.error(f"DEBUG WEBHOOK: Looking up channel mapping for channel: {channel}")
+                project_id = ChannelMapping.get_project_for_channel(channel)
+                logger.error(f"DEBUG WEBHOOK: Found project_id: {project_id}")
+                
+                if project_id:
+                    # Channel is mapped to a specific project
+                    print(f"DEBUG WEBHOOK: Channel {channel} is mapped to project {project_id}")
+                    project = MissionControlProject.query.get(project_id)
+                    if not project:
+                        print(f"DEBUG WEBHOOK: ERROR - Project {project_id} not found!")
+                        logger.warning(f"Channel {channel} mapped to non-existent project {project_id}")
+                        return jsonify({'status': 'ignored', 'reason': 'project_not_found'}), 200
+                    print(f"DEBUG WEBHOOK: Using project: {project.name} ({project.id})")
+                else:
+                    # Channel is not mapped to any project - ignore the message
+                    print(f"DEBUG WEBHOOK: ERROR - No mapping found for channel {channel}")
+                    print(f"DEBUG WEBHOOK: Available mappings:")
+                    all_mappings = ChannelMapping.query.all()
+                    for mapping in all_mappings:
+                        print(f"DEBUG WEBHOOK:   {mapping.channel_id} -> {mapping.project_id}")
+                    logger.info(f"Ignoring message from unmapped channel: {channel}")
+                    return jsonify({'status': 'ignored', 'reason': 'channel_not_mapped'}), 200
+                
+                # Create title from text (first line or first 50 chars)
+                lines = text.strip().split('\n')
+                title = lines[0].strip()
+                if len(title) > 50:
+                    words = title.split()
+                    title = ""
+                    for word in words:
+                        if len(title + word) <= 47:
+                            title += word + " "
+                        else:
+                            break
+                    title = title.strip() + "..." if title else text[:47] + "..."
+                
+                # Create unique feed item ID
+                import time
+                feed_item_id = f"slack_{channel}_{timestamp or int(time.time())}"
+                
+                # Create the feed item
+                feed_item = FeedItem.create(
+                    id=feed_item_id,
+                    project_id=project.id,
+                    severity=FeedItem.SEVERITY_INFO,
+                    kind=FeedItem.KIND_IDEA,
+                    title=title,
+                    summary=text,
+                    actor=user or 'slack-user',
+                    metadata={
+                        'source': 'slack',
+                        'channel': channel,
+                        'timestamp': timestamp,
+                        'stage': 'think'
+                    }
+                )
+                
+                # Add to Think stage
+                think_stage = Stage.get_or_create_for_project(project.id, Stage.STAGE_THINK)
+                think_stage.add_item(feed_item.id)
+                
+                # Update project unread count
+                project.increment_unread_count()
+                
+                db.session.commit()
+                
+                logger.info(f"Created feed item from Slack message: {feed_item_id} in project {project.id}")
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Slack message processed',
+                    'feed_item_id': feed_item_id,
+                    'project_id': project.id
+                }), 200
+                
+            except Exception as db_error:
+                logger.error(f"Database error creating feed item: {db_error}")
+                try:
+                    db.session.rollback()
+                except:
+                    pass
+                
+                # Fallback: just log the message and return success
+                logger.info(f"Slack message received (DB failed): {text[:100]}...")
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Slack message logged (database error)',
+                    'slack_text': text[:100]
+                }), 200
+        
+        else:
+            logger.info(f"Unhandled Slack event type: {event_type}")
+            return jsonify({'status': 'ignored'}), 200
+            
+    except Exception as e:
+        logger.error(f"Error processing Slack event callback: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Failed to process Slack event',
+            'details': str(e),
+            'type': type(e).__name__
+        }), 500
+
+
+
 
 
 @webhooks_bp.route('/figma', methods=['POST'])

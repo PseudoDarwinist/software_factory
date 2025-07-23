@@ -103,6 +103,12 @@ def create_mission_control_project():
     try:
         data = request.get_json()
         
+        # Enhanced debugging - log raw request data
+        print(f"DEBUG: Raw request data: {data}")
+        print(f"DEBUG: Request content type: {request.content_type}")
+        print(f"DEBUG: Request method: {request.method}")
+        logger.info(f"Raw project creation request: {data}")
+        
         if not data:
             return jsonify({
                 'success': False,
@@ -113,6 +119,15 @@ def create_mission_control_project():
         
         name = data.get('name')
         repo_url = data.get('repoUrl')
+        slack_channels = data.get('slackChannels', [])  # List of channel IDs
+        
+        # Enhanced debugging for each field
+        print(f"DEBUG: Extracted fields - name: '{name}' (type: {type(name)})")
+        print(f"DEBUG: Extracted fields - repo_url: '{repo_url}' (type: {type(repo_url)})")
+        print(f"DEBUG: Extracted fields - slack_channels: {slack_channels} (type: {type(slack_channels)}, len: {len(slack_channels) if slack_channels else 'N/A'})")
+        
+        logger.info(f"Creating project with data: name={name}, repo_url={repo_url}, slack_channels={slack_channels}")
+        print(f"DEBUG: Creating project with data: name={name}, repo_url={repo_url}, slack_channels={slack_channels}")
         
         if not name or not repo_url:
             return jsonify({
@@ -145,6 +160,35 @@ def create_mission_control_project():
                       Stage.STAGE_BUILD, Stage.STAGE_VALIDATE]
         for stage_type in stage_types:
             Stage.get_or_create_for_project(project_id, stage_type)
+        
+        # Create channel mappings for Slack integration
+        print(f"DEBUG: About to process slack_channels: {slack_channels}")
+        if slack_channels:
+            print(f"DEBUG: Processing {len(slack_channels)} slack channels: {slack_channels}")
+            logger.info(f"Processing {len(slack_channels)} slack channels: {slack_channels}")
+            for channel_id in slack_channels:
+                if channel_id.strip():  # Skip empty channel IDs
+                    try:
+                        print(f"DEBUG: Creating mapping: {channel_id.strip()} -> {project_id}")
+                        logger.info(f"Creating mapping: {channel_id.strip()} -> {project_id}")
+                        ChannelMapping.set_mapping(channel_id.strip(), project_id)
+                        print(f"DEBUG: Successfully created mapping for {channel_id.strip()}")
+                        logger.info(f"Successfully created mapping for {channel_id.strip()}")
+                        
+                        # Verify mapping was saved
+                        saved_mapping = ChannelMapping.query.filter_by(channel_id=channel_id.strip()).first()
+                        if saved_mapping:
+                            print(f"DEBUG: Verified mapping exists in DB: {saved_mapping.channel_id} -> {saved_mapping.project_id}")
+                        else:
+                            print(f"DEBUG: WARNING - Mapping not found in DB after creation: {channel_id.strip()}")
+                            
+                    except Exception as e:
+                        print(f"DEBUG: Failed to create mapping for {channel_id}: {e}")
+                        logger.error(f"Failed to create mapping for {channel_id}: {e}")
+            logger.info(f"Finished processing channel mappings for project {project_id}")
+        else:
+            print("DEBUG: No slack channels provided or empty array")
+            logger.info("No slack channels provided")
         
         logger.info(f"New Mission Control project created: {name} ({project_id})")
         
@@ -450,6 +494,40 @@ def get_channel_mapping(channel_id):
         return jsonify({
             'success': False,
             'error': 'Failed to retrieve channel mapping',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@mission_control_bp.route('/api/slack/channels', methods=['GET'])
+def get_slack_channels():
+    """Get available Slack channels for project mapping"""
+    try:
+        # For now, return a mock list of common channels
+        # In a real implementation, this would call the Slack API to get actual channels
+        mock_channels = [
+            {'id': 'C1234567890', 'name': 'general', 'description': 'General discussion'},
+            {'id': 'C2345678901', 'name': 'random', 'description': 'Random conversations'},
+            {'id': 'C3456789012', 'name': 'customer-support', 'description': 'Customer support discussions'},
+            {'id': 'C4567890123', 'name': 'product-team', 'description': 'Product team coordination'},
+            {'id': 'C5678901234', 'name': 'engineering', 'description': 'Engineering discussions'},
+            {'id': 'C6789012345', 'name': 'design', 'description': 'Design team collaboration'},
+            {'id': 'C7890123456', 'name': 'marketing', 'description': 'Marketing team updates'},
+            {'id': 'C8901234567', 'name': 'sales', 'description': 'Sales team discussions'},
+        ]
+        
+        return jsonify({
+            'success': True,
+            'data': mock_channels,
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to get Slack channels: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to retrieve Slack channels',
             'timestamp': datetime.utcnow().isoformat(),
             'version': '1.0.0',
         }), 500

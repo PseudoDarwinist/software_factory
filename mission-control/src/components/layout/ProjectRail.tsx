@@ -44,7 +44,7 @@ interface ProjectRailProps {
   isMobile: boolean
 }
 
-export const ProjectRail: React.FC<ProjectRailProps> = ({
+export const ProjectRail: React.FC<ProjectRailProps> = React.memo(({
   projects,
   selectedProject,
   onProjectSelect,
@@ -59,14 +59,16 @@ export const ProjectRail: React.FC<ProjectRailProps> = ({
   const [showAddProjectModal, setShowAddProjectModal] = useState(false)
   // actions used only within inner ProjectCard, so no need here
 
-  // Debug logging
-  console.log('ProjectRail render:', { collapsed, isMobile, showAddProjectModal })
+  // Memoize filtered projects to prevent unnecessary re-renders
+  const memoizedFilteredProjects = React.useMemo(() => {
+    return projects.filter(project =>
+      project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      project.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  }, [projects, searchQuery])
 
-  // Filter projects based on search query
-  const filteredProjects = projects.filter(project =>
-    project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    project.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  // Use memoized filtered projects
+  const filteredProjects = memoizedFilteredProjects
 
   // Handle project selection
   const handleProjectSelect = (projectId: string) => {
@@ -252,7 +254,7 @@ export const ProjectRail: React.FC<ProjectRailProps> = ({
       />
     </div>
   )
-}
+})
 
 interface ProjectCardProps {
   project: ProjectSummary
@@ -264,7 +266,7 @@ interface ProjectCardProps {
   index: number
 }
 
-const ProjectCard: React.FC<ProjectCardProps> = ({
+const ProjectCard: React.FC<ProjectCardProps> = React.memo(({
   project,
   isSelected,
   isHovered,
@@ -380,6 +382,6 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
       </LiquidCard>
     </motion.div>
   )
-}
+})
 
 export default ProjectRail

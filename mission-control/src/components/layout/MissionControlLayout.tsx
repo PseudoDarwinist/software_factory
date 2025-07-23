@@ -25,6 +25,7 @@ import { ProjectRail } from './ProjectRail'
 import { FeedColumn } from './FeedColumn'
 import { ConversationColumn } from './ConversationColumn'
 import { DefineStage } from '@/components/stages/DefineStage'
+import { ThinkStage } from '@/components/stages/ThinkStage'
 import type { ProjectSummary, FeedItem, ConversationPayload, SDLCStage } from '@/types'
 
 interface MissionControlLayoutProps {
@@ -175,16 +176,15 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
               )}
             >
               {activeStage === 'think' && (
-                <FeedColumn
+                <ThinkStage
                   feedItems={feedItems}
+                  selectedProject={selectedProject}
                   selectedFeedItem={selectedFeedItem}
                   onFeedItemSelect={handleFeedItemSelect}
                   onFeedItemAction={onFeedItemAction}
-                  selectedProject={selectedProject}
+                  onStageChange={onStageChange}
                   loading={loading.feed}
                   error={errors.feed}
-                  activeStage={activeStage}
-                  onStageChange={onStageChange}
                 />
               )}
               

@@ -46,7 +46,8 @@ try:
         vector,
         webhooks,
         cache,
-        intelligence
+        intelligence,
+        monitoring
     )
 except ImportError as e:
     # Handle direct execution for scripts, etc.
@@ -65,7 +66,7 @@ except ImportError as e:
     import services.context_aware_ai as context_aware_ai
     import services.ai_agents as ai_agents
     import services.auth_service as auth_service
-    from api import projects, system, ai, mission_control, conversations, stages, events, graph, vector, webhooks, cache, intelligence
+    from api import projects, system, ai, mission_control, conversations, stages, events, graph, vector, webhooks, cache, intelligence, monitoring
     from api import ai_broker as ai_broker_api
 
 migrate = Migrate()
@@ -124,6 +125,18 @@ def create_app(config_class=Config):
     event_bus_instance = event_bus.init_event_bus(app.config['REDIS_URL'], max_workers=app.config['MAX_WORKERS'])
     webhook_service.init_webhook_service(event_bus_instance, max_workers=app.config['MAX_WORKERS'])
 
+    # Initialize Slack feed bridge
+    try:
+        from .services.slack_feed_bridge import init_slack_feed_bridge
+        init_slack_feed_bridge()
+        app.logger.info("Slack feed bridge initialized successfully")
+    except ImportError:
+        from services.slack_feed_bridge import init_slack_feed_bridge
+        init_slack_feed_bridge()
+        app.logger.info("Slack feed bridge initialized successfully")
+    except Exception as e:
+        app.logger.warning(f"Slack feed bridge initialization failed: {e}")
+
     if not integration_setup.setup_integrations(app):
         app.logger.warning("Some integrations failed to initialize")
 
@@ -172,6 +185,30 @@ def create_app(config_class=Config):
     except Exception as e:
         app.logger.warning(f"AI agents initialization failed: {e}")
 
+    # Initialize DefineAgent bridge
+    try:
+        from .services.define_agent_bridge import init_define_agent_bridge
+        init_define_agent_bridge()
+        app.logger.info("DefineAgent bridge initialized successfully")
+    except ImportError:
+        from services.define_agent_bridge import init_define_agent_bridge
+        init_define_agent_bridge()
+        app.logger.info("DefineAgent bridge initialized successfully")
+    except Exception as e:
+        app.logger.warning(f"DefineAgent bridge initialization failed: {e}")
+
+    # Initialize Prometheus metrics server
+    try:
+        from .services.metrics_service import start_metrics_server
+        start_metrics_server(port=9100)
+        app.logger.info("Prometheus metrics server started on port 9100")
+    except ImportError:
+        from services.metrics_service import start_metrics_server
+        start_metrics_server(port=9100)
+        app.logger.info("Prometheus metrics server started on port 9100")
+    except Exception as e:
+        app.logger.warning(f"Prometheus metrics server initialization failed: {e}")
+
     register_blueprints(app)
     register_frontend_routes(app)
     register_error_handlers(app)
@@ -205,6 +242,7 @@ def register_blueprints(app):
     app.register_blueprint(webhooks.webhooks_bp)
     app.register_blueprint(cache.cache_bp)
     app.register_blueprint(intelligence.intelligence_bp)
+    app.register_blueprint(monitoring.monitoring_bp)
     app.logger.info("API blueprints registered successfully")
 
 

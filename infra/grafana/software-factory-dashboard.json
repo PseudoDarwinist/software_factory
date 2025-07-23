@@ -1,0 +1,356 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Software Factory Monitoring Dashboard",
+    "tags": ["software-factory", "monitoring", "agents"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "5s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "System Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "system_uptime_seconds",
+            "legendFormat": "Uptime (seconds)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                }
+              ]
+            },
+            "unit": "s"
+          }
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "Active Agents",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(agent_status == 1)",
+            "legendFormat": "Running Agents",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "red",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 1
+                },
+                {
+                  "color": "green",
+                  "value": 3
+                }
+              ]
+            }
+          }
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 6,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "Events Per Minute",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(events_processed_total[1m]) * 60",
+            "legendFormat": "Events/min",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 50
+                },
+                {
+                  "color": "red",
+                  "value": 100
+                }
+              ]
+            },
+            "unit": "short"
+          }
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 12,
+          "y": 0
+        }
+      },
+      {
+        "id": 4,
+        "title": "Database Connections",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "database_connections_active",
+            "legendFormat": "Active Connections",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 10
+                },
+                {
+                  "color": "red",
+                  "value": 20
+                }
+              ]
+            }
+          }
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 18,
+          "y": 0
+        }
+      },
+      {
+        "id": 5,
+        "title": "Event Processing Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(events_processed_total[5m]) * 60",
+            "legendFormat": "{{event_type}}",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Events per minute",
+            "min": 0
+          },
+          {
+            "show": false
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 4
+        }
+      },
+      {
+        "id": 6,
+        "title": "Agent Status",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "agent_status",
+            "legendFormat": "{{agent_id}}",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Status (1=running, 0=stopped, -1=error)",
+            "min": -1,
+            "max": 1
+          },
+          {
+            "show": false
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 4
+        }
+      },
+      {
+        "id": 7,
+        "title": "Agent Processing Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(agent_processing_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile - {{agent_id}}",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(agent_processing_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile - {{agent_id}}",
+            "refId": "B"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Processing time (seconds)",
+            "min": 0
+          },
+          {
+            "show": false
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 12
+        }
+      },
+      {
+        "id": 8,
+        "title": "AI Service Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(ai_requests_total[5m]) * 60",
+            "legendFormat": "{{model}} - {{status}}",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Requests per minute",
+            "min": 0
+          },
+          {
+            "show": false
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 12
+        }
+      },
+      {
+        "id": 9,
+        "title": "AI Token Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(ai_tokens_used_total[5m]) * 60",
+            "legendFormat": "{{model}} - {{type}}",
+            "refId": "A"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Tokens per minute",
+            "min": 0
+          },
+          {
+            "show": false
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 20
+        }
+      },
+      {
+        "id": 10,
+        "title": "Event Processing Duration",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(event_processing_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile - {{event_type}}",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(event_processing_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile - {{event_type}}",
+            "refId": "B"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Processing time (seconds)",
+            "min": 0
+          },
+          {
+            "show": false
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 20
+        }
+      }
+    ],
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": []
+    },
+    "schemaVersion": 27,
+    "version": 1,
+    "links": []
+  }
+}

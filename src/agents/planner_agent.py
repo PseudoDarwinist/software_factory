@@ -1,100 +1,66 @@
 """
-Planner Agent - Triggers on tasks.created events for resource planning.
+Planner Agent - Intelligent task breakdown and resource assignment
 """
 
 import logging
-from typing import Dict, Any, List
-from datetime import datetime, timedelta
+import re
+import uuid
+from typing import Dict, List, Any, Optional
+from datetime import datetime
 
-from .base import BaseAgent, AgentConfig, EventProcessingResult
-from ..events.base import BaseEvent
-from ..events.domain_events import TasksCreatedEvent, ProjectUpdatedEvent
-from ..events.event_router import EventBus
+try:
+    from .base import BaseAgent, AgentConfig, EventProcessingResult
+    from ..events.base import BaseEvent
+    from ..events.domain_events import TasksCreatedEvent, SpecFrozenEvent
+    from ..events.event_router import EventBus
+    from ..models.specification_artifact import SpecificationArtifact, ArtifactType
+    from ..models.task import Task, TaskPriority
+    from ..models.base import db
+except ImportError:
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from agents.base import BaseAgent, AgentConfig, EventProcessingResult
+    from events.base import BaseEvent
+    from events.domain_events import TasksCreatedEvent, SpecFrozenEvent
+    from events.event_router import EventBus
+    from models.specification_artifact import SpecificationArtifact, ArtifactType
+    from models.task import Task, TaskPriority
+    from models.base import db
 
 
 logger = logging.getLogger(__name__)
 
 
 class PlannerAgent(BaseAgent):
-    """Agent that analyzes created tasks and performs resource planning."""
+    """
+    Planner Agent that subscribes to spec.frozen events and creates actionable tasks
+    with intelligent resource assignment and dependency analysis.
+    """
     
-    def __init__(self, event_bus: EventBus):
-        config = AgentConfig(
-            agent_id="planner_agent",
-            name="Planner Agent",
-            description="Analyzes tasks and performs resource planning and scheduling",
-            event_types=["tasks.created"],
-            max_concurrent_events=2,
-            timeout_seconds=300.0  # 5 minutes for planning analysis
-        )
-        
+    def __init__(self, config: AgentConfig, event_bus: EventBus):
         super().__init__(config, event_bus)
+        self.task_parsing_patterns = self._initialize_parsing_patterns()
+        self.effort_estimation_rules = self._initialize_effort_rules()
+        self.expertise_keywords = self._initialize_expertise_keywords()
     
     def process_event(self, event: BaseEvent) -> EventProcessingResult:
-        """Process tasks.created events to perform resource planning."""
-        logger.info(f"PlannerAgent processing event {event.metadata.event_id}")
-        
-        if not isinstance(event, TasksCreatedEvent):
-            return EventProcessingResult(
-                success=False,
-                agent_id=self.config.agent_id,
-                event_id=event.metadata.event_id,
-                event_type=event.get_event_type(),
-                processing_time_seconds=0.0,
-                error_message="Expected TasksCreatedEvent"
-            )
-        
+        """Process incoming events."""
         try:
-            # Extract task information
-            task_list_id = event.aggregate_id
-            spec_id = event.spec_id
-            project_id = event.project_id
-            tasks = event.tasks
-            
-            logger.info(f"Planning resources for {len(tasks)} tasks in project {project_id}")
-            
-            # Perform resource planning analysis
-            planning_result = self._analyze_and_plan_tasks(
-                task_list_id=task_list_id,
-                spec_id=spec_id,
-                project_id=project_id,
-                tasks=tasks
-            )
-            
-            # Create project update event with planning information
-            project_update_event = ProjectUpdatedEvent(
-                project_id=project_id,
-                changes={
-                    'planning_analysis': planning_result,
-                    'last_planned_at': datetime.utcnow().isoformat(),
-                    'task_list_id': task_list_id
-                },
-                correlation_id=event.metadata.correlation_id,
-                actor=f"agent:{self.config.agent_id}",
-                trace_id=event.metadata.trace_id
-            )
-            
-            result_data = {
-                'project_id': project_id,
-                'task_list_id': task_list_id,
-                'total_tasks': len(tasks),
-                'planning_summary': planning_result['summary']
-            }
-            
-            logger.info(f"Completed resource planning for project {project_id}")
-            
-            return EventProcessingResult(
-                success=True,
-                agent_id=self.config.agent_id,
-                event_id=event.metadata.event_id,
-                event_type=event.get_event_type(),
-                processing_time_seconds=0.0,  # Will be calculated by base class
-                result_data=result_data,
-                generated_events=[project_update_event]
-            )
-            
+            if isinstance(event, SpecFrozenEvent):
+                return self._handle_spec_frozen(event)
+            else:
+                logger.debug(f"PlannerAgent ignoring event type: {event.get_event_type()}")
+                return EventProcessingResult(
+                    success=True,
+                    agent_id=self.config.agent_id,
+                    event_id=event.metadata.event_id,
+                    event_type=event.get_event_type(),
+                    processing_time_seconds=0.0
+                )
+        
         except Exception as e:
-            logger.error(f"PlannerAgent failed to process tasks.created event: {e}")
+            logger.error(f"PlannerAgent failed to process event {event.metadata.event_id}: {e}")
             return EventProcessingResult(
                 success=False,
                 agent_id=self.config.agent_id,
@@ -104,351 +70,460 @@ class PlannerAgent(BaseAgent):
                 error_message=str(e)
             )
     
-    def _analyze_and_plan_tasks(
-        self,
-        task_list_id: str,
-        spec_id: str,
-        project_id: str,
-        tasks: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Analyze tasks and create resource planning."""
+    def _handle_spec_frozen(self, event: SpecFrozenEvent) -> EventProcessingResult:
+        """Handle spec.frozen event by parsing tasks and creating task records."""
+        start_time = datetime.utcnow()
         
-        # Analyze task dependencies
-        dependency_analysis = self._analyze_dependencies(tasks)
+        try:
+            spec_id = event.aggregate_id
+            project_id = event.project_id
+            
+            logger.info(f"PlannerAgent processing spec.frozen for spec {spec_id}")
+            
+            # Get the tasks.md artifact
+            tasks_artifact = SpecificationArtifact.query.filter_by(
+                spec_id=spec_id,
+                artifact_type=ArtifactType.TASKS
+            ).first()
+            
+            if not tasks_artifact:
+                logger.warning(f"No tasks artifact found for spec {spec_id}")
+                return EventProcessingResult(
+                    success=False,
+                    agent_id=self.config.agent_id,
+                    event_id=event.metadata.event_id,
+                    event_type=event.get_event_type(),
+                    processing_time_seconds=(datetime.utcnow() - start_time).total_seconds(),
+                    error_message="No tasks artifact found"
+                )
+            
+            # Parse tasks from tasks.md content
+            parsed_tasks = self._parse_tasks_from_markdown(tasks_artifact.content, spec_id, project_id)
+            
+            if not parsed_tasks:
+                logger.warning(f"No tasks parsed from spec {spec_id}")
+                return EventProcessingResult(
+                    success=False,
+                    agent_id=self.config.agent_id,
+                    event_id=event.metadata.event_id,
+                    event_type=event.get_event_type(),
+                    processing_time_seconds=(datetime.utcnow() - start_time).total_seconds(),
+                    error_message="No tasks could be parsed"
+                )
+            
+            # Get project context for owner suggestions
+            project_context = self.get_project_context(project_id)
+            
+            # Enhance tasks with effort estimation and owner suggestions
+            enhanced_tasks = []
+            for task_data in parsed_tasks:
+                enhanced_task = self._enhance_task_with_intelligence(task_data, project_context)
+                enhanced_tasks.append(enhanced_task)
+            
+            # Create task records in database
+            created_tasks = []
+            for task_data in enhanced_tasks:
+                try:
+                    task = Task.create_task(
+                        spec_id=spec_id,
+                        project_id=project_id,
+                        task_data=task_data,
+                        created_by=self.config.agent_id
+                    )
+                    created_tasks.append(task)
+                except Exception as e:
+                    logger.error(f"Failed to create task {task_data.get('task_number')}: {e}")
+            
+            # Commit all tasks
+            db.session.commit()
+            
+            # Analyze dependencies and relationships
+            self._analyze_task_relationships(created_tasks)
+            db.session.commit()
+            
+            # Create tasks.created event
+            task_list_id = f"tasklist_{spec_id}_{int(datetime.utcnow().timestamp())}"
+            tasks_created_event = TasksCreatedEvent(
+                task_list_id=task_list_id,
+                spec_id=spec_id,
+                project_id=project_id,
+                tasks=[task.to_dict() for task in created_tasks],
+                correlation_id=event.metadata.correlation_id,
+                trace_id=event.metadata.trace_id
+            )
+            
+            processing_time = (datetime.utcnow() - start_time).total_seconds()
+            
+            logger.info(f"PlannerAgent created {len(created_tasks)} tasks for spec {spec_id}")
+            
+            return EventProcessingResult(
+                success=True,
+                agent_id=self.config.agent_id,
+                event_id=event.metadata.event_id,
+                event_type=event.get_event_type(),
+                processing_time_seconds=processing_time,
+                result_data={
+                    'spec_id': spec_id,
+                    'tasks_created': len(created_tasks),
+                    'task_list_id': task_list_id
+                },
+                generated_events=[tasks_created_event]
+            )
         
-        # Estimate timeline
-        timeline_analysis = self._estimate_timeline(tasks, dependency_analysis)
+        except Exception as e:
+            processing_time = (datetime.utcnow() - start_time).total_seconds()
+            logger.error(f"PlannerAgent failed to process spec.frozen: {e}")
+            return EventProcessingResult(
+                success=False,
+                agent_id=self.config.agent_id,
+                event_id=event.metadata.event_id,
+                event_type=event.get_event_type(),
+                processing_time_seconds=processing_time,
+                error_message=str(e)
+            )
+    
+    def _parse_tasks_from_markdown(self, markdown_content: str, spec_id: str, project_id: str) -> List[Dict[str, Any]]:
+        """Parse tasks from markdown content using regex patterns."""
+        tasks = []
+        lines = markdown_content.split('\n')
+        current_task = None
         
-        # Analyze resource requirements
-        resource_analysis = self._analyze_resource_requirements(tasks)
+        for line in lines:
+            line = line.strip()
+            
+            # Match task items: - [ ] 1.1 Task title
+            task_match = re.match(r'^-\s*\[\s*[x\-\s]*\]\s*(\d+(?:\.\d+)?)\s+(.+)$', line)
+            if task_match:
+                # Save previous task if exists
+                if current_task:
+                    tasks.append(current_task)
+                
+                task_number = task_match.group(1)
+                task_title = task_match.group(2).strip()
+                
+                current_task = {
+                    'task_number': task_number,
+                    'title': task_title,
+                    'description': '',
+                    'requirements_refs': [],
+                    'details': []
+                }
+                continue
+            
+            # Match sub-bullets with details
+            detail_match = re.match(r'^[\s]*[-\*]\s*(.+)$', line)
+            if detail_match and current_task:
+                detail = detail_match.group(1).strip()
+                current_task['details'].append(detail)
+                
+                # Extract requirements references
+                req_match = re.search(r'_Requirements?:\s*([0-9\.,\s]+)_', detail)
+                if req_match:
+                    req_refs = [ref.strip() for ref in req_match.group(1).split(',')]
+                    current_task['requirements_refs'].extend(req_refs)
+                continue
+            
+            # Add to description if we're in a task context
+            if current_task and line and not line.startswith('#'):
+                if current_task['description']:
+                    current_task['description'] += '\n' + line
+                else:
+                    current_task['description'] = line
         
-        # Identify critical path
-        critical_path = self._identify_critical_path(tasks, dependency_analysis, timeline_analysis)
+        # Don't forget the last task
+        if current_task:
+            tasks.append(current_task)
         
-        # Generate recommendations
-        recommendations = self._generate_recommendations(
-            tasks, dependency_analysis, timeline_analysis, resource_analysis, critical_path
-        )
+        # Post-process tasks
+        processed_tasks = []
+        for task in tasks:
+            # Combine details into description
+            if task['details']:
+                details_text = '\n'.join(f"- {detail}" for detail in task['details'])
+                if task['description']:
+                    task['description'] += '\n\n' + details_text
+                else:
+                    task['description'] = details_text
+            
+            # Determine if this is a parent task or subtask
+            task_parts = task['task_number'].split('.')
+            if len(task_parts) > 1:
+                # This is a subtask
+                parent_number = task_parts[0]
+                task['parent_task_id'] = f"{spec_id}_{parent_number}"
+            
+            processed_tasks.append(task)
+        
+        logger.info(f"Parsed {len(processed_tasks)} tasks from markdown")
+        return processed_tasks
+    
+    def _enhance_task_with_intelligence(self, task_data: Dict[str, Any], project_context) -> Dict[str, Any]:
+        """Enhance task with effort estimation and owner suggestions."""
+        enhanced_task = task_data.copy()
+        
+        # Estimate effort based on task content
+        effort_hours = self._estimate_task_effort(task_data)
+        enhanced_task['effort_estimate_hours'] = effort_hours
+        
+        # Suggest owner based on task content and team expertise
+        owner_suggestion = self._suggest_task_owner(task_data, project_context)
+        if owner_suggestion:
+            enhanced_task['suggested_owner'] = owner_suggestion['owner']
+            enhanced_task['assignment_confidence'] = owner_suggestion['confidence']
+        
+        # Determine priority based on task content
+        priority = self._determine_task_priority(task_data)
+        enhanced_task['priority'] = priority
+        
+        # Extract related components and files
+        components = self._extract_related_components(task_data, project_context)
+        enhanced_task['related_components'] = components
+        
+        return enhanced_task
+    
+    def _estimate_task_effort(self, task_data: Dict[str, Any]) -> float:
+        """Estimate task effort in hours based on content analysis."""
+        title = task_data.get('title', '').lower()
+        description = task_data.get('description', '').lower()
+        content = f"{title} {description}"
+        
+        base_effort = 2.0  # Default 2 hours
+        
+        # Apply effort rules
+        for pattern, multiplier in self.effort_estimation_rules.items():
+            if re.search(pattern, content, re.IGNORECASE):
+                base_effort *= multiplier
+        
+        # Adjust based on task complexity indicators
+        complexity_indicators = [
+            'implement', 'create', 'build', 'develop', 'design',
+            'integrate', 'test', 'deploy', 'configure'
+        ]
+        
+        complexity_count = sum(1 for indicator in complexity_indicators if indicator in content)
+        if complexity_count > 2:
+            base_effort *= 1.5
+        
+        # Adjust for subtasks (usually smaller)
+        if '.' in task_data.get('task_number', ''):
+            base_effort *= 0.7
+        
+        # Round to reasonable increments
+        if base_effort < 1:
+            return 0.5
+        elif base_effort < 4:
+            return round(base_effort * 2) / 2  # Round to 0.5 hour increments
+        else:
+            return round(base_effort)  # Round to hour increments
+    
+    def _suggest_task_owner(self, task_data: Dict[str, Any], project_context) -> Optional[Dict[str, Any]]:
+        """Suggest task owner based on content analysis and team expertise."""
+        title = task_data.get('title', '').lower()
+        description = task_data.get('description', '').lower()
+        content = f"{title} {description}"
+        
+        # Analyze content for expertise areas
+        expertise_scores = {}
+        for expertise, keywords in self.expertise_keywords.items():
+            score = sum(1 for keyword in keywords if keyword in content)
+            if score > 0:
+                expertise_scores[expertise] = score
+        
+        if not expertise_scores:
+            return None
+        
+        # Find the highest scoring expertise area
+        top_expertise = max(expertise_scores, key=expertise_scores.get)
+        confidence = min(expertise_scores[top_expertise] / 5.0, 1.0)  # Max confidence of 1.0
+        
+        # Map expertise to team members (simplified - in real implementation,
+        # this would use Git blame analysis and team expertise graphs)
+        expertise_to_owner = {
+            'frontend': 'frontend-dev',
+            'backend': 'backend-dev',
+            'database': 'backend-dev',
+            'testing': 'qa-engineer',
+            'devops': 'devops-engineer',
+            'design': 'ui-designer',
+            'documentation': 'tech-writer'
+        }
+        
+        suggested_owner = expertise_to_owner.get(top_expertise, 'backend-dev')
         
         return {
-            'task_list_id': task_list_id,
-            'spec_id': spec_id,
-            'project_id': project_id,
-            'analysis_timestamp': datetime.utcnow().isoformat(),
-            'summary': {
-                'total_tasks': len(tasks),
-                'estimated_total_hours': timeline_analysis['total_hours'],
-                'estimated_duration_days': timeline_analysis['duration_days'],
-                'critical_path_tasks': len(critical_path),
-                'resource_types_needed': len(resource_analysis['resource_types']),
-                'high_priority_tasks': len([t for t in tasks if t.get('priority') == 'high'])
-            },
-            'dependency_analysis': dependency_analysis,
-            'timeline_analysis': timeline_analysis,
-            'resource_analysis': resource_analysis,
-            'critical_path': critical_path,
-            'recommendations': recommendations
+            'owner': suggested_owner,
+            'confidence': confidence,
+            'expertise_area': top_expertise,
+            'reasoning': f"Task content matches {top_expertise} expertise"
         }
     
-    def _analyze_dependencies(self, tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Analyze task dependencies and identify potential issues."""
-        task_map = {task['id']: task for task in tasks}
-        dependency_graph = {}
-        circular_dependencies = []
-        orphaned_tasks = []
+    def _determine_task_priority(self, task_data: Dict[str, Any]) -> str:
+        """Determine task priority based on content analysis."""
+        title = task_data.get('title', '').lower()
+        description = task_data.get('description', '').lower()
+        content = f"{title} {description}"
         
-        # Build dependency graph
-        for task in tasks:
-            task_id = task['id']
-            dependencies = task.get('dependencies', [])
-            dependency_graph[task_id] = dependencies
-            
-            # Check for missing dependencies
-            missing_deps = [dep for dep in dependencies if dep not in task_map]
-            if missing_deps:
-                logger.warning(f"Task {task_id} has missing dependencies: {missing_deps}")
+        # High priority indicators
+        high_priority_keywords = [
+            'critical', 'urgent', 'security', 'bug', 'fix', 'error',
+            'authentication', 'authorization', 'data loss', 'performance'
+        ]
         
-        # Detect circular dependencies
-        def has_circular_dependency(task_id, visited, rec_stack):
-            visited.add(task_id)
-            rec_stack.add(task_id)
-            
-            for dep in dependency_graph.get(task_id, []):
-                if dep in task_map:  # Only check existing dependencies
-                    if dep not in visited:
-                        if has_circular_dependency(dep, visited, rec_stack):
-                            return True
-                    elif dep in rec_stack:
-                        circular_dependencies.append((task_id, dep))
-                        return True
-            
-            rec_stack.remove(task_id)
-            return False
+        # Low priority indicators
+        low_priority_keywords = [
+            'documentation', 'comment', 'cleanup', 'refactor',
+            'optimization', 'enhancement', 'nice to have'
+        ]
         
-        visited = set()
-        for task_id in dependency_graph:
-            if task_id not in visited:
-                has_circular_dependency(task_id, visited, set())
+        if any(keyword in content for keyword in high_priority_keywords):
+            return TaskPriority.HIGH.value
+        elif any(keyword in content for keyword in low_priority_keywords):
+            return TaskPriority.LOW.value
+        else:
+            return TaskPriority.MEDIUM.value
+    
+    def _extract_related_components(self, task_data: Dict[str, Any], project_context) -> List[str]:
+        """Extract related system components from task content."""
+        title = task_data.get('title', '').lower()
+        description = task_data.get('description', '').lower()
+        content = f"{title} {description}"
         
-        # Find orphaned tasks (no dependencies and no dependents)
-        has_dependents = set()
-        for deps in dependency_graph.values():
-            has_dependents.update(deps)
+        components = []
+        
+        # Common component patterns
+        component_patterns = {
+            'api': ['api', 'endpoint', 'rest', 'graphql'],
+            'database': ['database', 'db', 'sql', 'query', 'migration'],
+            'frontend': ['ui', 'component', 'react', 'vue', 'angular'],
+            'authentication': ['auth', 'login', 'jwt', 'token', 'session'],
+            'notification': ['notification', 'email', 'slack', 'webhook'],
+            'storage': ['storage', 'file', 'upload', 's3', 'blob'],
+            'monitoring': ['monitoring', 'metrics', 'logging', 'alert']
+        }
+        
+        for component, keywords in component_patterns.items():
+            if any(keyword in content for keyword in keywords):
+                components.append(component)
+        
+        return components
+    
+    def _analyze_task_relationships(self, tasks: List[Task]) -> None:
+        """Analyze and set up task dependencies and relationships."""
+        # Create a mapping of task numbers to task objects
+        task_map = {task.task_number: task for task in tasks}
         
         for task in tasks:
-            task_id = task['id']
-            if not dependency_graph.get(task_id) and task_id not in has_dependents:
-                orphaned_tasks.append(task_id)
-        
-        return {
-            'dependency_graph': dependency_graph,
-            'circular_dependencies': circular_dependencies,
-            'orphaned_tasks': orphaned_tasks,
-            'total_dependencies': sum(len(deps) for deps in dependency_graph.values())
-        }
-    
-    def _estimate_timeline(self, tasks: List[Dict[str, Any]], dependency_analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Estimate project timeline based on tasks and dependencies."""
-        task_map = {task['id']: task for task in tasks}
-        dependency_graph = dependency_analysis['dependency_graph']
-        
-        # Calculate earliest start times using topological sort
-        earliest_start = {}
-        earliest_finish = {}
-        
-        def calculate_earliest_times(task_id):
-            if task_id in earliest_start:
-                return earliest_finish[task_id]
+            dependencies = []
+            blocks = []
             
-            task = task_map.get(task_id)
-            if not task:
-                return 0
+            # Analyze task number patterns for dependencies
+            if task.task_number:
+                task_parts = task.task_number.split('.')
+                
+                if len(task_parts) > 1:
+                    # Subtask depends on parent task
+                    parent_number = task_parts[0]
+                    if parent_number in task_map:
+                        dependencies.append(task_map[parent_number].id)
+                
+                # Sequential dependencies (task 2 depends on task 1)
+                try:
+                    current_num = float(task.task_number)
+                    prev_num = str(int(current_num - 1))
+                    if prev_num in task_map and prev_num != task.task_number:
+                        dependencies.append(task_map[prev_num].id)
+                except (ValueError, TypeError):
+                    pass
             
-            estimated_hours = task.get('estimated_hours', 4)
-            dependencies = dependency_graph.get(task_id, [])
+            # Analyze content for explicit dependencies
+            content = f"{task.title} {task.description}".lower()
+            dependency_keywords = [
+                'after', 'once', 'requires', 'depends on', 'following',
+                'prerequisite', 'must complete'
+            ]
             
-            if not dependencies:
-                earliest_start[task_id] = 0
-            else:
-                max_finish = 0
-                for dep in dependencies:
-                    if dep in task_map:
-                        dep_finish = calculate_earliest_times(dep)
-                        max_finish = max(max_finish, dep_finish)
-                earliest_start[task_id] = max_finish
+            if any(keyword in content for keyword in dependency_keywords):
+                # In a real implementation, this would use NLP to extract
+                # specific task references
+                pass
             
-            earliest_finish[task_id] = earliest_start[task_id] + estimated_hours
-            return earliest_finish[task_id]
-        
-        # Calculate for all tasks
-        for task_id in task_map:
-            calculate_earliest_times(task_id)
-        
-        total_hours = sum(task.get('estimated_hours', 4) for task in tasks)
-        max_finish_time = max(earliest_finish.values()) if earliest_finish else 0
-        
-        # Estimate duration in days (assuming 8 hours per day, accounting for parallelization)
-        duration_days = max_finish_time / 8 if max_finish_time > 0 else total_hours / 8
-        
-        return {
-            'total_hours': total_hours,
-            'duration_days': duration_days,
-            'max_finish_time': max_finish_time,
-            'earliest_start_times': earliest_start,
-            'earliest_finish_times': earliest_finish,
-            'parallelization_factor': total_hours / max_finish_time if max_finish_time > 0 else 1
-        }
-    
-    def _analyze_resource_requirements(self, tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Analyze resource requirements by task type and skill."""
-        resource_types = {}
-        skill_requirements = {}
-        priority_distribution = {'high': 0, 'medium': 0, 'low': 0}
-        
-        for task in tasks:
-            task_type = task.get('type', 'general')
-            priority = task.get('priority', 'medium')
-            estimated_hours = task.get('estimated_hours', 4)
-            
-            # Count by type
-            if task_type not in resource_types:
-                resource_types[task_type] = {'count': 0, 'total_hours': 0}
-            resource_types[task_type]['count'] += 1
-            resource_types[task_type]['total_hours'] += estimated_hours
-            
-            # Map task types to skill requirements
-            skills = self._map_task_type_to_skills(task_type)
-            for skill in skills:
-                if skill not in skill_requirements:
-                    skill_requirements[skill] = {'count': 0, 'total_hours': 0}
-                skill_requirements[skill]['count'] += 1
-                skill_requirements[skill]['total_hours'] += estimated_hours
-            
-            # Priority distribution
-            priority_distribution[priority] += 1
-        
-        return {
-            'resource_types': resource_types,
-            'skill_requirements': skill_requirements,
-            'priority_distribution': priority_distribution,
-            'peak_resource_needs': self._calculate_peak_resource_needs(tasks)
-        }
-    
-    def _map_task_type_to_skills(self, task_type: str) -> List[str]:
-        """Map task types to required skills."""
-        skill_mapping = {
-            'database': ['database_design', 'sql', 'data_modeling'],
-            'api': ['backend_development', 'rest_api', 'python'],
-            'frontend': ['frontend_development', 'javascript', 'ui_design'],
-            'testing': ['test_automation', 'quality_assurance'],
-            'integration': ['system_integration', 'devops'],
-            'documentation': ['technical_writing'],
-            'optimization': ['performance_tuning', 'system_architecture'],
-            'general': ['software_development']
-        }
-        
-        return skill_mapping.get(task_type, ['software_development'])
-    
-    def _calculate_peak_resource_needs(self, tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Calculate peak resource needs over time."""
-        # This is a simplified calculation
-        # In a real implementation, you'd analyze the timeline more carefully
-        
-        type_counts = {}
-        for task in tasks:
-            task_type = task.get('type', 'general')
-            type_counts[task_type] = type_counts.get(task_type, 0) + 1
-        
-        # Assume 30% of tasks of each type might run in parallel at peak
-        peak_parallel_factor = 0.3
-        peak_needs = {}
-        
-        for task_type, count in type_counts.items():
-            peak_needs[task_type] = max(1, int(count * peak_parallel_factor))
-        
-        return peak_needs
-    
-    def _identify_critical_path(
-        self,
-        tasks: List[Dict[str, Any]],
-        dependency_analysis: Dict[str, Any],
-        timeline_analysis: Dict[str, Any]
-    ) -> List[str]:
-        """Identify the critical path through the project."""
-        task_map = {task['id']: task for task in tasks}
-        earliest_finish = timeline_analysis['earliest_finish_times']
-        dependency_graph = dependency_analysis['dependency_graph']
-        
-        # Find the task with the latest finish time
-        if not earliest_finish:
-            return []
-        
-        max_finish_time = max(earliest_finish.values())
-        critical_tasks = []
-        
-        # Find tasks that finish at the maximum time
-        end_tasks = [task_id for task_id, finish_time in earliest_finish.items() 
-                    if finish_time == max_finish_time]
-        
-        # Trace back through dependencies to find critical path
-        def trace_critical_path(task_id, path):
-            if task_id in path:  # Avoid cycles
-                return
-            
-            path.append(task_id)
-            dependencies = dependency_graph.get(task_id, [])
-            
+            # Update task dependencies
             if dependencies:
-                # Find the dependency with the latest finish time
-                latest_dep = max(dependencies, 
-                               key=lambda dep: earliest_finish.get(dep, 0),
-                               default=None)
-                if latest_dep and latest_dep in task_map:
-                    trace_critical_path(latest_dep, path)
-        
-        # Trace from each end task
-        for end_task in end_tasks:
-            path = []
-            trace_critical_path(end_task, path)
-            critical_tasks.extend(path)
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        critical_path = []
-        for task_id in critical_tasks:
-            if task_id not in seen:
-                critical_path.append(task_id)
-                seen.add(task_id)
-        
-        return critical_path
+                task.depends_on = dependencies
+            if blocks:
+                task.blocks = blocks
     
-    def _generate_recommendations(
-        self,
-        tasks: List[Dict[str, Any]],
-        dependency_analysis: Dict[str, Any],
-        timeline_analysis: Dict[str, Any],
-        resource_analysis: Dict[str, Any],
-        critical_path: List[str]
-    ) -> List[Dict[str, str]]:
-        """Generate planning recommendations based on analysis."""
-        recommendations = []
-        
-        # Dependency recommendations
-        if dependency_analysis['circular_dependencies']:
-            recommendations.append({
-                'type': 'warning',
-                'category': 'dependencies',
-                'message': f"Found {len(dependency_analysis['circular_dependencies'])} circular dependencies that need to be resolved"
-            })
-        
-        if dependency_analysis['orphaned_tasks']:
-            recommendations.append({
-                'type': 'info',
-                'category': 'dependencies',
-                'message': f"Found {len(dependency_analysis['orphaned_tasks'])} orphaned tasks that could be started immediately"
-            })
-        
-        # Timeline recommendations
-        if timeline_analysis['duration_days'] > 30:
-            recommendations.append({
-                'type': 'warning',
-                'category': 'timeline',
-                'message': f"Project duration ({timeline_analysis['duration_days']:.1f} days) is quite long. Consider breaking into phases."
-            })
-        
-        parallelization = timeline_analysis['parallelization_factor']
-        if parallelization > 2:
-            recommendations.append({
-                'type': 'success',
-                'category': 'timeline',
-                'message': f"Good parallelization potential (factor: {parallelization:.1f}). Tasks can run concurrently."
-            })
-        
-        # Resource recommendations
-        high_priority_count = resource_analysis['priority_distribution']['high']
-        total_tasks = len(tasks)
-        if high_priority_count / total_tasks > 0.5:
-            recommendations.append({
-                'type': 'warning',
-                'category': 'resources',
-                'message': f"High percentage ({high_priority_count/total_tasks:.1%}) of tasks are high priority. Consider re-prioritizing."
-            })
-        
-        # Critical path recommendations
-        if len(critical_path) > total_tasks * 0.3:
-            recommendations.append({
-                'type': 'warning',
-                'category': 'critical_path',
-                'message': f"Critical path contains {len(critical_path)} tasks ({len(critical_path)/total_tasks:.1%} of total). Focus on these for schedule adherence."
-            })
-        
-        # Resource type recommendations
-        resource_types = resource_analysis['resource_types']
-        if len(resource_types) > 5:
-            recommendations.append({
-                'type': 'info',
-                'category': 'resources',
-                'message': f"Project requires {len(resource_types)} different skill types. Ensure team has diverse capabilities."
-            })
-        
-        return recommendations
+    def _initialize_parsing_patterns(self) -> Dict[str, str]:
+        """Initialize regex patterns for task parsing."""
+        return {
+            'task_item': r'^-\s*\[\s*[x\-\s]*\]\s*(\d+(?:\.\d+)?)\s+(.+)$',
+            'sub_item': r'^[\s]*[-\*]\s*(.+)$',
+            'requirements_ref': r'_Requirements?:\s*([0-9\.,\s]+)_',
+            'completion_ref': r'_Completion:\s*(.+)_'
+        }
+    
+    def _initialize_effort_rules(self) -> Dict[str, float]:
+        """Initialize effort estimation rules."""
+        return {
+            r'\b(setup|configure|install)\b': 1.5,
+            r'\b(implement|create|build|develop)\b': 2.0,
+            r'\b(integrate|connect|sync)\b': 2.5,
+            r'\b(test|testing|unit test|integration test)\b': 1.5,
+            r'\b(deploy|deployment|production)\b': 2.0,
+            r'\b(database|migration|schema)\b': 2.5,
+            r'\b(api|endpoint|service)\b': 2.0,
+            r'\b(ui|interface|component)\b': 1.8,
+            r'\b(security|authentication|authorization)\b': 3.0,
+            r'\b(monitoring|logging|metrics)\b': 1.5,
+            r'\b(documentation|docs|readme)\b': 1.0,
+            r'\b(refactor|cleanup|optimization)\b': 1.2
+        }
+    
+    def _initialize_expertise_keywords(self) -> Dict[str, List[str]]:
+        """Initialize expertise area keywords for owner suggestions."""
+        return {
+            'frontend': [
+                'ui', 'interface', 'component', 'react', 'vue', 'angular',
+                'css', 'html', 'javascript', 'typescript', 'styling'
+            ],
+            'backend': [
+                'api', 'server', 'service', 'endpoint', 'business logic',
+                'python', 'java', 'node', 'flask', 'django'
+            ],
+            'database': [
+                'database', 'db', 'sql', 'query', 'migration', 'schema',
+                'postgresql', 'mysql', 'mongodb', 'redis'
+            ],
+            'testing': [
+                'test', 'testing', 'unit test', 'integration test',
+                'e2e', 'qa', 'quality', 'validation'
+            ],
+            'devops': [
+                'deploy', 'deployment', 'ci/cd', 'docker', 'kubernetes',
+                'infrastructure', 'monitoring', 'logging'
+            ],
+            'design': [
+                'design', 'ux', 'ui', 'mockup', 'wireframe',
+                'figma', 'sketch', 'prototype'
+            ],
+            'documentation': [
+                'documentation', 'docs', 'readme', 'guide',
+                'manual', 'wiki', 'specification'
+            ]
+        }
+
+
+def create_planner_agent(event_bus: EventBus) -> PlannerAgent:
+    """Create and configure a Planner Agent."""
+    config = AgentConfig(
+        agent_id="planner_agent",
+        name="Planner Agent",
+        description="Intelligent task breakdown and resource assignment agent",
+        event_types=["spec.frozen"],
+        max_concurrent_events=3,
+        retry_attempts=2,
+        timeout_seconds=180,  # 3 minutes
+        enable_dead_letter_queue=True
+    )
+    
+    return PlannerAgent(config, event_bus)

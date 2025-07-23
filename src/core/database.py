@@ -52,7 +52,9 @@ def create_all_tables(app):
                 import os
                 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
                 import models
-            
+
+            # Ensure specification_artifact table exists – rely on migrations for schema.
+
             db.create_all()
             app.logger.info("All database tables created successfully")
             

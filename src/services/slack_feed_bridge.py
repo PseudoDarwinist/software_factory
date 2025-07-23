@@ -14,6 +14,7 @@ try:
     from ..models.feed_item import FeedItem
     from ..models.stage import Stage
     from ..models.mission_control_project import MissionControlProject
+    from ..models.channel_mapping import ChannelMapping
     from ..models.base import db
     from .event_bus import get_event_bus
 except ImportError:
@@ -21,6 +22,7 @@ except ImportError:
     from models.feed_item import FeedItem
     from models.stage import Stage
     from models.mission_control_project import MissionControlProject
+    from models.channel_mapping import ChannelMapping
     from models.base import db
     from services.event_bus import get_event_bus
 
@@ -41,9 +43,8 @@ class SlackFeedBridge:
         if self.event_bus:
             # Subscribe to USER_ACTION events from Slack
             self.event_bus.subscribe(
-                subscription_id="slack_feed_bridge",
-                event_types=["user.action"],
-                handler=self._handle_slack_event
+                event_type="user.action",
+                callback=self._handle_slack_event
             )
             logger.info("Slack feed bridge subscribed to user action events")
     
@@ -75,6 +76,11 @@ class SlackFeedBridge:
             
             # Determine project ID from channel
             project_id = self._get_project_for_channel(channel)
+            
+            # Skip if no project mapping found
+            if not project_id:
+                logger.info(f"Skipping message from unmapped channel: {channel}")
+                return
             
             # Create feed item
             feed_item_id = f"slack_{channel}_{timestamp or datetime.utcnow().timestamp()}"
@@ -113,31 +119,26 @@ class SlackFeedBridge:
             logger.error(f"Error handling Slack event: {e}")
             db.session.rollback()
     
-    def _get_project_for_channel(self, channel_id: str) -> str:
-        """Get project ID for a Slack channel"""
-        # Check if we have a mapping for this channel
-        if channel_id in self.channel_project_mapping:
-            return self.channel_project_mapping[channel_id]
-        
-        # For now, default to the first available project or create a default one
+    def _get_project_for_channel(self, channel_id: str) -> Optional[str]:
+        """Get project ID for a Slack channel using database mappings"""
         try:
-            # Try to find an existing project
-            project = MissionControlProject.query.first()
-            if project:
-                return project.id
+            # Import ChannelMapping here to avoid circular imports
+            from ..models.channel_mapping import ChannelMapping
             
-            # Create a default project if none exists
-            default_project = MissionControlProject.create(
-                id='default-project',
-                name='Default Project',
-                description='Default project for Slack ideas'
-            )
-            db.session.commit()
-            return default_project.id
+            # Check database for channel mapping
+            project_id = ChannelMapping.get_project_for_channel(channel_id)
             
+            if project_id:
+                logger.info(f"Found mapping: channel {channel_id} -> project {project_id}")
+                return project_id
+            else:
+                # No mapping found - ignore this message
+                logger.info(f"No mapping found for channel {channel_id} - ignoring message")
+                return None
+                
         except Exception as e:
             logger.error(f"Error getting project for channel {channel_id}: {e}")
-            return 'default-project'
+            return None
     
     def _create_title_from_text(self, text: str) -> str:
         """Create a title from Slack message text"""
