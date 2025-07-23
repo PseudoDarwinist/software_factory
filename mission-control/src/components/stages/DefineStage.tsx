@@ -380,12 +380,17 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                 
                 <div className="flex items-center space-x-3">
                   <motion.button
-                    whileHover={{ scale: 1.05 }}
+                    whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setAiAssistantOpen(!aiAssistantOpen)}
-                    className="px-4 py-2 bg-purple-500/20 text-purple-400 rounded-lg border border-purple-500/30 hover:bg-purple-500/30 transition-all"
+                    className="cursor-pointer transition-transform"
+                    title="Chat with AI Assistant"
                   >
-                    🤖 AI Assistant
+                    <img 
+                      src="./robot-assistant.png" 
+                      alt="AI Assistant" 
+                      className="h-32 w-auto object-contain"
+                    />
                   </motion.button>
                   
                   <motion.button
@@ -723,7 +728,14 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-white/10 flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">🤖 AI Assistant</h3>
+        <div className="flex items-center space-x-3">
+          <img 
+            src="./robot-assistant.png" 
+            alt="AI Assistant" 
+            className="h-10 w-auto object-contain"
+          />
+          <h3 className="text-lg font-semibold text-white">AI Assistant</h3>
+        </div>
         <button
           onClick={onClose}
           className="text-white/60 hover:text-white transition-colors"

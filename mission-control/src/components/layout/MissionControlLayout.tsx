@@ -130,7 +130,7 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
       />
 
       {/* Main Content Area */}
-      <div className="flex h-full pt-16">
+      <div className="flex h-full pt-24">
         {/* Left Rail - Projects */}
         <AnimatePresence>
           {(!isMobile || !showConversation) && (
