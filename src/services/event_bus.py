@@ -178,7 +178,7 @@ class EventBus:
         self.subscriptions[event_type].append(subscription)
         
         subscription_id = f"{event_type}:{len(self.subscriptions[event_type])}"
-        logger.info(f"Added subscription: {subscription_id}")
+        logger.debug(f"Added subscription: {subscription_id}")
         
         return subscription_id
     

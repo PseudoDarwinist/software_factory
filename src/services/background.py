@@ -373,22 +373,22 @@ class BackgroundJobManager:
         """Handle repository processing job using the repository service"""
         try:
             from .repository import get_repository_service
-            from ..models.project import Project
+            from ..models.mission_control_project import MissionControlProject
         except ImportError:
             import sys
             import os
             sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
             from services.repository import get_repository_service
-            from models.project import Project
+            from models.mission_control_project import MissionControlProject
         
-        # Get repository URL from project
-        project = Project.query.get(project_id)
-        if not project or not project.repository_url:
-            return JobResult(success=False, error="Project not found or missing repository URL")
+        # Get repository URL from Mission Control project
+        project = MissionControlProject.query.get(project_id)
+        if not project or not project.repo_url:
+            return JobResult(success=False, error="Mission Control Project not found or missing repository URL")
         
         # Use repository service to process the repository
         repository_service = get_repository_service()
-        return repository_service.process_repository(context, project_id, project.repository_url)
+        return repository_service.process_repository(context, project_id, project.repo_url)
     
     def _handle_system_map_generation(self, context: JobContext, project_id: int, **kwargs) -> JobResult:
         """Handle system map generation job (placeholder)"""

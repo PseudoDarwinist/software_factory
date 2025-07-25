@@ -13,7 +13,7 @@ class Conversation(db.Model):
     __tablename__ = 'conversation'
     
     id = db.Column(db.Integer, primary_key=True)
-    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    project_id = db.Column(db.String(100), db.ForeignKey('mission_control_project.id', ondelete='CASCADE'), nullable=False)
     title = db.Column(db.String(200))
     messages = db.Column(JSON)
     ai_model = db.Column(db.String(100))

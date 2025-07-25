@@ -93,17 +93,19 @@ def check_database_health():
         
         # Test table existence
         try:
-            from ..models import Project, SystemMap, BackgroundJob, Conversation
+            from ..models import SystemMap, BackgroundJob, Conversation
+            from ..models.mission_control_project import MissionControlProject
         except ImportError:
             import sys
             import os
             sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-            from models import Project, SystemMap, BackgroundJob, Conversation
+            from models import SystemMap, BackgroundJob, Conversation
+            from models.mission_control_project import MissionControlProject
         
         tables_exist = True
         missing_tables = []
         
-        for model in [Project, SystemMap, BackgroundJob, Conversation]:
+        for model in [MissionControlProject, SystemMap, BackgroundJob, Conversation]:
             try:
                 db.session.execute(text(f'SELECT 1 FROM {model.__tablename__} LIMIT 1'))
             except Exception:
@@ -132,16 +134,18 @@ def get_database_statistics():
     """Get comprehensive database statistics"""
     try:
         try:
-            from ..models import Project, SystemMap, BackgroundJob, Conversation
+            from ..models import SystemMap, BackgroundJob, Conversation
+            from ..models.mission_control_project import MissionControlProject
         except ImportError:
             import sys
             import os
             sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-            from models import Project, SystemMap, BackgroundJob, Conversation
+            from models import SystemMap, BackgroundJob, Conversation
+            from models.mission_control_project import MissionControlProject
         
         stats = {
             'tables': {
-                'projects': Project.query.count(),
+                'projects': MissionControlProject.query.count(),
                 'system_maps': SystemMap.query.count(),
                 'background_jobs': BackgroundJob.query.count(),
                 'conversations': Conversation.query.count()
@@ -310,7 +314,8 @@ def migrate_json_data_to_database(json_file_path):
                 'message': f'JSON file not found: {json_file_path}'
             }
         
-        from ..models import Project, SystemMap, Conversation
+        from ..models import SystemMap, Conversation
+        from ..models.mission_control_project import MissionControlProject
         
         with open(json_file_path, 'r') as f:
             data = json.load(f)

@@ -18,13 +18,15 @@ import git
 from git import Repo, InvalidGitRepositoryError, GitCommandError
 
 try:
-    from ..models import SystemMap, Project, db
+    from ..models import SystemMap, db
+    from ..models.mission_control_project import MissionControlProject
     from .background import JobContext, JobResult
 except ImportError:
     import sys
     import os
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-    from models import SystemMap, Project, db
+    from models import SystemMap, db
+    from models.mission_control_project import MissionControlProject
     from services.background import JobContext, JobResult
 
 
@@ -444,7 +446,7 @@ class RepositoryService:
         self.logger = logging.getLogger(__name__)
         self.temp_dir = None
     
-    def process_repository(self, context: JobContext, project_id: int, repository_url: str) -> JobResult:
+    def process_repository(self, context: JobContext, project_id: str, repository_url: str) -> JobResult:
         """
         Main repository processing function that handles the complete workflow:
         1. Clone repository
@@ -454,7 +456,7 @@ class RepositoryService:
         
         Args:
             context: Job context for progress tracking
-            project_id: ID of the project being processed
+            project_id: Mission Control Project ID (string)
             repository_url: URL of the repository to process
         
         Returns:
@@ -469,10 +471,10 @@ class RepositoryService:
             if not repository_url or not repository_url.strip():
                 raise RepositoryAnalysisError("Repository URL is required")
             
-            # Get project from database
-            project = Project.query.get(project_id)
+            # Get Mission Control project from database
+            project = MissionControlProject.query.get(project_id)
             if not project:
-                raise RepositoryAnalysisError(f"Project {project_id} not found")
+                raise RepositoryAnalysisError(f"Mission Control Project {project_id} not found")
             
             context.update_progress(10, "Cloning repository")
             
@@ -500,9 +502,9 @@ class RepositoryService:
             # Process repository for vector search
             self._process_repository_for_vector_search(repo_path, project_id, context)
             
-            # Update project status
-            project.status = 'analyzed'
-            project.updated_at = datetime.utcnow()
+            # Update Mission Control project status
+            project.update_system_map_status('completed')
+            self.logger.info(f"Updated Mission Control project {project.id} status to completed")
             
             db.session.commit()
             
@@ -524,11 +526,12 @@ class RepositoryService:
             error_msg = f"Repository processing failed: {str(e)}"
             self.logger.error(error_msg, exc_info=True)
             
-            # Update project status to error
+            # Update Mission Control project status to failed
             try:
-                project = Project.query.get(project_id)
+                project = MissionControlProject.query.get(project_id)
                 if project:
-                    project.update_status('error')
+                    project.update_system_map_status('failed')
+                    self.logger.info(f"Updated Mission Control project {project.id} status to failed")
             except Exception:
                 pass  # Don't fail on status update error
             
@@ -629,21 +632,53 @@ class RepositoryService:
             
             if not vector_service:
                 self.logger.warning("Vector service not available, skipping semantic indexing")
+                context.update_progress(95, "Skipped semantic indexing (service unavailable)")
                 return
             
-            context.update_progress(87, "Indexing repository for semantic search")
+            self.logger.info(f"Starting vector indexing for project {project_id}")
+            context.update_progress(87, "Starting repository indexing for semantic search")
             
-            # Process the repository for vector search
-            success = vector_service.process_code_repository(repo_path, str(project_id))
+            # Process the repository for vector search with timeout protection
+            import signal
+            import time
             
-            if success:
-                context.update_progress(95, "Repository indexed for semantic search")
-                self.logger.info(f"Repository {project_id} successfully indexed for semantic search")
-            else:
-                self.logger.warning(f"Failed to index repository {project_id} for semantic search")
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Vector processing timeout")
+                
+            # Set a timeout for vector processing (5 minutes max)
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(300)  # 5 minutes timeout
+            
+            try:
+                start_time = time.time()
+                success = vector_service.process_code_repository(repo_path, str(project_id))
+                end_time = time.time()
+                processing_time = end_time - start_time
+                
+                signal.alarm(0)  # Cancel the alarm
+                
+                if success:
+                    context.update_progress(95, f"Repository indexed for semantic search ({processing_time:.1f}s)")
+                    self.logger.info(f"Repository {project_id} successfully indexed for semantic search in {processing_time:.1f}s")
+                else:
+                    context.update_progress(95, "Repository indexing completed with warnings")
+                    self.logger.warning(f"Repository {project_id} indexing completed but some files may have failed")
+                    
+            except TimeoutError:
+                signal.alarm(0)  # Cancel the alarm
+                context.update_progress(95, "Repository indexing timed out but continuing")
+                self.logger.error(f"Vector processing timed out for project {project_id} after 5 minutes")
+                # Don't fail the job, just continue without vector indexing
+                
+            except Exception as vector_error:
+                signal.alarm(0)  # Cancel the alarm
+                context.update_progress(95, "Repository indexing failed but continuing")
+                self.logger.error(f"Vector processing failed for project {project_id}: {vector_error}")
+                # Don't fail the job, just continue without vector indexing
             
         except Exception as e:
-            self.logger.warning(f"Vector search processing failed for project {project_id}: {e}")
+            self.logger.warning(f"Vector search processing setup failed for project {project_id}: {e}")
+            context.update_progress(95, "Skipped semantic indexing due to error")
             # Don't fail the entire job if vector processing fails
     
     def _cleanup_temp_directory(self):

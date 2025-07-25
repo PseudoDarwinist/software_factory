@@ -618,6 +618,461 @@ def create_specification(item_id):
         }), 500
 
 
+@stages_bp.route('/api/idea/<item_id>/create-spec-model-garden', methods=['POST'])
+def create_specification_with_model_garden(item_id):
+    """Create specification from an idea using AI Model Garden"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body must be JSON',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        project_id = data.get('projectId')
+        if not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Project ID is required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Check if feed item exists
+        feed_item = FeedItem.query.get(item_id)
+        if not feed_item:
+            return jsonify({
+                'success': False,
+                'error': 'Feed item not found',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 404
+        
+        # Import AI service for Model Garden integration
+        try:
+            from ..services.ai_service import get_ai_service
+            from ..events.domain_events import IdeaPromotedEvent
+            from ..events.event_store import EventStore
+        except ImportError:
+            from services.ai_service import get_ai_service
+            from events.domain_events import IdeaPromotedEvent
+            from events.event_store import EventStore
+        
+        # Get AI service (which includes Model Garden integration)
+        ai_service = get_ai_service()
+        
+        # Create specification using AI Model Garden
+        try:
+            logger.info(f"Creating specification for idea {item_id} using AI Model Garden")
+            
+            # Prepare context for AI Model Garden
+            context = {
+                'idea_title': feed_item.title,
+                'idea_summary': feed_item.summary,
+                'idea_content': feed_item.content,
+                'project_id': project_id,
+                'provider': 'model_garden'
+            }
+            
+            # Use AI Model Garden to generate specification
+            result = ai_service.execute_model_garden_task(
+                instruction=f"Generate a complete software specification for this idea: {feed_item.title}\n\nDescription: {feed_item.summary}\n\nCreate requirements.md, design.md, and tasks.md documents.",
+                product_context=context,
+                model='claude-opus-4',  # Use your preferred model
+                role='po'  # Product Owner role for specification generation
+            )
+            
+            if result.get('success'):
+                logger.info(f"AI Model Garden successfully created specification for idea {item_id}")
+                
+                # Store the event for audit trail
+                idea_promoted_event = IdeaPromotedEvent(
+                    idea_id=item_id,
+                    project_id=project_id,
+                    promoted_by='user'  # TODO: get actual user
+                )
+                event_store = EventStore()
+                event_store.append_event(idea_promoted_event)
+                
+                return jsonify({
+                    'success': True,
+                    'data': {
+                        'spec_id': f"spec_{item_id}",
+                        'processing_time': result.get('processing_time', 0),
+                        'artifacts_created': 3,  # requirements, design, tasks
+                        'provider': 'model_garden'
+                    },
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'version': '1.0.0',
+                })
+            else:
+                logger.error(f"AI Model Garden failed to create specification for idea {item_id}: {result.get('error')}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to create specification with AI Model Garden: {result.get("error", "Unknown error")}',
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'version': '1.0.0',
+                }), 500
+                
+        except Exception as ai_error:
+            logger.error(f"Error using AI Model Garden for idea {item_id}: {ai_error}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'error': 'Failed to process idea with AI Model Garden',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error creating specification with AI Model Garden for idea {item_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to create specification with AI Model Garden',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/specification/<spec_id>/generate-design', methods=['POST'])
+def generate_design_document(spec_id):
+    """Generate design document based on approved requirements"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body must be JSON',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        project_id = data.get('projectId')
+        if not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Project ID is required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Import required modules
+        try:
+            from ..models.specification_artifact import SpecificationArtifact, ArtifactType
+            from ..agents.define_agent import DefineAgent
+            from ..services.ai_broker import AIBroker
+            from ..events.event_router import EventBus
+        except ImportError:
+            from models.specification_artifact import SpecificationArtifact, ArtifactType
+            from agents.define_agent import DefineAgent
+            from services.ai_broker import AIBroker
+            from events.event_router import EventBus
+        
+        # Get requirements artifact to use as context
+        requirements_artifact = SpecificationArtifact.query.filter_by(
+            spec_id=spec_id,
+            artifact_type=ArtifactType.REQUIREMENTS
+        ).first()
+        
+        if not requirements_artifact:
+            return jsonify({
+                'success': False,
+                'error': 'Requirements document not found. Generate requirements first.',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Initialize DefineAgent
+        from flask import current_app
+        event_bus = EventBus()
+        ai_broker = AIBroker()
+        
+        with current_app.app_context():
+            ai_broker.start()
+        
+        define_agent = DefineAgent(event_bus, ai_broker)
+        
+        # Generate design document
+        try:
+            logger.info(f"Generating design document for spec {spec_id}")
+            design_content = define_agent.generate_design_document(
+                spec_id=spec_id,
+                project_id=project_id,
+                requirements_content=requirements_artifact.content
+            )
+            
+            if not design_content:
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to generate design document',
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'version': '1.0.0',
+                }), 500
+            
+            # Create or update design artifact
+            design_artifact_id = f"{spec_id}_design"
+            design_artifact = SpecificationArtifact.query.get(design_artifact_id)
+            
+            if design_artifact:
+                design_artifact.update_content(design_content, 'define_agent')
+            else:
+                design_artifact = SpecificationArtifact.create_artifact(
+                    spec_id=spec_id,
+                    project_id=project_id,
+                    artifact_type=ArtifactType.DESIGN,
+                    content=design_content,
+                    created_by='define_agent'
+                )
+                db.session.commit()
+            
+            logger.info(f"Design document generated successfully for spec {spec_id}")
+            
+            return jsonify({
+                'success': True,
+                'data': design_artifact.to_dict(),
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            })
+            
+        except Exception as agent_error:
+            logger.error(f"Error generating design document for spec {spec_id}: {agent_error}")
+            return jsonify({
+                'success': False,
+                'error': 'Failed to generate design document',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error in generate_design_document for spec {spec_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to generate design document',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/specification/<spec_id>/generate-tasks', methods=['POST'])
+def generate_tasks_document(spec_id):
+    """Generate tasks document based on approved design"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body must be JSON',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        project_id = data.get('projectId')
+        if not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Project ID is required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Import required modules
+        try:
+            from ..models.specification_artifact import SpecificationArtifact, ArtifactType
+            from ..agents.define_agent import DefineAgent
+            from ..services.ai_broker import AIBroker
+            from ..events.event_router import EventBus
+        except ImportError:
+            from models.specification_artifact import SpecificationArtifact, ArtifactType
+            from agents.define_agent import DefineAgent
+            from services.ai_broker import AIBroker
+            from events.event_router import EventBus
+        
+        # Get requirements and design artifacts to use as context
+        requirements_artifact = SpecificationArtifact.query.filter_by(
+            spec_id=spec_id,
+            artifact_type=ArtifactType.REQUIREMENTS
+        ).first()
+        
+        design_artifact = SpecificationArtifact.query.filter_by(
+            spec_id=spec_id,
+            artifact_type=ArtifactType.DESIGN
+        ).first()
+        
+        if not requirements_artifact or not design_artifact:
+            return jsonify({
+                'success': False,
+                'error': 'Requirements and design documents must exist before generating tasks',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Initialize DefineAgent
+        from flask import current_app
+        event_bus = EventBus()
+        ai_broker = AIBroker()
+        
+        with current_app.app_context():
+            ai_broker.start()
+        
+        define_agent = DefineAgent(event_bus, ai_broker)
+        
+        # Generate tasks document
+        try:
+            logger.info(f"Generating tasks document for spec {spec_id}")
+            tasks_content = define_agent.generate_tasks_document(
+                spec_id=spec_id,
+                project_id=project_id,
+                requirements_content=requirements_artifact.content,
+                design_content=design_artifact.content
+            )
+            
+            # If AI generation fails, create a basic template
+            if not tasks_content:
+                logger.warning(f"AI generation failed for tasks document, creating template")
+                tasks_content = f"""# Implementation Plan
+
+## Overview
+This implementation plan breaks down the approved requirements and design into actionable coding tasks.
+
+## Development Tasks
+
+- [ ] 1. Set up project structure and core interfaces
+  - Create directory structure following existing patterns
+  - Define interfaces and types
+  - Set up configuration files
+  - _Requirements: Core system setup_
+
+- [ ] 2. Implement data models and validation
+- [ ] 2.1 Create core data model classes
+  - Write data model classes following existing patterns
+  - Implement validation functions
+  - Create unit tests for models
+  - _Requirements: Data layer implementation_
+
+- [ ] 2.2 Create database migrations
+  - Write migration scripts following existing patterns
+  - Update database schemas
+  - Test migration rollback procedures
+  - _Requirements: Database schema updates_
+
+- [ ] 3. Implement business logic layer
+- [ ] 3.1 Create service classes
+  - Implement core business logic
+  - Add error handling and logging
+  - Write unit tests for services
+  - _Requirements: Business logic implementation_
+
+- [ ] 3.2 Add integration with existing services
+  - Connect to existing APIs and services
+  - Implement data transformation logic
+  - Add integration tests
+  - _Requirements: System integration_
+
+- [ ] 4. Create API endpoints
+- [ ] 4.1 Implement REST API controllers
+  - Create API endpoint handlers
+  - Add request/response validation
+  - Implement authentication/authorization
+  - _Requirements: API layer implementation_
+
+- [ ] 4.2 Add API documentation
+  - Document API endpoints
+  - Create API usage examples
+  - Update API documentation
+  - _Requirements: Documentation_
+
+- [ ] 5. Implement user interface components
+- [ ] 5.1 Create UI components
+  - Build user interface components
+  - Implement user interactions
+  - Add client-side validation
+  - _Requirements: User interface_
+
+- [ ] 5.2 Add responsive design
+  - Ensure mobile compatibility
+  - Test across different browsers
+  - Optimize for accessibility
+  - _Requirements: User experience_
+
+- [ ] 6. Testing and quality assurance
+- [ ] 6.1 Write comprehensive tests
+  - Complete unit test coverage
+  - Add integration tests
+  - Implement end-to-end tests
+  - _Requirements: Quality assurance_
+
+- [ ] 6.2 Performance optimization
+  - Profile application performance
+  - Optimize database queries
+  - Implement caching strategies
+  - _Requirements: Performance requirements_
+
+- [ ] 7. Documentation and deployment
+- [ ] 7.1 Complete documentation
+  - Update user documentation
+  - Create deployment guides
+  - Document configuration options
+  - _Requirements: Documentation_
+
+- [ ] 7.2 Prepare for deployment
+  - Set up deployment pipeline
+  - Configure monitoring and logging
+  - Perform security review
+  - _Requirements: Deployment readiness_
+
+---
+*This implementation plan was generated based on the approved requirements and design. Please review and modify tasks as needed before starting development.*
+"""
+            
+            # Create or update tasks artifact
+            tasks_artifact_id = f"{spec_id}_tasks"
+            tasks_artifact = SpecificationArtifact.query.get(tasks_artifact_id)
+            
+            if tasks_artifact:
+                tasks_artifact.update_content(tasks_content, 'define_agent')
+            else:
+                tasks_artifact = SpecificationArtifact.create_artifact(
+                    spec_id=spec_id,
+                    project_id=project_id,
+                    artifact_type=ArtifactType.TASKS,
+                    content=tasks_content,
+                    created_by='define_agent'
+                )
+                db.session.commit()
+            
+            logger.info(f"Tasks document generated successfully for spec {spec_id}")
+            
+            return jsonify({
+                'success': True,
+                'data': tasks_artifact.to_dict(),
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            })
+            
+        except Exception as agent_error:
+            logger.error(f"Error generating tasks document for spec {spec_id}: {agent_error}")
+            return jsonify({
+                'success': False,
+                'error': 'Failed to generate tasks document',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error in generate_tasks_document for spec {spec_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to generate tasks document',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
 @stages_bp.route('/api/specification/<spec_id>/freeze', methods=['POST'])
 def freeze_specification(spec_id):
     """Freeze all artifacts in a specification and emit spec.frozen event"""

@@ -299,6 +299,8 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
 
       {/* Liquid Glass Background Effects */}
       <div className="fixed inset-0 pointer-events-none -z-10">
+        {/* Gradient base */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#024f55] via-[#013442] to-[#000914]" />
         {/* Ambient background pattern */}
         <div 
           className="absolute inset-0 opacity-20"

@@ -38,6 +38,8 @@ export interface PaginatedResponse<T = any> {
 
 export type ProjectHealth = 'green' | 'amber' | 'red'
 
+export type SystemMapStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'error'
+
 export interface ProjectSummary {
   id: string
   name: string
@@ -46,6 +48,8 @@ export interface ProjectSummary {
   iconUrl?: string
   lastActivity: string
   description?: string
+  systemMapStatus?: SystemMapStatus
+  systemMapError?: string
 }
 
 // ========================================
@@ -208,6 +212,30 @@ export interface Command {
   command: string
   args: Record<string, any>
   context?: Record<string, any>
+}
+
+// ========================================
+// Kiro Integration Types
+// ========================================
+
+export interface KiroStatusResponse {
+  available: boolean
+  version?: string
+  workspace_path?: string
+}
+
+export interface KiroGenerationResponse {
+  success: boolean
+  content?: string
+  error?: string
+  provider?: string
+}
+
+export interface KiroGenerationRequest {
+  project_id: string
+  idea_content: string
+  requirements_content?: string
+  design_content?: string
 }
 
 // ========================================

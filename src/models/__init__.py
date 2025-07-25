@@ -3,7 +3,7 @@ Database Models Package
 """
 
 from .base import db
-from .project import Project
+# Project model removed - using MissionControlProject only
 from .system_map import SystemMap
 from .background_job import BackgroundJob
 from .conversation import Conversation
@@ -25,7 +25,7 @@ from .monitoring_metrics import (
 
 __all__ = [
     'db', 
-    'Project', 
+    # 'Project', # Removed - using MissionControlProject only 
     'SystemMap', 
     'BackgroundJob', 
     'Conversation',

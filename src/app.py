@@ -47,7 +47,8 @@ try:
         webhooks,
         cache,
         intelligence,
-        monitoring
+        monitoring,
+        kiro_endpoints
     )
 except ImportError as e:
     # Handle direct execution for scripts, etc.
@@ -66,7 +67,7 @@ except ImportError as e:
     import services.context_aware_ai as context_aware_ai
     import services.ai_agents as ai_agents
     import services.auth_service as auth_service
-    from api import projects, system, ai, mission_control, conversations, stages, events, graph, vector, webhooks, cache, intelligence, monitoring
+    from api import system, ai, mission_control, conversations, stages, events, graph, vector, webhooks, cache, intelligence, monitoring, kiro_endpoints
     from api import ai_broker as ai_broker_api
 
 migrate = Migrate()
@@ -219,17 +220,25 @@ def create_app(config_class=Config):
 
 
 def setup_logging(app):
-    """Configure application logging"""
-    if not app.debug:
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s', handlers=[logging.StreamHandler(sys.stdout)])
-    else:
-        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
-    app.logger.info("Logging configured")
+    """Configure clean, focused logging"""
+    try:
+        from config.logging_config import setup_clean_logging
+        setup_clean_logging(app)
+    except ImportError:
+        # Fallback to quiet logging
+        import logging
+        logging.basicConfig(
+            level=logging.WARNING,  # Much quieter
+            format='%(asctime)s [%(levelname)s] %(message)s',
+            datefmt='%H:%M:%S'
+        )
+        # Only log essential startup message
+        app.logger.info("🚀 Software Factory started")
 
 
 def register_blueprints(app):
     """Register application blueprints"""
-    app.register_blueprint(projects.projects_bp)
+    # projects.projects_bp removed - using mission_control.mission_control_bp instead
     app.register_blueprint(system.system_bp)
     app.register_blueprint(ai.ai_bp)
     app.register_blueprint(ai_broker_api.ai_broker_bp)
@@ -243,6 +252,7 @@ def register_blueprints(app):
     app.register_blueprint(cache.cache_bp)
     app.register_blueprint(intelligence.intelligence_bp)
     app.register_blueprint(monitoring.monitoring_bp)
+    app.register_blueprint(kiro_endpoints.kiro_bp)
     app.logger.info("API blueprints registered successfully")
 
 

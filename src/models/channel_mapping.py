@@ -13,9 +13,12 @@ class ChannelMapping(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     channel_id = db.Column(db.String(100), unique=True, nullable=False)
-    project_id = db.Column(db.String(100), nullable=False)
+    project_id = db.Column(db.String(100), db.ForeignKey('mission_control_project.id', ondelete='CASCADE'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship to project (optional, for easier access)
+    project = db.relationship('MissionControlProject', backref='channel_mappings')
     
     def __repr__(self):
         return f'<ChannelMapping {self.channel_id} -> {self.project_id}>'

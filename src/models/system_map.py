@@ -13,7 +13,7 @@ class SystemMap(db.Model):
     __tablename__ = 'system_map'
     
     id = db.Column(db.Integer, primary_key=True)
-    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    project_id = db.Column(db.String(100), db.ForeignKey('mission_control_project.id', ondelete='CASCADE'), nullable=False)
     content = db.Column(JSON)
     version = db.Column(db.String(50), default='1.0')
     generated_at = db.Column(db.DateTime, default=datetime.utcnow)

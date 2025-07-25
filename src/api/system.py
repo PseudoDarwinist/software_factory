@@ -5,12 +5,14 @@ REST endpoints for system status, health checks, and monitoring
 
 from flask import Blueprint, jsonify, current_app, request
 try:
-    from ..models import BackgroundJob, Project, SystemMap, Conversation, db
+    from ..models import BackgroundJob, SystemMap, Conversation, db
+    from ..models.mission_control_project import MissionControlProject
     from ..core.database import check_database_health, get_database_statistics
     from ..core.events import create_event, EventType
     from ..services.event_bus import publish_event
 except ImportError:
-    from models import BackgroundJob, Project, SystemMap, Conversation, db
+    from models import BackgroundJob, SystemMap, Conversation, db
+    from models.mission_control_project import MissionControlProject
     from core.database import check_database_health, get_database_statistics
     from core.events import create_event, EventType
     from services.event_bus import publish_event
@@ -117,10 +119,33 @@ def _generate_comprehensive_status():
     # Determine overall system status
     overall_status = _determine_overall_status(db_health, active_jobs, system_metrics)
     
+    # Get update counters for polling system
+    try:
+        from ..models import FeedItem, MissionControlProject
+    except ImportError:
+        from models import FeedItem, MissionControlProject
+    
+    # Count recent updates (last 5 minutes) for polling detection
+    recent_cutoff = datetime.utcnow() - timedelta(minutes=5)
+    
+    projects_updated = MissionControlProject.query.filter(
+        MissionControlProject.updated_at >= recent_cutoff
+    ).count()
+    
+    feed_updated = FeedItem.query.filter(
+        FeedItem.created_at >= recent_cutoff
+    ).count()
+    
     return {
         'timestamp': datetime.utcnow().isoformat(),
         'status': overall_status,
         'cached': False,
+        # Fields expected by Mission Control polling system
+        'projects_updated': projects_updated,
+        'feed_updated': feed_updated,
+        'active_jobs': len(active_jobs),
+        'system_health': overall_status,
+        # Detailed status data
         'jobs': {
             'active': [job.to_dict() for job in active_jobs],
             'recent': [job.to_dict() for job in recent_jobs],
@@ -152,8 +177,8 @@ def _get_project_status_summary():
     if cached_projects:
         return cached_projects
     
-    # Generate fresh project status data
-    projects = Project.query.all()
+    # Generate fresh project status data using Mission Control Projects
+    projects = MissionControlProject.query.all()
     
     status_counts = {}
     recent_projects = []
@@ -162,19 +187,25 @@ def _get_project_status_summary():
     recent_cutoff = datetime.utcnow() - timedelta(hours=24)
     
     for project in projects:
-        # Count by status
-        status_counts[project.status] = status_counts.get(project.status, 0) + 1
+        # Count by system map status
+        status = getattr(project, 'system_map_status', 'unknown')
+        status_counts[status] = status_counts.get(status, 0) + 1
         
         # Recent projects
         if project.created_at >= recent_cutoff:
-            recent_projects.append(project.to_dict())
+            recent_projects.append({
+                'id': project.id,
+                'name': project.name,
+                'status': status,
+                'created_at': project.created_at.isoformat() if project.created_at else None
+            })
         
         # Active projects (with recent activity)
-        if project.updated_at >= recent_cutoff or project.status in ['processing', 'running']:
+        if project.updated_at >= recent_cutoff or status in ['in_progress', 'processing']:
             active_projects.append({
                 'id': project.id,
                 'name': project.name,
-                'status': project.status,
+                'status': status,
                 'updated_at': project.updated_at.isoformat() if project.updated_at else None,
                 'active_jobs': _get_project_active_jobs(project.id)
             })
@@ -463,7 +494,7 @@ def submit_background_job():
         project_id = data.get('project_id')
         if project_id:
             # Verify project exists
-            project = Project.query.get(project_id)
+            project = MissionControlProject.query.get(project_id)
             if not project:
                 return jsonify({'error': f'Project {project_id} not found'}), 404
         
@@ -540,11 +571,17 @@ def get_projects_status():
 
 def _get_detailed_project_status(project_id: int, include_jobs: bool = True):
     """Get detailed status for a specific project"""
-    project = Project.query.get(project_id)
+    project = MissionControlProject.query.get(project_id)
     if not project:
         return None
     
-    project_data = project.to_dict()
+    project_data = {
+        'id': project.id,
+        'name': project.name,
+        'status': getattr(project, 'system_map_status', 'unknown'),
+        'created_at': project.created_at.isoformat() if project.created_at else None,
+        'updated_at': project.updated_at.isoformat() if project.updated_at else None
+    }
     
     if include_jobs:
         # Get all jobs for this project
@@ -592,11 +629,17 @@ def _get_detailed_project_status(project_id: int, include_jobs: bool = True):
 
 def _get_all_projects_status(include_jobs: bool = True):
     """Get status for all projects"""
-    projects = Project.query.order_by(Project.updated_at.desc()).all()
+    projects = MissionControlProject.query.order_by(MissionControlProject.updated_at.desc()).all()
     
     projects_data = []
     for project in projects:
-        project_data = project.to_dict()
+        project_data = {
+            'id': project.id,
+            'name': project.name,
+            'status': getattr(project, 'system_map_status', 'unknown'),
+            'created_at': project.created_at.isoformat() if project.created_at else None,
+            'updated_at': project.updated_at.isoformat() if project.updated_at else None
+        }
         
         if include_jobs:
             # Get active jobs count only for performance
@@ -781,7 +824,7 @@ def get_application_metrics():
         # Get recent activity (last hour)
         recent_cutoff = datetime.utcnow() - timedelta(hours=1)
         recent_activity = {
-            'projects_created': Project.query.filter(Project.created_at >= recent_cutoff).count(),
+            'projects_created': MissionControlProject.query.filter(MissionControlProject.created_at >= recent_cutoff).count(),
             'jobs_completed': BackgroundJob.query.filter(
                 BackgroundJob.completed_at >= recent_cutoff,
                 BackgroundJob.status == BackgroundJob.STATUS_COMPLETED

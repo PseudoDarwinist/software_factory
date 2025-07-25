@@ -25,12 +25,12 @@ import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import { LiquidCard } from '@/components/core/LiquidCard'
-import { X } from 'lucide-react'
+import { X, Database, AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
 import { HealthDot } from '@/components/core/HealthDot'
 import { AddProjectModal } from '@/components/modals/AddProjectModal'
 import missionControlApi from '@/services/api/missionControlApi'
 import { tokens } from '@/styles/tokens'
-import type { ProjectSummary } from '@/types'
+import type { ProjectSummary, SystemMapStatus } from '@/types'
 import { useActions } from '@/stores/missionControlStore'
 
 interface ProjectRailProps {
@@ -342,18 +342,23 @@ const ProjectCard: React.FC<ProjectCardProps> = React.memo(({
                     {project.name}
                   </h3>
                   
-                  {/* Unread count */}
-                  {project.unreadCount > 0 && (
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="flex-shrink-0 ml-2"
-                    >
-                      <div className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                        {project.unreadCount > 99 ? '99+' : project.unreadCount}
-                      </div>
-                    </motion.div>
-                  )}
+                  <div className="flex items-center space-x-1 ml-2">
+                    {/* System Map Status Badge */}
+                    <SystemMapStatusBadge status={project.systemMapStatus} error={project.systemMapError} />
+                    
+                    {/* Unread count */}
+                    {project.unreadCount > 0 && (
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        className="flex-shrink-0"
+                      >
+                        <div className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                          {project.unreadCount > 99 ? '99+' : project.unreadCount}
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Description */}
@@ -383,5 +388,71 @@ const ProjectCard: React.FC<ProjectCardProps> = React.memo(({
     </motion.div>
   )
 })
+
+/**
+ * SystemMapStatusBadge - Shows the current status of system map generation
+ */
+interface SystemMapStatusBadgeProps {
+  status?: SystemMapStatus
+  error?: string
+}
+
+const SystemMapStatusBadge: React.FC<SystemMapStatusBadgeProps> = ({ status = 'pending', error }) => {
+  const getStatusConfig = () => {
+    switch (status) {
+      case 'in_progress':
+        return {
+          icon: Loader2,
+          color: 'text-amber-400',
+          bgColor: 'bg-amber-500/20',
+          title: 'System map is being generated...',
+          animate: true
+        }
+      case 'completed':
+        return {
+          icon: CheckCircle,
+          color: 'text-green-400',
+          bgColor: 'bg-green-500/20',
+          title: 'System map ready – AI agents have full context'
+        }
+      case 'failed':
+      case 'error':
+        return {
+          icon: AlertCircle,
+          color: 'text-red-400',
+          bgColor: 'bg-red-500/20',
+          title: error || 'System map failed – click to retry'
+        }
+      default: // 'pending'
+        return {
+          icon: Database,
+          color: 'text-yellow-400',
+          bgColor: 'bg-yellow-500/20',
+          title: 'System map generation pending'
+        }
+    }
+  }
+
+  const config = getStatusConfig()
+  const Icon = config.icon
+
+  return (
+    <div
+      className={clsx(
+        'flex items-center justify-center w-5 h-5 rounded-full transition-colors',
+        config.bgColor
+      )}
+      title={config.title}
+    >
+      <Icon
+        className={clsx(
+          'w-3 h-3',
+          config.color,
+          config.animate && 'animate-spin'
+        )}
+      />
+    </div>
+  )
+}
 
 export default ProjectRail

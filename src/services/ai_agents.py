@@ -20,7 +20,7 @@ try:
     from ..services.event_bus import get_event_bus
     from ..services.distributed_cache import get_distributed_cache
     from ..core.events import Event, EventType
-    from ..models.project import Project
+    from ..models.mission_control_project import MissionControlProject
     from ..models.conversation import Conversation
     from ..models.system_map import SystemMap
 except ImportError:
@@ -30,7 +30,7 @@ except ImportError:
     from services.event_bus import get_event_bus
     from services.distributed_cache import get_distributed_cache
     from core.events import Event, EventType
-    from models.project import Project
+    from models.mission_control_project import MissionControlProject
     from models.conversation import Conversation
     from models.system_map import SystemMap
 

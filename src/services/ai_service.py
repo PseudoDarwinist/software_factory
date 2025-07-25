@@ -38,8 +38,14 @@ class GooseIntegration:
                 logger.warning("Goose binary not found, falling back to direct API call")
                 return self._fallback_to_direct_api(instruction, business_context)
             
-            # Enhance instruction with business context if provided
-            enhanced_instruction = self._enhance_instruction(instruction, business_context, github_repo)
+            # Check if this is a DefineAgent prompt that should be passed through unchanged
+            if ("You are a senior product manager and business analyst" in instruction and 
+                "ANALYZE THE REPOSITORY FIRST" in instruction):
+                logger.info("DefineAgent prompt detected in GooseIntegration - using unchanged")
+                enhanced_instruction = instruction  # No enhancement for DefineAgent
+            else:
+                # Enhance instruction with business context if provided
+                enhanced_instruction = self._enhance_instruction(instruction, business_context, github_repo)
             
             # Create temporary instruction file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
@@ -52,13 +58,16 @@ class GooseIntegration:
                 logger.info(f"Instruction length: {len(enhanced_instruction)} characters")
                 
                 # Run goose with enhanced instruction using run command for non-interactive execution
+                # Increase timeout for DefineAgent complex prompts
+                timeout_seconds = 120 if ("You are a senior product manager" in enhanced_instruction) else 30
+                
                 result = subprocess.run(
                     [self.goose_script, 'run', '-i', '-', '--no-session', '--quiet'],
                     input=enhanced_instruction,
                     capture_output=True,
                     text=True,
                     cwd=self.project_path,
-                    timeout=30  # Reduced to 30 seconds timeout for faster feedback
+                    timeout=timeout_seconds  # 2 minutes for DefineAgent, 30s for others
                 )
                 
                 logger.info(f"Goose execution completed with return code: {result.returncode}")
@@ -101,15 +110,112 @@ class GooseIntegration:
             return self._fallback_to_direct_api(instruction, business_context)
     
     def _fallback_to_direct_api(self, instruction: str, business_context: Dict = None) -> Dict[str, Any]:
-        """Fallback disabled - Model Garden is down, return error instead"""
-        logger.error("Goose failed and Model Garden fallback is disabled (API is down)")
-        return {
-            'success': False,
-            'output': '',
-            'error': 'Goose execution failed and Model Garden fallback is disabled (API down)',
-            'returncode': -1,
-            'provider': 'goose-fallback-disabled'
-        }
+        """Fallback to Model Garden when Goose fails"""
+        logger.warning("Goose failed, attempting Model Garden fallback")
+        
+        try:
+            # Initialize Model Garden
+            model_garden = ModelGardenIntegration()
+            
+            # Format business context for Model Garden
+            product_context = {}
+            if business_context:
+                product_context = {
+                    'domain': business_context.get('domain', ''),
+                    'useCase': business_context.get('useCase', ''),
+                    'targetAudience': business_context.get('targetAudience', ''),
+                    'requirements': business_context.get('requirements', '')
+                }
+            
+            # Execute with Model Garden using a reliable model
+            result = model_garden.execute_task(
+                instruction=instruction,
+                product_context=product_context,
+                model='claude-sonnet-3.5',  # Reliable fallback model
+                role='developer'  # Repository analysis role
+            )
+            
+            if result.get('success'):
+                logger.info("Model Garden fallback successful")
+                return {
+                    'success': True,
+                    'output': result.get('response', ''),
+                    'error': None,
+                    'returncode': 0,
+                    'provider': 'model-garden-fallback'
+                }
+            else:
+                logger.error(f"Model Garden fallback failed: {result.get('error')}")
+                return {
+                    'success': False,
+                    'output': '',
+                    'error': f"Both Goose and Model Garden failed: {result.get('error')}",
+                    'returncode': -1,
+                    'provider': 'all-fallbacks-failed'
+                }
+                
+        except Exception as e:
+            logger.error(f"Model Garden fallback exception: {e}")
+            
+            # Try Claude Code SDK as final fallback
+            try:
+                from .claude_code_service import ClaudeCodeService
+                claude_service = ClaudeCodeService()
+                
+                if claude_service.is_available():
+                    logger.info("Attempting Claude Code SDK as final fallback")
+                    
+                    # For DefineAgent requests, use specialized method
+                    if ("You are a senior product manager and business analyst" in instruction and 
+                        "ANALYZE THE REPOSITORY FIRST" in instruction):
+                        
+                        # Extract system context and idea content from DefineAgent prompt
+                        lines = instruction.split('\n')
+                        system_context = ""
+                        idea_content = ""
+                        
+                        in_system_context = False
+                        in_feature_request = False
+                        
+                        for line in lines:
+                            if "SYSTEM CONTEXT:" in line:
+                                in_system_context = True
+                                continue
+                            elif "FEATURE REQUEST:" in line:
+                                in_system_context = False
+                                in_feature_request = True
+                                continue
+                            elif "INSTRUCTIONS:" in line:
+                                in_feature_request = False
+                                break
+                            
+                            if in_system_context:
+                                system_context += line + "\n"
+                            elif in_feature_request:
+                                idea_content += line + "\n"
+                        
+                        result = claude_service.create_specification(idea_content.strip(), system_context.strip())
+                    else:
+                        result = claude_service.execute_task(instruction)
+                    
+                    if result.get('success'):
+                        logger.info("Claude Code SDK fallback successful")
+                        return result
+                    else:
+                        logger.error(f"Claude Code SDK fallback failed: {result.get('error')}")
+                
+            except ImportError:
+                logger.warning("Claude Code SDK not available for fallback")
+            except Exception as claude_e:
+                logger.error(f"Claude Code SDK fallback error: {claude_e}")
+            
+            return {
+                'success': False,
+                'output': '',
+                'error': f"All fallbacks failed: Goose timeout, Model Garden down, Claude Code SDK error: {str(e)}",
+                'returncode': -1,
+                'provider': 'all-fallbacks-failed'
+            }
     
     def _enhance_instruction(self, instruction: str, business_context: Dict = None, github_repo: Dict = None) -> str:
         """Enhance instruction with context and repository information"""
@@ -245,8 +351,14 @@ class ModelGardenIntegration:
             if not instruction:
                 raise AIServiceError('No instruction provided')
             
-            # Enhance instruction with role and context
-            enhanced_instruction = self._enhance_instruction(instruction, product_context, role)
+            # Check if this is a DefineAgent prompt that should be passed through unchanged
+            if ("You are a senior product manager and business analyst" in instruction and 
+                "ANALYZE THE REPOSITORY FIRST" in instruction):
+                logger.info("DefineAgent prompt detected in ModelGardenIntegration - using unchanged")
+                enhanced_instruction = instruction  # No enhancement for DefineAgent
+            else:
+                # Enhance instruction with role and context
+                enhanced_instruction = self._enhance_instruction(instruction, product_context, role)
             
             # Prepare API request
             headers = {
@@ -357,6 +469,14 @@ class AIService:
         """Execute task using Goose AI with repository awareness and vector context"""
         self.logger.info(f"Executing Goose task for role: {role}")
         
+        # Check if this is a DefineAgent prompt that should be passed through unchanged
+        if ("You are a senior product manager and business analyst" in instruction and 
+            "ANALYZE THE REPOSITORY FIRST" in instruction):
+            self.logger.info("DefineAgent prompt detected - passing through unchanged to GooseAI")
+            self.logger.info(f"DefineAgent prompt length: {len(instruction)} characters")
+            return self.goose.execute_task(instruction, business_context, github_repo)
+        
+        # For other requests, add role-specific context
         # Get relevant context from vector database
         vector_context = self._get_vector_context(instruction, role)
         
@@ -373,6 +493,14 @@ Please respond as a {role} expert, providing practical, actionable insights rele
         """Execute task using Model Garden with vector context"""
         self.logger.info(f"Executing Model Garden task with model: {model}, role: {role}")
         
+        # Check if this is a DefineAgent prompt that should be passed through unchanged
+        if ("You are a senior product manager and business analyst" in instruction and 
+            "ANALYZE THE REPOSITORY FIRST" in instruction):
+            self.logger.info("DefineAgent prompt detected - passing through unchanged to Model Garden")
+            self.logger.info(f"DefineAgent prompt length: {len(instruction)} characters")
+            return self.model_garden.execute_task(instruction, product_context, model, role)
+        
+        # For other requests, add vector context
         # Get relevant context from vector database
         vector_context = self._get_vector_context(instruction, role)
         

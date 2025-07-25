@@ -12,13 +12,13 @@ try:
         get_intelligence_engine, get_recommendation_engine, get_trend_analyzer
     )
     from ..services.distributed_cache import get_distributed_cache
-    from ..models.project import Project
+    from ..models.mission_control_project import MissionControlProject
 except ImportError:
     from services.intelligence_engine import (
         get_intelligence_engine, get_recommendation_engine, get_trend_analyzer
     )
     from services.distributed_cache import get_distributed_cache
-    from models.project import Project
+    from models.mission_control_project import MissionControlProject
 
 logger = logging.getLogger(__name__)
 

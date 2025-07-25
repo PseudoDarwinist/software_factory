@@ -902,7 +902,18 @@ class AIBroker:
             )
     
     def _prepare_instruction(self, request: AIRequest) -> str:
-        """Prepare enhanced instruction with context"""
+        """Prepare instruction - pass DefineAgent prompts through unchanged"""
+        
+        # Check if this is a DefineAgent request that should be passed through unchanged
+        if (request.metadata and 
+            request.metadata.get('agent') == 'define_agent' and 
+            request.metadata.get('type') in ['requirements', 'design', 'tasks']):
+            
+            logger.info(f"DefineAgent request detected - passing prompt through unchanged")
+            logger.info(f"Original prompt length: {len(request.instruction)}")
+            return request.instruction  # Pass DefineAgent prompt unchanged
+        
+        # For other requests, apply normal context enhancement
         instruction_parts = []
         
         # Add vector context if available

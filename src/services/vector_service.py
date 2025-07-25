@@ -667,6 +667,9 @@ class VectorService:
         """
         try:
             processed_files = 0
+            failed_files = 0
+            max_files = 1000  # Limit number of files to prevent hanging
+            max_file_size = 1024 * 1024  # 1MB max file size
             
             # Define code file extensions to process
             code_extensions = {
@@ -676,38 +679,72 @@ class VectorService:
                 '.yaml', '.yml', '.xml', '.sh', '.bash', '.dockerfile'
             }
             
+            logger.info(f"Starting repository processing for project {project_id}")
+            
             for root, dirs, files in os.walk(repo_path):
                 # Skip common directories that don't contain useful code
                 dirs[:] = [d for d in dirs if not d.startswith('.') and 
-                          d not in {'node_modules', '__pycache__', 'venv', 'env', 'dist', 'build'}]
+                          d not in {'node_modules', '__pycache__', 'venv', 'env', 'dist', 'build', 
+                                   'target', 'out', 'bin', 'obj', '.git', '.svn', '.hg', 
+                                   'coverage', 'logs', 'tmp', 'temp'}]
+                
+                # Break if we've processed too many files
+                if processed_files >= max_files:
+                    logger.warning(f"Reached max file limit ({max_files}), stopping processing")
+                    break
                 
                 for file in files:
+                    # Break if we've processed too many files
+                    if processed_files >= max_files:
+                        break
+                        
                     file_path = os.path.join(root, file)
                     file_ext = os.path.splitext(file)[1].lower()
                     
                     if file_ext in code_extensions:
                         try:
+                            # Check file size first
+                            if os.path.getsize(file_path) > max_file_size:
+                                logger.debug(f"Skipping large file: {file_path}")
+                                continue
+                                
                             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                                 content = f.read()
                             
-                            if content.strip():
+                            if content.strip() and len(content) > 10:  # Skip very small files
                                 # Create document ID from relative path
                                 rel_path = os.path.relpath(file_path, repo_path)
                                 document_id = f"{project_id}:{rel_path}"
                                 
-                                # Process the file
-                                if self.process_document(content, document_id, 'code_file'):
-                                    processed_files += 1
+                                # Process the file with timeout protection
+                                try:
+                                    if self.process_document(content, document_id, 'code_file'):
+                                        processed_files += 1
+                                        
+                                        # Log progress every 50 files
+                                        if processed_files % 50 == 0:
+                                            logger.info(f"Processed {processed_files} files for project {project_id}")
+                                    else:
+                                        failed_files += 1
+                                        
+                                except Exception as process_error:
+                                    logger.warning(f"Failed to process content for {file_path}: {process_error}")
+                                    failed_files += 1
+                                    continue
                                 
                         except Exception as e:
-                            logger.warning(f"Failed to process file {file_path}: {e}")
+                            logger.warning(f"Failed to read file {file_path}: {e}")
+                            failed_files += 1
                             continue
             
-            logger.info(f"Processed {processed_files} code files for project {project_id}")
-            return processed_files > 0
+            success = processed_files > 0
+            logger.info(f"Repository processing completed for project {project_id}: "
+                       f"{processed_files} files processed, {failed_files} failed")
+            
+            return success
             
         except Exception as e:
-            logger.error(f"Failed to process code repository: {e}")
+            logger.error(f"Failed to process code repository for project {project_id}: {e}")
             return False
     
     def get_document_statistics(self) -> Dict[str, Any]:

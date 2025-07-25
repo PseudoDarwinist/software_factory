@@ -95,7 +95,7 @@ class WebSocketServer:
             self.connected_clients[client_id] = client_info
             self.stats['connections'] += 1
             
-            logger.info(f"Client connected: {client_id} from {client_info['ip_address']}")
+            logger.debug(f"Client connected: {client_id} from {client_info['ip_address']}")
             
             # Send welcome message with authentication requirement
             emit('welcome', {

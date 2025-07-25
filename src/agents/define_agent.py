@@ -304,7 +304,7 @@ class DefineAgent(BaseAgent):
             ai_context = self._prepare_ai_context(idea_content, project_context, context_data)
             
             # Generate only requirements.md first (sequential workflow like Kiro)
-            requirements_md = self._generate_requirements(idea_content, ai_context)
+            requirements_md = self._generate_requirements(idea_content, ai_context, project_context)
             if not requirements_md:
                 return None
             
@@ -381,7 +381,7 @@ class DefineAgent(BaseAgent):
         
         return "\n".join(context_parts)
     
-    def _generate_requirements(self, idea_content: str, ai_context: str) -> Optional[str]:
+    def _generate_requirements(self, idea_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
         """Generate requirements.md using AI Broker with enhanced repository-aware context"""
         try:
             # Enhanced Kiro-style prompt that leverages repository access
@@ -485,29 +485,68 @@ List 8-12 numbered requirements using EARS format:
 
 Generate a comprehensive, repository-aware requirements document that demonstrates deep understanding of the existing codebase and seamlessly integrates with established patterns."""
             
-            # Use your existing AI Broker pattern
+            # Create clean DefineAgent prompt with only system map context
+            clean_prompt = self._create_clean_define_agent_prompt(idea_content, ai_context)
+            
+            # Try Claude Code SDK first as primary option
+            logger.info("Trying Claude Code SDK as primary AI provider")
+            try:
+                try:
+                    from ..services.claude_code_service import ClaudeCodeService
+                except ImportError:
+                    from services.claude_code_service import ClaudeCodeService
+                
+                # Get the correct repository path for this project  
+                repo_path = self._get_project_repository_path(project_context)
+                logger.info(f"Using repository path for Claude Code SDK: {repo_path}")
+                
+                claude_service = ClaudeCodeService(repo_path)
+                logger.info(f"Claude Code SDK service created, checking availability...")
+                
+                if claude_service.is_available():
+                    logger.info("✅ Claude Code SDK is available, using as primary provider")
+                    
+                    result = claude_service.create_specification(idea_content, ai_context)
+                    logger.info(f"Claude Code SDK result: success={result.get('success')}")
+                    
+                    if result.get('success'):
+                        logger.info("✅ Claude Code SDK successfully generated requirements")
+                        return result.get('output', '')
+                    else:
+                        logger.error(f"❌ Claude Code SDK failed: {result.get('error')}")
+                else:
+                    logger.warning("❌ Claude Code SDK not available, trying AI Broker fallback")
+            
+            except Exception as e:
+                logger.error(f"Claude Code SDK primary attempt failed: {e}")
+            
+            # Fallback to AI Broker with other models
+            logger.info("Falling back to AI Broker (Model Garden + Goose)")
             ai_request = AIRequest(
                 request_id=f"requirements_{uuid.uuid4().hex[:8]}",
                 task_type=TaskType.DOCUMENTATION,
-                instruction=prompt,
+                instruction=clean_prompt,  # Clean DefineAgent prompt only
                 priority=Priority.HIGH,
                 max_tokens=32000,
                 timeout_seconds=300.0,
-                preferred_models=['goose-gemini', 'claude-opus-4'],  # Try Goose first, then fallback
-                metadata={'agent': self.config.agent_id, 'type': 'requirements', 'approach': 'kiro_style'}
+                preferred_models=['claude-opus-4', 'goose-gemini'],  # Model Garden first, then Goose
+                metadata={'agent': self.config.agent_id, 'type': 'requirements', 'approach': 'clean_define_agent'}
             )
             
-            logger.info(f"Submitting enhanced AI request with models: {ai_request.preferred_models}")
-            logger.info(f"Request ID: {ai_request.request_id}, Enhanced context length: {len(prompt)}")
+            logger.info(f"Submitting clean DefineAgent request with models: {ai_request.preferred_models}")
+            logger.info(f"Request ID: {ai_request.request_id}, Clean prompt length: {len(clean_prompt)}")
             
             import time
             start_time = time.time()
-            response = self.ai_broker.submit_request_sync(ai_request, timeout=300.0)
+            response = self.ai_broker.submit_request_sync(ai_request, timeout=120.0)
             elapsed_time = time.time() - start_time
             
             logger.info(f"AI response received after {elapsed_time:.2f}s - Success: {response.success}")
             logger.info(f"Response model: {getattr(response, 'model_used', 'unknown')}")
             logger.info(f"Response content length: {len(getattr(response, 'content', ''))}")
+            
+            # The clean prompt should work for both GooseAI and Model Garden
+            # No need for fallback with different prompts since we've eliminated layering
             
             if hasattr(response, 'error_message') and response.error_message:
                 logger.error(f"AI response error: {response.error_message}")
@@ -519,11 +558,66 @@ Generate a comprehensive, repository-aware requirements document that demonstrat
                 return response.content
             else:
                 logger.error(f"Failed to generate requirements: {response.error_message}")
+                
+                # Try Claude Code SDK as final fallback when AI Broker fails
+                if "Request timed out" in str(response.error_message) or "Model Garden" in str(response.error_message):
+                    logger.info("Attempting Claude Code SDK fallback for DefineAgent")
+                    try:
+                        try:
+                            from ..services.claude_code_service import ClaudeCodeService
+                        except ImportError:
+                            from services.claude_code_service import ClaudeCodeService
+                        
+                        # Get the correct repository path for this project
+                        repo_path = self._get_project_repository_path(project_context)
+                        logger.info(f"Using repository path for Claude Code SDK: {repo_path}")
+                        
+                        claude_service = ClaudeCodeService(repo_path)
+                        
+                        if claude_service.is_available():
+                            logger.info("Using Claude Code SDK to generate requirements")
+                            
+                            # Extract system context from ai_context
+                            system_context = ai_context if ai_context else ""
+                            
+                            result = claude_service.create_specification(idea_content, system_context)
+                            
+                            if result.get('success'):
+                                logger.info("Claude Code SDK successfully generated requirements")
+                                return result.get('output', '')
+                            else:
+                                logger.error(f"Claude Code SDK failed: {result.get('error')}")
+                        else:
+                            logger.warning("Claude Code SDK not available for fallback")
+                    
+                    except ImportError:
+                        logger.warning("Claude Code SDK not installed")
+                    except Exception as e:
+                        logger.error(f"Claude Code SDK fallback error: {e}")
+                
                 return None
                 
         except Exception as e:
             logger.error(f"Error generating requirements: {e}")
             return None
+    
+    def _create_clean_define_agent_prompt(self, idea_content: str, ai_context: str) -> str:
+        """Create ultra-simple prompt for GooseAI to handle without timeout"""
+        
+        # Ultra-minimal prompt under 1000 characters
+        simple_prompt = f"""Analyze repository and create requirements.md for: {idea_content}
+
+1. Examine codebase structure (src/, package.json, etc.)
+2. Create requirements.md with:
+   - Executive Summary
+   - 3-5 User Stories  
+   - 5-8 Functional Requirements (REQ-001 format)
+   - Technical Implementation (files to modify)
+   - Acceptance Criteria
+
+Output complete requirements.md document."""
+        
+        return simple_prompt
     
     def _generate_requirements_DUPLICATE(self, idea_content: str, ai_context: str) -> Optional[str]:
         """Generate requirements.md using AI Broker with enhanced repository-aware context"""
@@ -838,396 +932,447 @@ ORIGINAL IDEA:
                 error_message=str(e)
             )
     
-    # Remove the old implementation and replace with this comment
-    # The old _generate_requirements method has been replaced above 
-
-
-    def _generate_design(self, idea_content: str, requirements_md: str, ai_context: str) -> Optional[str]:
-        """Generate design.md using AI"""
+    def _get_project_repository_path(self, project_context: ProjectContext = None) -> str:
+        """Get the repository path for the current project"""
         try:
-            prompt = f"""You are a senior software architect and technical lead. Create a comprehensive technical design document for the following feature.
+            if not project_context or not project_context.project_id:
+                logger.warning("No project context available, using current directory")
+                return os.getcwd()
+            
+            # Import MissionControlProject model
+            try:
+                from ..models.mission_control_project import MissionControlProject
+            except ImportError:
+                from models.mission_control_project import MissionControlProject
+            
+            # Look up the project to get repository URL
+            project = MissionControlProject.query.filter_by(id=project_context.project_id).first()
+            
+            if not project or not project.repo_url:
+                logger.warning(f"No repository URL found for project {project_context.project_id}")
+                return os.getcwd()
+            
+            # For GitHub repositories, we need to clone or find the local path
+            # For now, let's try to find if it's already cloned in a temporary directory
+            import tempfile
+            import hashlib
+            
+            # Create a consistent temporary directory name based on repo URL
+            repo_hash = hashlib.md5(project.repo_url.encode()).hexdigest()[:8]
+            temp_dir = os.path.join(tempfile.gettempdir(), f"repo_{repo_hash}")
+            
+            if os.path.exists(temp_dir):
+                logger.info(f"Found existing repository clone at: {temp_dir}")
+                return temp_dir
+            
+            # If not found, clone the repository
+            logger.info(f"Cloning repository {project.repo_url} to {temp_dir}")
+            try:
+                from git import Repo
+                Repo.clone_from(project.repo_url, temp_dir, depth=1)
+                logger.info(f"Successfully cloned repository to {temp_dir}")
+                return temp_dir
+            except Exception as clone_error:
+                logger.error(f"Failed to clone repository: {clone_error}")
+                # Fallback to current directory
+                return os.getcwd()
+                
+        except Exception as e:
+            logger.error(f"Error getting project repository path: {e}")
+            return os.getcwd()
 
-FEATURE REQUEST:
-{idea_content}
 
-REQUIREMENTS:
-{requirements_md}
+    def _generate_design(self, requirements_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
+        """Generate design.md. Try Claude Code SDK first, then fall back to AI Broker"""
+        try:
+            # --------------------------------------------
+            # 1) Try Claude Code SDK / CLI (local) first
+            # --------------------------------------------
+            try:
+                from ..services.claude_code_service import ClaudeCodeService  # type: ignore
+            except ImportError:
+                from services.claude_code_service import ClaudeCodeService  # type: ignore
 
-PROJECT CONTEXT:
-{ai_context}
+            repo_path = self._get_project_repository_path(project_context)
+            claude_service = ClaudeCodeService(repo_path)
 
-Create a design.md document with the following structure:
+            if claude_service.is_available():
+                logger.info("Using Claude Code SDK for design generation")
 
-# Technical Design Document
+                claude_prompt = f"""Analyze this repository and create a detailed design.md for the approved requirements below.\n\n=== APPROVED REQUIREMENTS ===\n{requirements_content}\n\n=== PROJECT CONTEXT ===\n{ai_context}\n\nTASK:\nCreate a comprehensive design.md that extends the existing architecture, references concrete files/modules, and follows project conventions. Include diagrams using Mermaid where useful."""
 
-## 1. Overview
-### 1.1 Purpose
-- Brief description of the feature and its technical objectives
-- Scope and boundaries of the implementation
+                result = claude_service.execute_task(claude_prompt)
+                if result.get("success"):
+                    logger.info("Claude Code SDK succeeded for design generation")
+                    return result.get("output", "")
+                else:
+                    logger.warning(f"Claude Code SDK failed for design: {result.get('error')}")
+            else:
+                logger.info("Claude Code SDK not available – falling back to AI Broker")
 
-### 1.2 Architecture Summary
-- High-level architectural approach
-- Key design decisions and rationale
+            # -----------------------------------------------------------------
+            # 2) Fallback – AI Broker with preferred Anthropic model, then Goose
+            # -----------------------------------------------------------------
+            prompt = f"""You are a senior software architect with full filesystem access to analyze this repository.\n\n{ai_context}\n\nINSTRUCTIONS:\n1. **ANALYZE THE REPOSITORY**: Use your filesystem access to examine\n   - Current architecture and design patterns\n   - Database schemas and data models\n   - API structures and service patterns\n   - UI/UX components and design systems\n   - Integration patterns and middleware\n\n2. **CREATE REPOSITORY-AWARE DESIGN**: Generate design.md that:\n   - Extends existing architectural patterns\n   - Integrates with current data models and APIs\n   - Follows established design conventions\n   - References specific files and components\n   - Uses the same technology stack\n\nCreate a design.md document with this structure:\n\n# Design Document\n\n## Overview\n- Feature overview and architectural approach\n- Integration with existing system components\n- Key design decisions and rationale\n\n## Architecture\n- High-level architecture diagram (Mermaid if applicable)\n- Component relationships and data flow\n- Integration points with existing services\n\n## Components and Interfaces\n- Detailed component specifications\n- API endpoints and data contracts\n- Database schema changes\n- UI/UX component specifications\n\n## Data Models\n- Entity relationships and schemas\n- Data validation and constraints\n- Migration strategies for existing data\n\n## Error Handling\n- Error scenarios and handling strategies\n- Logging and monitoring approaches\n- Fallback mechanisms\n\n## Testing Strategy\n- Unit testing approach\n- Integration testing plans\n- End-to-end testing scenarios\n\nGenerate a comprehensive, repository-aware design document."""
 
-## 2. System Architecture
-### 2.1 Component Architecture
-```mermaid
-graph TB
-    A[Frontend] --> B[API Gateway]
-    B --> C[Business Logic]
-    C --> D[Data Layer]
-    D --> E[Database]
-```
+            ai_request = AIRequest(
+                request_id=f"design_{uuid.uuid4().hex[:8]}",
+                task_type=TaskType.DOCUMENTATION,
+                instruction=prompt,
+                priority=Priority.HIGH,
+                max_tokens=32000,
+                timeout_seconds=300.0,
+                preferred_models=["claude-opus-4", "goose-gemini"],
+                metadata={"agent": self.config.agent_id, "type": "design"}
+            )
 
-### 2.2 Data Flow
-- Request/response flow diagrams
-- Data transformation points
-- Integration touchpoints
+            logger.info("Generating design document with AI Broker fallback")
+            response = self.ai_broker.submit_request_sync(ai_request, timeout=120.0)
 
-### 2.3 Technology Stack
-- Programming languages and frameworks
-- Databases and storage solutions
-- Third-party services and libraries
+            if response.success:
+                logger.info(f"Generated design document using {response.model_used}")
+                return response.content
+            else:
+                logger.error(f"Failed to generate design document via AI Broker: {response.error_message}")
+                return None
 
-## 3. Detailed Design
-### 3.1 API Design
-#### 3.1.1 Endpoints
-```
-POST /api/v1/resource
-GET /api/v1/resource/{id}
-PUT /api/v1/resource/{id}
-DELETE /api/v1/resource/{id}
-```
+        except Exception as e:
+            logger.error(f"Error generating design document: {e}")
+            return None
 
-#### 3.1.2 Request/Response Schemas
-```json
-{{
-  "field1": "string",
-  "field2": "integer",
-  "field3": {{
-    "nested": "object"
-  }}
-}}
-```
+    # ------------------------------------------------------------
+    # Update _generate_tasks with similar Claude-first strategy
+    # ------------------------------------------------------------
+    def _generate_tasks(self, requirements_content: str, design_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
+        """Generate tasks.md. Try Claude Code SDK first, then AI Broker"""
+        try:
+            # 1) Try Claude Code SDK first
+            try:
+                from ..services.claude_code_service import ClaudeCodeService  # type: ignore
+            except ImportError:
+                from services.claude_code_service import ClaudeCodeService  # type: ignore
 
-### 3.2 Database Design
-#### 3.2.1 Entity Relationship Diagram
-```mermaid
-erDiagram
-    USER ||--o{{ ORDER : places
-    ORDER ||--|| LINE-ITEM : contains
-    PRODUCT ||--o{{ LINE-ITEM : includes
-```
+            repo_path = self._get_project_repository_path(project_context)
+            claude_service = ClaudeCodeService(repo_path)
 
-#### 3.2.2 Table Schemas
-```sql
-CREATE TABLE example_table (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+            if claude_service.is_available():
+                logger.info("Using Claude Code SDK for tasks generation")
 
-### 3.3 Business Logic Components
-- Service layer design
-- Domain models and entities
-- Business rules implementation
+                claude_prompt = f"""Analyze this repository and create a detailed tasks.md implementation plan based on the approved design.\n\n=== APPROVED REQUIREMENTS ===\n{requirements_content}\n\n=== APPROVED DESIGN ===\n{design_content}\n\n=== PROJECT CONTEXT ===\n{ai_context}\n\nTASK:\nBreak the implementation into incremental coding tasks formatted as a markdown checklist with clear references to requirements. Focus only on steps that involve writing, modifying, or testing code."""
 
-### 3.4 Security Design
-- Authentication and authorization flows
-- Data encryption and protection
-- Input validation and sanitization
-- Rate limiting and abuse prevention
+                result = claude_service.execute_task(claude_prompt)
+                if result.get("success"):
+                    logger.info("Claude Code SDK succeeded for tasks generation")
+                    return result.get("output", "")
+                else:
+                    logger.warning(f"Claude Code SDK failed for tasks: {result.get('error')}")
+            else:
+                logger.info("Claude Code SDK not available – falling back to AI Broker")
 
-## 4. Implementation Strategy
-### 4.1 Development Phases
-1. **Phase 1**: Core functionality
-2. **Phase 2**: Integration and testing
-3. **Phase 3**: Performance optimization
+            # 2) Fallback to AI Broker
+            prompt = f"""You are a senior technical lead with full filesystem access to analyze this repository.\n\n{ai_context}\n\nINSTRUCTIONS:\n1. **ANALYZE THE REPOSITORY**: Use your filesystem access to examine current code organization, testing frameworks, and build processes.\n2. **CREATE IMPLEMENTATION PLAN**: Generate tasks.md where each checklist item is a discrete coding task that references requirements and builds incrementally.\n\nGenerate a comprehensive tasks.md document."""
 
-### 4.2 Migration Strategy
-- Database migration scripts
-- Backward compatibility considerations
-- Rollback procedures
+            ai_request = AIRequest(
+                request_id=f"tasks_{uuid.uuid4().hex[:8]}",
+                task_type=TaskType.DOCUMENTATION,
+                instruction=prompt,
+                priority=Priority.HIGH,
+                max_tokens=32000,
+                timeout_seconds=300.0,
+                preferred_models=["claude-opus-4", "goose-gemini"],
+                metadata={"agent": self.config.agent_id, "type": "tasks"}
+            )
 
-### 4.3 Deployment Strategy
-- Environment configuration
-- CI/CD pipeline integration
-- Blue-green deployment approach
+            logger.info("Generating tasks document with AI Broker fallback")
+            response = self.ai_broker.submit_request_sync(ai_request, timeout=120.0)
 
-## 5. Performance Considerations
-### 5.1 Performance Requirements
-- Response time targets
-- Throughput expectations
-- Resource utilization limits
+            if response.success:
+                logger.info(f"Generated tasks document using {response.model_used}")
+                return response.content
+            else:
+                logger.error(f"Failed to generate tasks document via AI Broker: {response.error_message}")
+                return None
 
-### 5.2 Optimization Strategies
-- Caching strategies
-- Database query optimization
-- Load balancing approaches
+        except Exception as e:
+            logger.error(f"Error generating tasks document: {e}")
+            return None
+    
+    def generate_design_document(self, spec_id: str, project_id: str, requirements_content: str) -> Optional[str]:
+        """Generate design document based on approved requirements"""
+        if not self.ai_broker:
+            logger.warning("AI broker not available, cannot generate design document")
+            return None
+        
+        try:
+            # Get project context
+            project_context = self.get_project_context(project_id)
+            
+            # Prepare context for design generation
+            ai_context = self._prepare_design_context(requirements_content, project_context)
+            
+            # Generate design document
+            design_content = self._generate_design(requirements_content, ai_context, project_context)
+            
+            return design_content
+            
+        except Exception as e:
+            logger.error(f"Failed to generate design document: {e}")
+            return None
+    
+    def generate_tasks_document(self, spec_id: str, project_id: str, requirements_content: str, design_content: str) -> Optional[str]:
+        """Generate tasks document based on approved requirements and design"""
+        if not self.ai_broker:
+            logger.warning("AI broker not available, cannot generate tasks document")
+            return None
+        
+        try:
+            # Get project context
+            project_context = self.get_project_context(project_id)
+            
+            # Prepare context for tasks generation
+            ai_context = self._prepare_tasks_context(requirements_content, design_content, project_context)
+            
+            # Generate tasks document
+            tasks_content = self._generate_tasks(requirements_content, design_content, ai_context, project_context)
+            
+            return tasks_content
+            
+        except Exception as e:
+            logger.error(f"Failed to generate tasks document: {e}")
+            return None
+    
+    def _prepare_design_context(self, requirements_content: str, project_context: ProjectContext) -> str:
+        """Prepare context for design document generation"""
+        context_parts = []
+        
+        context_parts.append("=== REPOSITORY ANALYSIS FOR DESIGN ===")
+        context_parts.append("You have full filesystem access to analyze this repository for design decisions.")
+        context_parts.append("Focus on:")
+        context_parts.append("- Existing architectural patterns and components")
+        context_parts.append("- Database schemas and data models")
+        context_parts.append("- API patterns and service structures")
+        context_parts.append("- UI/UX patterns and component libraries")
+        context_parts.append("")
+        
+        # Add project system map if available
+        if project_context.system_map:
+            context_parts.append("=== PROJECT SYSTEM MAP ===")
+            context_parts.append(str(project_context.system_map))
+            context_parts.append("")
+        
+        context_parts.append("=== APPROVED REQUIREMENTS ===")
+        context_parts.append(requirements_content)
+        context_parts.append("")
+        
+        return "\n".join(context_parts)
+    
+    def _prepare_tasks_context(self, requirements_content: str, design_content: str, project_context: ProjectContext) -> str:
+        """Prepare context for tasks document generation"""
+        context_parts = []
+        
+        context_parts.append("=== REPOSITORY ANALYSIS FOR IMPLEMENTATION ===")
+        context_parts.append("You have full filesystem access to analyze this repository for implementation planning.")
+        context_parts.append("Focus on:")
+        context_parts.append("- Existing code patterns and conventions")
+        context_parts.append("- Testing frameworks and patterns")
+        context_parts.append("- Build and deployment processes")
+        context_parts.append("- File organization and module structure")
+        context_parts.append("")
+        
+        # Add project system map if available
+        if project_context.system_map:
+            context_parts.append("=== PROJECT SYSTEM MAP ===")
+            context_parts.append(str(project_context.system_map))
+            context_parts.append("")
+        
+        context_parts.append("=== APPROVED REQUIREMENTS ===")
+        context_parts.append(requirements_content)
+        context_parts.append("")
+        
+        context_parts.append("=== APPROVED DESIGN ===")
+        context_parts.append(design_content)
+        context_parts.append("")
+        
+        return "\n".join(context_parts)
+    
+    def _generate_design(self, requirements_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
+        """Generate design.md using Claude Code SDK first, then AI Broker fallback"""
+        try:
+            # Try Claude Code SDK first as primary option
+            logger.info("Trying Claude Code SDK for design generation")
+            try:
+                try:
+                    from ..services.claude_code_service import ClaudeCodeService
+                except ImportError:
+                    from services.claude_code_service import ClaudeCodeService
+                
+                # Get the correct repository path for this project  
+                repo_path = self._get_project_repository_path(project_context)
+                logger.info(f"Using repository path for Claude Code SDK: {repo_path}")
+                
+                claude_service = ClaudeCodeService(repo_path)
+                
+                if claude_service.is_available():
+                    logger.info("Using Claude Code SDK for design generation")
+                    
+                    # Create simplified design-specific prompt
+                    design_prompt = f"""Create a design document based on these requirements:
 
-### 5.3 Monitoring and Metrics
-- Key performance indicators
-- Logging and observability
-- Alerting thresholds
+{requirements_content}
 
-## 6. Error Handling and Resilience
-### 6.1 Error Scenarios
-- Input validation errors
-- System failures and timeouts
-- External service failures
+Generate a design.md with:
+1. System Architecture Overview
+2. Key Components and APIs
+3. Database Design
+4. Integration Points
 
-### 6.2 Recovery Strategies
-- Retry mechanisms
-- Circuit breaker patterns
-- Graceful degradation
+Keep it concise and focused on the core design decisions."""
+                    
+                    logger.info("Calling Claude Code SDK create_specification for design...")
+                    result = claude_service.create_specification(design_prompt, ai_context)
+                    logger.info(f"Claude Code SDK design result: {result.get('success')}, error: {result.get('error', 'None')}")
+                    
+                    if result.get('success'):
+                        logger.info("✅ Claude Code SDK successfully generated design document")
+                        return result.get('output', '')
+                    else:
+                        logger.error(f"❌ Claude Code SDK design failed: {result.get('error')}")
+                else:
+                    logger.warning("Claude Code SDK not available for design generation")
+            
+            except Exception as e:
+                logger.error(f"Claude Code SDK design generation failed: {e}")
+            
+            # Fallback to AI Broker
+            logger.info("Falling back to AI Broker for design generation")
+            prompt = f"""Create a design document based on these requirements:
 
-### 6.3 Logging and Debugging
-- Structured logging format
-- Error tracking and reporting
-- Debug information capture
+{requirements_content}
 
-## 7. Testing Strategy
-### 7.1 Unit Testing
-- Test coverage targets
-- Mock and stub strategies
-- Test data management
-
-### 7.2 Integration Testing
-- API contract testing
-- Database integration tests
-- External service mocking
-
-### 7.3 Performance Testing
-- Load testing scenarios
-- Stress testing parameters
-- Performance benchmarks
-
-## 8. Maintenance and Operations
-### 8.1 Operational Procedures
-- Deployment procedures
-- Monitoring and alerting
-- Backup and recovery
-
-### 8.2 Documentation
-- API documentation
-- Operational runbooks
-- Troubleshooting guides
-
-Generate a professional, comprehensive technical design document following this exact structure with specific implementation details."""
+Generate a concise design.md with system architecture, components, and integration points."""
             
             ai_request = AIRequest(
                 request_id=f"design_{uuid.uuid4().hex[:8]}",
-                task_type=TaskType.ARCHITECTURE,
+                task_type=TaskType.DOCUMENTATION,
                 instruction=prompt,
                 priority=Priority.HIGH,
-                max_tokens=8000,
+                max_tokens=32000,
                 timeout_seconds=300.0,
-                preferred_models=['claude-opus-4'],
+                preferred_models=['claude-opus-4', 'goose-gemini'],
                 metadata={'agent': self.config.agent_id, 'type': 'design'}
             )
             
+            logger.info(f"Generating design document with AI Broker")
             response = self.ai_broker.submit_request_sync(ai_request, timeout=120.0)
             
             if response.success:
-                logger.info(f"Generated design using {response.model_used}")
+                logger.info(f"Generated design document using {response.model_used}")
                 return response.content
             else:
-                logger.error(f"Failed to generate design: {response.error_message}")
+                logger.error(f"Failed to generate design document: {response.error_message}")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error generating design: {e}")
+            logger.error(f"Error generating design document: {e}")
             return None
     
-    def _generate_tasks(self, idea_content: str, requirements_md: str, 
-                       design_md: str, ai_context: str) -> Optional[str]:
-        """Generate tasks.md using AI"""
+    def _generate_tasks(self, requirements_content: str, design_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
+        """Generate tasks.md using Claude Code SDK first, then AI Broker fallback"""
         try:
-            prompt = f"""You are a senior engineering manager and technical lead. Create a comprehensive implementation plan that breaks down the feature into actionable development tasks.
+            # Try Claude Code SDK first as primary option
+            logger.info("Trying Claude Code SDK for tasks generation")
+            try:
+                try:
+                    from ..services.claude_code_service import ClaudeCodeService
+                except ImportError:
+                    from services.claude_code_service import ClaudeCodeService
+                
+                # Get the correct repository path for this project  
+                repo_path = self._get_project_repository_path(project_context)
+                logger.info(f"Using repository path for Claude Code SDK: {repo_path}")
+                
+                claude_service = ClaudeCodeService(repo_path)
+                
+                if claude_service.is_available():
+                    logger.info("Using Claude Code SDK for tasks generation")
+                    
+                    # Create tasks-specific prompt
+                    tasks_prompt = f"""Based on the approved requirements and design, create a comprehensive implementation plan with actionable coding tasks.
 
-FEATURE REQUEST:
-{idea_content}
+APPROVED REQUIREMENTS:
+{requirements_content}
 
-REQUIREMENTS:
-{requirements_md}
+APPROVED DESIGN:
+{design_content}
 
-TECHNICAL DESIGN:
-{design_md}
-
-PROJECT CONTEXT:
+CONTEXT:
 {ai_context}
 
-Create a tasks.md document with the following structure:
+Generate a tasks.md document with:
+- Specific coding tasks that can be executed
+- References to files that need to be created or modified
+- Test-driven development approach
+- Incremental implementation steps
+- Integration with existing codebase patterns"""
+                    
+                    result = claude_service.create_specification(tasks_prompt, ai_context)
+                    
+                    if result.get('success'):
+                        logger.info("Claude Code SDK successfully generated tasks document")
+                        return result.get('output', '')
+                    else:
+                        logger.error(f"Claude Code SDK failed: {result.get('error')}")
+                else:
+                    logger.warning("Claude Code SDK not available for tasks generation")
+            
+            except Exception as e:
+                logger.error(f"Claude Code SDK tasks generation failed: {e}")
+            
+            # Fallback to AI Broker
+            logger.info("Falling back to AI Broker for tasks generation")
+            prompt = f"""You are a senior technical lead with full filesystem access to analyze this repository.
 
-# Implementation Tasks
+{ai_context}
 
-## Overview
-- Brief summary of the implementation approach
-- Key milestones and deliverables
-- Estimated timeline and effort
+APPROVED REQUIREMENTS:
+{requirements_content}
 
-## Development Phases
+APPROVED DESIGN:
+{design_content}
 
-### Phase 1: Foundation and Setup
-- [ ] **1.1 Project Setup**
-  - Set up development environment and dependencies
-  - Configure build tools and CI/CD pipeline
-  - Create project structure and base configurations
-  - _Estimated effort: 0.5 days_
-  - _Requirements: ENV-001, BUILD-001_
-
-- [ ] **1.2 Database Schema**
-  - Create database migration scripts
-  - Implement entity models and relationships
-  - Set up database connection and ORM configuration
-  - _Estimated effort: 1 day_
-  - _Requirements: DATA-001, DATA-002_
-
-### Phase 2: Core Backend Implementation
-- [ ] **2.1 API Layer**
-  - Implement REST API endpoints
-  - Add request/response validation
-  - Configure authentication and authorization
-  - _Estimated effort: 2 days_
-  - _Requirements: API-001, API-002, SEC-001_
-
-- [ ] **2.2 Business Logic**
-  - Implement core business services
-  - Add domain models and business rules
-  - Integrate with external services
-  - _Estimated effort: 3 days_
-  - _Requirements: BUS-001, BUS-002, INT-001_
-
-- [ ] **2.3 Data Access Layer**
-  - Implement repository patterns
-  - Add database queries and transactions
-  - Implement caching strategies
-  - _Estimated effort: 1.5 days_
-  - _Requirements: DATA-003, PERF-001_
-
-### Phase 3: Frontend Implementation
-- [ ] **3.1 UI Components**
-  - Create reusable UI components
-  - Implement responsive design
-  - Add accessibility features
-  - _Estimated effort: 2 days_
-  - _Requirements: UI-001, UI-002, ACC-001_
-
-- [ ] **3.2 State Management**
-  - Implement application state management
-  - Add API integration layer
-  - Handle loading and error states
-  - _Estimated effort: 1.5 days_
-  - _Requirements: UI-003, ERR-001_
-
-- [ ] **3.3 User Workflows**
-  - Implement complete user journeys
-  - Add form validation and submission
-  - Integrate with backend APIs
-  - _Estimated effort: 2.5 days_
-  - _Requirements: UX-001, UX-002_
-
-### Phase 4: Testing and Quality Assurance
-- [ ] **4.1 Unit Testing**
-  - Write unit tests for business logic
-  - Add API endpoint tests
-  - Achieve 80%+ code coverage
-  - _Estimated effort: 2 days_
-  - _Requirements: TEST-001_
-
-- [ ] **4.2 Integration Testing**
-  - Write end-to-end API tests
-  - Add database integration tests
-  - Test external service integrations
-  - _Estimated effort: 1.5 days_
-  - _Requirements: TEST-002_
-
-- [ ] **4.3 Frontend Testing**
-  - Write component unit tests
-  - Add user interaction tests
-  - Perform cross-browser testing
-  - _Estimated effort: 1.5 days_
-  - _Requirements: TEST-003_
-
-### Phase 5: Performance and Security
-- [ ] **5.1 Performance Optimization**
-  - Optimize database queries
-  - Implement caching strategies
-  - Add performance monitoring
-  - _Estimated effort: 1 day_
-  - _Requirements: PERF-001, PERF-002_
-
-- [ ] **5.2 Security Hardening**
-  - Implement security best practices
-  - Add input validation and sanitization
-  - Perform security testing
-  - _Estimated effort: 1 day_
-  - _Requirements: SEC-001, SEC-002_
-
-### Phase 6: Deployment and Documentation
-- [ ] **6.1 Deployment Preparation**
-  - Create deployment scripts
-  - Configure production environment
-  - Set up monitoring and logging
-  - _Estimated effort: 1 day_
-  - _Requirements: OPS-001, MON-001_
-
-- [ ] **6.2 Documentation**
-  - Write API documentation
-  - Create user guides
-  - Document deployment procedures
-  - _Estimated effort: 1 day_
-  - _Requirements: DOC-001_
-
-## Risk Mitigation Tasks
-- [ ] **R.1 Dependency Management**
-  - Audit third-party dependencies
-  - Implement fallback mechanisms
-  - Create dependency update strategy
-
-- [ ] **R.2 Data Migration**
-  - Create data migration scripts
-  - Test migration procedures
-  - Plan rollback strategies
-
-## Definition of Done
-Each task is considered complete when:
-- [ ] Code is written and reviewed
-- [ ] Unit tests are written and passing
-- [ ] Integration tests are passing
-- [ ] Documentation is updated
-- [ ] Security review is completed
-- [ ] Performance benchmarks are met
-
-## Total Estimated Effort: 20-25 developer days
-
-Generate a professional, comprehensive implementation plan following this exact structure with specific, actionable tasks."""
+Convert the approved requirements and design into actionable coding tasks. Focus ONLY on tasks that involve writing, modifying, or testing code."""
             
             ai_request = AIRequest(
                 request_id=f"tasks_{uuid.uuid4().hex[:8]}",
-                task_type=TaskType.PLANNING,
+                task_type=TaskType.DOCUMENTATION,
                 instruction=prompt,
                 priority=Priority.HIGH,
-                max_tokens=8000,
+                max_tokens=32000,
                 timeout_seconds=300.0,
-                preferred_models=['claude-opus-4'],
+                preferred_models=['claude-opus-4', 'goose-gemini'],
                 metadata={'agent': self.config.agent_id, 'type': 'tasks'}
             )
             
+            logger.info(f"Generating tasks document with AI Broker")
             response = self.ai_broker.submit_request_sync(ai_request, timeout=120.0)
             
             if response.success:
-                logger.info(f"Generated tasks using {response.model_used}")
+                logger.info(f"Generated tasks document using {response.model_used}")
                 return response.content
             else:
-                logger.error(f"Failed to generate tasks: {response.error_message}")
+                logger.error(f"Failed to generate tasks document: {response.error_message}")
                 return None
                 
         except Exception as e:
-            logger.error(f"Error generating tasks: {e}")
+            logger.error(f"Error generating tasks document: {e}")
             return None
-    
+
+    def _get_project_repository_path(self, project_context: ProjectContext) -> str:
+        """Get the repository path for Claude Code SDK"""
+        # Default to current working directory if no specific path is available
+        import os
+        return os.getcwd()
+
     def _store_specifications(self, spec_id: str, project_id: str, specifications: Dict[str, str]):
         """Store generated specifications in the database"""
         try:

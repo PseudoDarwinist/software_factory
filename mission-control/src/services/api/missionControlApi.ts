@@ -22,7 +22,10 @@ import type {
   FeedItem, 
   ConversationPayload,
   SDLCStage,
-  Command
+  Command,
+  KiroStatusResponse,
+  KiroGenerationResponse,
+  KiroGenerationRequest
 } from '@/types'
 
 class MissionControlApi {
@@ -303,6 +306,46 @@ class MissionControlApi {
     }
   }
 
+  async createSpecificationWithModelGarden(itemId: string, projectId: string): Promise<{ spec_id: string; processing_time: number; artifacts_created: number }> {
+    try {
+      const response = await this.client.post<ApiResponse<{ spec_id: string; processing_time: number; artifacts_created: number }>>(`/idea/${itemId}/create-spec-model-garden`, {
+        projectId
+      })
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to create specification with AI Model Garden:', error)
+      throw new Error('Failed to create specification with AI Model Garden')
+    }
+  }
+
+  async generateDesignDocument(specId: string, projectId: string): Promise<any> {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(`/specification/${specId}/generate-design`, {
+        projectId
+      }, {
+        timeout: 360000 // 6 minutes for Claude Code SDK design generation
+      })
+      return response.data.data
+    } catch (error) {
+      console.error('Failed to generate design document:', error)
+      throw new Error('Failed to generate design document')
+    }
+  }
+
+  async generateTasksDocument(specId: string, projectId: string): Promise<any> {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(`/specification/${specId}/generate-tasks`, {
+        projectId
+      }, {
+        timeout: 360000 // 6 minutes for Claude Code SDK tasks generation
+      })
+      return response.data.data
+    } catch (error) {
+      console.error('Failed to generate tasks document:', error)
+      throw new Error('Failed to generate tasks document')
+    }
+  }
+
   async freezeSpecification(specId: string, projectId: string): Promise<void> {
     try {
       await this.client.post(`/specification/${specId}/freeze`, { projectId })
@@ -389,6 +432,123 @@ class MissionControlApi {
     } catch (error) {
       console.error('Health check failed:', error)
       throw new Error('Health check failed')
+    }
+  }
+
+  // Kiro Integration endpoints
+  async checkKiroStatus(): Promise<KiroStatusResponse> {
+    try {
+      const response = await this.client.get<ApiResponse<KiroStatusResponse>>('/kiro/status')
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to check Kiro status:', error)
+      // Return safe fallback when Kiro is not available
+      return { available: false }
+    }
+  }
+
+  async generateRequirementsWithKiro(projectId: string, ideaContent: string): Promise<KiroGenerationResponse> {
+    try {
+      const requestData: KiroGenerationRequest = {
+        project_id: projectId,
+        idea_content: ideaContent
+      }
+      
+      const response = await this.client.post<ApiResponse<KiroGenerationResponse>>('/kiro/generate-requirements', requestData)
+      
+      if (!response.data.data) {
+        throw new Error('No data received from Kiro service')
+      }
+      
+      return response.data.data
+    } catch (error) {
+      console.error('Failed to generate requirements with Kiro:', error)
+      
+      // Return structured error response instead of throwing
+      if (error instanceof Error) {
+        return {
+          success: false,
+          error: error.message,
+          provider: 'kiro'
+        }
+      }
+      
+      return {
+        success: false,
+        error: 'Unknown error occurred while generating requirements',
+        provider: 'kiro'
+      }
+    }
+  }
+
+  async generateDesignWithKiro(projectId: string, ideaContent: string, requirementsContent: string): Promise<KiroGenerationResponse> {
+    try {
+      const requestData: KiroGenerationRequest = {
+        project_id: projectId,
+        idea_content: ideaContent,
+        requirements_content: requirementsContent
+      }
+      
+      const response = await this.client.post<ApiResponse<KiroGenerationResponse>>('/kiro/generate-design', requestData)
+      
+      if (!response.data.data) {
+        throw new Error('No data received from Kiro service')
+      }
+      
+      return response.data.data
+    } catch (error) {
+      console.error('Failed to generate design with Kiro:', error)
+      
+      // Return structured error response instead of throwing
+      if (error instanceof Error) {
+        return {
+          success: false,
+          error: error.message,
+          provider: 'kiro'
+        }
+      }
+      
+      return {
+        success: false,
+        error: 'Unknown error occurred while generating design',
+        provider: 'kiro'
+      }
+    }
+  }
+
+  async generateTasksWithKiro(projectId: string, ideaContent: string, requirementsContent: string, designContent: string): Promise<KiroGenerationResponse> {
+    try {
+      const requestData: KiroGenerationRequest = {
+        project_id: projectId,
+        idea_content: ideaContent,
+        requirements_content: requirementsContent,
+        design_content: designContent
+      }
+      
+      const response = await this.client.post<ApiResponse<KiroGenerationResponse>>('/kiro/generate-tasks', requestData)
+      
+      if (!response.data.data) {
+        throw new Error('No data received from Kiro service')
+      }
+      
+      return response.data.data
+    } catch (error) {
+      console.error('Failed to generate tasks with Kiro:', error)
+      
+      // Return structured error response instead of throwing
+      if (error instanceof Error) {
+        return {
+          success: false,
+          error: error.message,
+          provider: 'kiro'
+        }
+      }
+      
+      return {
+        success: false,
+        error: 'Unknown error occurred while generating tasks',
+        provider: 'kiro'
+      }
     }
   }
 

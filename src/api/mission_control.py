@@ -191,41 +191,66 @@ def create_mission_control_project():
             logger.info("No slack channels provided")
         
         # Trigger repository processing in background (like regular projects)
-        if repo_url:
+        logger.info(f"Repository processing check: repo_url='{repo_url}', type={type(repo_url)}, bool={bool(repo_url)}")
+        print(f"DEBUG: Repository processing check: repo_url='{repo_url}', type={type(repo_url)}, bool={bool(repo_url)}")
+        
+        if repo_url and repo_url.strip():
+            logger.info(f"About to start repository processing for project {project_id} with repo_url: {repo_url}")
+            print(f"DEBUG: About to start repository processing for project {project_id} with repo_url: {repo_url}")
             try:
-                # Create a corresponding regular project for repository processing
-                from ..models.project import Project
-                from ..services.background import get_job_manager, BackgroundJob
+                logger.info(f"Starting repository processing setup for project {project_id}")
+                print(f"DEBUG: Starting repository processing setup for project {project_id}")
                 
-                regular_project = Project.create(
-                    name=name,
-                    repository_url=repo_url,
-                    description=f"Auto-created for Mission Control project {project_id}"
-                )
-                db.session.commit()
+                # Submit repository processing job directly with Mission Control project
+                try:
+                    from ..services.background import get_job_manager, BackgroundJob
+                except ImportError:
+                    # Fallback for direct execution
+                    import sys
+                    import os
+                    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+                    from services.background import get_job_manager, BackgroundJob
                 
-                # Store the mapping between MC project and regular project
-                if not project.meta_data:
-                    project.meta_data = {}
-                project.meta_data['regular_project_id'] = regular_project.id
-                db.session.commit()
+                logger.info(f"Submitting repository processing job for {name}")
+                print(f"DEBUG: Submitting repository processing job for {name}")
                 
-                # Submit repository processing job
+                # Submit repository processing job using Mission Control project directly
                 job_manager = get_job_manager()
+                
                 job_id = job_manager.submit_job(
                     job_type=BackgroundJob.TYPE_REPOSITORY_PROCESSING,
-                    project_id=regular_project.id,
-                    repository_url=regular_project.repository_url
+                    project_id=project_id,  # Use Mission Control project ID directly
+                    repository_url=repo_url
                 )
+                
+                logger.info(f"Repository processing job {job_id} submitted successfully")
+                print(f"DEBUG: Repository processing job {job_id} submitted successfully")
                 
                 # Update status to in_progress
                 project.update_system_map_status('in_progress')
                 
-                logger.info(f"Repository processing job {job_id} submitted for project {project_id}")
+                logger.info(f"System map status updated to in_progress for project {project_id}")
+                print(f"DEBUG: System map status updated to in_progress for project {project_id}")
+                
+                logger.info(f"Repository processing setup completed for project {project_id}")
                 
             except Exception as e:
-                logger.error(f"Failed to submit repository processing job for project {project_id}: {e}")
+                logger.error(f"Failed to submit repository processing job for project {project_id}: {e}", exc_info=True)
+                print(f"DEBUG: ERROR in repository processing setup: {e}")
+                import traceback
+                traceback.print_exc()
+                
+                # Set status to failed so user knows something went wrong
+                try:
+                    project.update_system_map_status('failed')
+                    logger.error(f"Set system map status to failed for project {project_id}")
+                except:
+                    pass
+                
                 # Don't fail project creation, just log the error
+        else:
+            logger.warning(f"Skipping repository processing for project {project_id} - repo_url is empty or None")
+            print(f"DEBUG: Skipping repository processing for project {project_id} - repo_url is empty or None")
         
         logger.info(f"New Mission Control project created: {name} ({project_id})")
         

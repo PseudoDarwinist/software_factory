@@ -145,14 +145,28 @@ def handle_slack_event_callback(payload):
             logger.error(f"DEBUG WEBHOOK: Processing message from user {user} in channel {channel}")
             logger.error(f"DEBUG WEBHOOK: Message text: {text[:100]}")
             
+            # Print to console for immediate visibility
+            print(f"🔔 SLACK MESSAGE RECEIVED:")
+            print(f"   Channel: {channel}")
+            print(f"   User: {user}")
+            print(f"   Text: {text[:100]}...")
+            print(f"   Timestamp: {timestamp}")
+            
             # Create feed item using direct database operations
             try:
                 # Import models using the pattern that works with Flask app context
-                from models.feed_item import FeedItem
-                from models.stage import Stage
-                from models.mission_control_project import MissionControlProject
-                from models.channel_mapping import ChannelMapping
-                from models.base import db
+                try:
+                    from ..models.feed_item import FeedItem
+                    from ..models.stage import Stage
+                    from ..models.mission_control_project import MissionControlProject
+                    from ..models.channel_mapping import ChannelMapping
+                    from ..models.base import db
+                except ImportError:
+                    from models.feed_item import FeedItem
+                    from models.stage import Stage
+                    from models.mission_control_project import MissionControlProject
+                    from models.channel_mapping import ChannelMapping
+                    from models.base import db
                 
                 logger.error(f"DEBUG WEBHOOK: Looking up channel mapping for channel: {channel}")
                 project_id = ChannelMapping.get_project_for_channel(channel)
@@ -165,7 +179,16 @@ def handle_slack_event_callback(payload):
                     if not project:
                         print(f"DEBUG WEBHOOK: ERROR - Project {project_id} not found!")
                         logger.warning(f"Channel {channel} mapped to non-existent project {project_id}")
-                        return jsonify({'status': 'ignored', 'reason': 'project_not_found'}), 200
+                        
+                        # Auto-cleanup: Remove orphaned channel mapping
+                        orphaned_mapping = ChannelMapping.query.filter_by(channel_id=channel).first()
+                        if orphaned_mapping:
+                            print(f"DEBUG WEBHOOK: Auto-removing orphaned mapping for channel {channel}")
+                            db.session.delete(orphaned_mapping)
+                            db.session.commit()
+                            logger.info(f"Auto-removed orphaned channel mapping: {channel} -> {project_id}")
+                        
+                        return jsonify({'status': 'ignored', 'reason': 'project_not_found_mapping_cleaned'}), 200
                     print(f"DEBUG WEBHOOK: Using project: {project.name} ({project.id})")
                 else:
                     # Channel is not mapped to any project - ignore the message
@@ -190,9 +213,12 @@ def handle_slack_event_callback(payload):
                             break
                     title = title.strip() + "..." if title else text[:47] + "..."
                 
-                # Create unique feed item ID
+                # Create unique feed item ID with microseconds to avoid duplicates
                 import time
-                feed_item_id = f"slack_{channel}_{timestamp or int(time.time())}"
+                import uuid
+                current_time = time.time()
+                # Use timestamp with microseconds and a short UUID suffix for uniqueness
+                feed_item_id = f"slack_{channel}_{timestamp or current_time}_{str(uuid.uuid4())[:8]}"
                 
                 # Create the feed item
                 feed_item = FeedItem.create(
@@ -231,17 +257,24 @@ def handle_slack_event_callback(payload):
                 
             except Exception as db_error:
                 logger.error(f"Database error creating feed item: {db_error}")
+                print(f"🚨 WEBHOOK DATABASE ERROR: {db_error}")
+                print(f"🚨 ERROR TYPE: {type(db_error).__name__}")
+                import traceback
+                print(f"🚨 FULL TRACEBACK:")
+                traceback.print_exc()
+                
                 try:
                     db.session.rollback()
-                except:
-                    pass
+                except Exception as rollback_error:
+                    print(f"🚨 ROLLBACK ERROR: {rollback_error}")
                 
                 # Fallback: just log the message and return success
                 logger.info(f"Slack message received (DB failed): {text[:100]}...")
                 return jsonify({
                     'status': 'success',
                     'message': 'Slack message logged (database error)',
-                    'slack_text': text[:100]
+                    'slack_text': text[:100],
+                    'error_details': str(db_error)
                 }), 200
         
         else:

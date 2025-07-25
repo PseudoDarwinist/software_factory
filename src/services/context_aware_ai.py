@@ -17,7 +17,7 @@ try:
     from ..services.vector_service import get_vector_service
     from ..services.ai_broker import get_ai_broker, TaskType, Priority
     from ..services.distributed_cache import get_distributed_cache
-    from ..models.project import Project
+    from ..models.mission_control_project import MissionControlProject
     from ..models.conversation import Conversation
     from ..models.system_map import SystemMap
 except ImportError:
@@ -26,7 +26,7 @@ except ImportError:
     from services.vector_service import get_vector_service
     from services.ai_broker import get_ai_broker, TaskType, Priority
     from services.distributed_cache import get_distributed_cache
-    from models.project import Project
+    from models.mission_control_project import MissionControlProject
     from models.conversation import Conversation
     from models.system_map import SystemMap
 

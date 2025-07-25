@@ -4,7 +4,7 @@ SQLAlchemy ORM models for all data structures
 """
 
 from .models.base import db
-from .models.project import Project
+# Project model removed - using MissionControlProject only
 from .models.system_map import SystemMap
 from .models.background_job import BackgroundJob
 from .models.conversation import Conversation

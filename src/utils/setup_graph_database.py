@@ -35,11 +35,11 @@ def setup_graph_database(database_url: str = None) -> bool:
         # Create engine with autocommit for DDL operations
         engine = create_engine(database_url, isolation_level="AUTOCOMMIT")
         
-        logger.info("Setting up PostgreSQL graph extensions...")
+        logger.debug("Setting up PostgreSQL graph extensions...")
         
         with engine.connect() as conn:
             # Enable required extensions
-            logger.info("Enabling PostgreSQL extensions...")
+            logger.debug("Enabling PostgreSQL extensions...")
             
             extensions = [
                 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp"',
@@ -50,12 +50,12 @@ def setup_graph_database(database_url: str = None) -> bool:
             for ext_sql in extensions:
                 try:
                     conn.execute(text(ext_sql))
-                    logger.info(f"Extension enabled: {ext_sql}")
+                    logger.debug(f"Extension enabled: {ext_sql}")
                 except SQLAlchemyError as e:
                     logger.warning(f"Extension may already exist: {e}")
             
             # Create custom types
-            logger.info("Creating custom relationship type...")
+            logger.debug("Creating custom relationship type...")
             
             create_type_sql = """
             DO $$ BEGIN
@@ -77,10 +77,10 @@ def setup_graph_database(database_url: str = None) -> bool:
             """
             
             conn.execute(text(create_type_sql))
-            logger.info("Relationship type created")
+            logger.debug("Relationship type created")
             
             # Create entity relationships table
-            logger.info("Creating entity relationships table...")
+            logger.debug("Creating entity relationships table...")
             
             create_table_sql = """
             CREATE TABLE IF NOT EXISTS entity_relationships (
@@ -288,7 +288,7 @@ def setup_graph_database(database_url: str = None) -> bool:
             conn.execute(text(view_sql))
             logger.info("Relationship summary view created")
             
-        logger.info("PostgreSQL graph database setup completed successfully!")
+        logger.info("📊 Graph database ready")
         return True
         
     except SQLAlchemyError as e:

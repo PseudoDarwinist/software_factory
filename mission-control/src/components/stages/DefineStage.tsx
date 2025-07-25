@@ -16,13 +16,15 @@
  * - Context-aware AI assistant for specification help
  */
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import { LiquidCard } from '@/components/core/LiquidCard'
 
 import { missionControlApi } from '@/services/api/missionControlApi'
 import { SpecWorkflowEditor } from './SpecWorkflowEditor'
+import { AssistantSelector, type AssistantType } from '@/components/AssistantSelector'
+import { KiroWorkflowManager, type GeneratedSpecs } from '@/components/KiroWorkflowManager'
 import type { FeedItem, SDLCStage } from '@/types'
 
 interface DefineStageProps {
@@ -88,6 +90,9 @@ export const DefineStage: React.FC<DefineStageProps> = ({
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false)
   const [showProgressiveEditor, setShowProgressiveEditor] = useState(false)
   const [selectedFeedItemForSpec, setSelectedFeedItemForSpec] = useState<FeedItem | null>(null)
+  const [selectedAssistant, setSelectedAssistant] = useState<AssistantType>('claude')
+  const [showKiroWorkflow, setShowKiroWorkflow] = useState(false)
+  const [kiroFeedItem, setKiroFeedItem] = useState<FeedItem | null>(null)
 
   // Filter ideas that are in definition stage
   useEffect(() => {
@@ -118,7 +123,15 @@ export const DefineStage: React.FC<DefineStageProps> = ({
       setSpecLoading(true)
       setSpecError(null)
       
+      console.log(`🔄 Loading specification for item: ${itemId}, project: ${projectId}`)
       const spec = await missionControlApi.getSpecification(itemId, projectId)
+      console.log('📄 Loaded specification:', {
+        spec_id: spec?.spec_id,
+        requirements_length: spec?.requirements?.content?.length || 0,
+        requirements_preview: spec?.requirements?.content?.substring(0, 100) || 'No content',
+        design: !!spec?.design,
+        tasks: !!spec?.tasks
+      })
       setCurrentSpec(spec)
     } catch (error) {
       setSpecError('Failed to load specification')
@@ -212,6 +225,78 @@ export const DefineStage: React.FC<DefineStageProps> = ({
     return Math.round((completed / total) * 100)
   }, [])
 
+  const generateDesignDocument = useCallback(async () => {
+    if (!currentSpec || !selectedProject) return
+
+    try {
+      setSpecLoading(true)
+      setSpecError(null)
+      
+      console.log('Generating design document for spec:', currentSpec.spec_id)
+      
+      const designArtifact = await missionControlApi.generateDesignDocument(
+        currentSpec.spec_id,
+        selectedProject
+      )
+      
+      // Update the current spec with the new design artifact
+      setCurrentSpec(prev => {
+        if (!prev) return null
+        return {
+          ...prev,
+          design: designArtifact
+        }
+      })
+      
+      // Switch to design tab to show the generated content
+      setActiveTab('design')
+      
+      console.log('Design document generated successfully')
+      
+    } catch (error) {
+      console.error('Error generating design document:', error)
+      setSpecError('Failed to generate design document')
+    } finally {
+      setSpecLoading(false)
+    }
+  }, [currentSpec, selectedProject])
+
+  const generateTasksDocument = useCallback(async () => {
+    if (!currentSpec || !selectedProject) return
+
+    try {
+      setSpecLoading(true)
+      setSpecError(null)
+      
+      console.log('Generating tasks document for spec:', currentSpec.spec_id)
+      
+      const tasksArtifact = await missionControlApi.generateTasksDocument(
+        currentSpec.spec_id,
+        selectedProject
+      )
+      
+      // Update the current spec with the new tasks artifact
+      setCurrentSpec(prev => {
+        if (!prev) return null
+        return {
+          ...prev,
+          tasks: tasksArtifact
+        }
+      })
+      
+      // Switch to tasks tab to show the generated content
+      setActiveTab('tasks')
+      
+      console.log('Tasks document generated successfully')
+      
+    } catch (error) {
+      console.error('Error generating tasks document:', error)
+      setSpecError('Failed to generate tasks document')
+    } finally {
+      setSpecLoading(false)
+    }
+  }, [currentSpec, selectedProject])
+
   const createSpecification = async (feedItem: FeedItem) => {
     if (!selectedProject) return
     
@@ -236,6 +321,90 @@ export const DefineStage: React.FC<DefineStageProps> = ({
     } finally {
       setSpecLoading(false)
     }
+  }
+
+  const createSpecificationWithModelGarden = async (feedItem: FeedItem) => {
+    if (!selectedProject) return
+    
+    try {
+      setSpecLoading(true)
+      setSpecError(null)
+      
+      console.log('Creating specification with AI Model Garden for:', feedItem.title)
+      
+      // Call the AI Model Garden Create Spec API endpoint
+      const result = await missionControlApi.createSpecificationWithModelGarden(feedItem.id, selectedProject)
+      
+      console.log('AI Model Garden specification created:', result)
+      
+      // Load the newly created specification
+      await loadSpecification(feedItem.id, selectedProject)
+      
+      // Select this feed item
+      onFeedItemSelect(feedItem.id)
+      
+    } catch (error) {
+      console.error('Failed to create specification with AI Model Garden:', error)
+      setSpecError('Failed to create specification with AI Model Garden')
+    } finally {
+      setSpecLoading(false)
+    }
+  }
+
+  const handleAssistantSelect = (assistant: AssistantType, feedItem: FeedItem) => {
+    setSelectedAssistant(assistant)
+    
+    if (assistant === 'claude') {
+      // Use existing Claude Code workflow
+      createSpecification(feedItem)
+    } else if (assistant === 'model-garden') {
+      // Use AI Model Garden workflow
+      createSpecificationWithModelGarden(feedItem)
+    } else if (assistant === 'kiro') {
+      // Start Kiro step-by-step workflow (currently disabled)
+      setKiroFeedItem(feedItem)
+      setShowKiroWorkflow(true)
+    }
+  }
+
+  const handleKiroWorkflowComplete = async (specs: GeneratedSpecs) => {
+    if (!kiroFeedItem || !selectedProject) return
+
+    try {
+      setSpecLoading(true)
+      setSpecError(null)
+
+      // Create specification with Kiro-generated content
+      const result = await missionControlApi.createSpecification(kiroFeedItem.id, selectedProject)
+      
+      // Update each artifact with the generated content
+      await Promise.all([
+        missionControlApi.updateSpecificationArtifact(result.spec_id, selectedProject, 'requirements', specs.requirements),
+        missionControlApi.updateSpecificationArtifact(result.spec_id, selectedProject, 'design', specs.design),
+        missionControlApi.updateSpecificationArtifact(result.spec_id, selectedProject, 'tasks', specs.tasks)
+      ])
+
+      // Load the newly created specification
+      await loadSpecification(kiroFeedItem.id, selectedProject)
+      
+      // Select this feed item
+      onFeedItemSelect(kiroFeedItem.id)
+      
+      // Close Kiro workflow
+      setShowKiroWorkflow(false)
+      setKiroFeedItem(null)
+      
+    } catch (error) {
+      console.error('Failed to save Kiro specifications:', error)
+      setSpecError('Failed to save Kiro specifications')
+    } finally {
+      setSpecLoading(false)
+    }
+  }
+
+  const handleKiroWorkflowClose = () => {
+    setShowKiroWorkflow(false)
+    setKiroFeedItem(null)
   }
 
   const openProgressiveEditor = (feedItem: FeedItem) => {
@@ -335,9 +504,10 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                 urgency="medium"
                 onClick={() => onFeedItemSelect(item.id)}
                 className={clsx(
-                  'cursor-pointer transition-all',
+                  'cursor-pointer transition-all overflow-visible w-full',
                   selectedFeedItem === item.id && 'ring-2 ring-blue-500/50'
                 )}
+                style={{ overflow: 'visible' }}
               >
                 <div className="flex items-start space-x-3">
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
@@ -356,18 +526,11 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                         {item.actor}
                       </div>
                       <div className="flex items-center space-x-2">
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            createSpecification(item)
-                          }}
-                          className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded-full border border-green-500/30 hover:bg-green-500/30 transition-all"
+                        <AssistantSelector
+                          onAssistantSelect={(assistant) => handleAssistantSelect(assistant, item)}
                           disabled={specLoading}
-                        >
-                          {specLoading ? '⏳ Creating...' : '✨ Create Spec'}
-                        </motion.button>
+                          className="min-w-[180px]"
+                        />
                         <div className="text-xs text-blue-400 bg-blue-500/20 px-2 py-1 rounded-full">
                           In Definition
                         </div>
@@ -501,6 +664,9 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                   onMarkReviewed={(notes) => markAsHumanReviewed(activeTab, notes)}
                   loading={specLoading}
                   error={specError}
+                  currentSpec={currentSpec}
+                  onGenerateDesign={generateDesignDocument}
+                  onGenerateTasks={generateTasksDocument}
                 />
               </div>
               
@@ -577,6 +743,19 @@ export const DefineStage: React.FC<DefineStageProps> = ({
           />
         )}
       </AnimatePresence>
+
+      {/* Kiro Workflow Manager */}
+      <AnimatePresence>
+        {showKiroWorkflow && kiroFeedItem && selectedProject && (
+          <KiroWorkflowManager
+            projectId={selectedProject}
+            ideaContent={kiroFeedItem.summary || kiroFeedItem.title}
+            feedItem={kiroFeedItem}
+            onComplete={handleKiroWorkflowComplete}
+            onClose={handleKiroWorkflowClose}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -588,6 +767,9 @@ interface SimpleSpecificationEditorProps {
   onMarkReviewed: (reviewNotes?: string) => void
   loading: boolean
   error: string | null
+  currentSpec: SpecificationSet
+  onGenerateDesign?: () => void
+  onGenerateTasks?: () => void
 }
 
 const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
@@ -597,6 +779,9 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
   onMarkReviewed,
   loading,
   error,
+  currentSpec,
+  onGenerateDesign,
+  onGenerateTasks,
 }) => {
   const [content, setContent] = useState(artifact?.content || '')
   const [reviewNotes, setReviewNotes] = useState('')
@@ -645,6 +830,13 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
 
   const badge = getBadgeInfo()
 
+  const getWorkflowStep = (spec: SpecificationSet, currentArtifact: string) => {
+    if (!spec.requirements) return 'Step 1 of 3'
+    if (!spec.design) return 'Step 2 of 3'
+    if (!spec.tasks) return 'Step 3 of 3'
+    return 'Complete'
+  }
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
@@ -680,18 +872,30 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
       {/* Content Editor */}
       <div className="flex-1 p-4">
         {artifact ? (
-          <textarea
-            value={content}
-            onChange={(e) => handleContentChange(e.target.value)}
-            placeholder={`Enter ${artifactType} content...`}
-            className="w-full h-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none font-mono text-sm"
-            disabled={artifact.status === 'frozen'}
-          />
+          artifactType === 'tasks' ? (
+            <TasksViewer
+              content={content}
+              onChange={handleContentChange}
+              disabled={artifact.status === 'frozen'}
+            />
+          ) : (
+            <textarea
+              value={content}
+              onChange={(e) => handleContentChange(e.target.value)}
+              placeholder={`Enter ${artifactType} content...`}
+              className="w-full h-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none font-mono text-sm"
+              disabled={artifact.status === 'frozen'}
+            />
+          )
         ) : (
           <div className="h-full flex items-center justify-center">
             <div className="text-center text-white/60">
-              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-white/5 flex items-center justify-center">
-                <span className="text-white/40 text-lg">📄</span>
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
+                <img 
+                  src="orb.png" 
+                  alt="Orb" 
+                  className="w-10 h-10 object-contain opacity-60"
+                />
               </div>
               <h4 className="text-sm font-medium mb-2">No {artifactType} yet</h4>
               <p className="text-xs">
@@ -701,6 +905,133 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
           </div>
         )}
       </div>
+
+      {/* Workflow Progress and Actions */}
+      {artifact && (
+        <div className="p-4 border-t border-white/10">
+          {/* Workflow Progress Indicator */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between text-xs text-white/60 mb-2">
+              <span>Workflow Progress</span>
+              <span>{getWorkflowStep(currentSpec, artifactType)}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className={clsx(
+                'w-3 h-3 rounded-full',
+                currentSpec.requirements?.status === 'human_reviewed' || currentSpec.requirements?.status === 'frozen'
+                  ? 'bg-green-500' : currentSpec.requirements ? 'bg-yellow-500' : 'bg-gray-500'
+              )} />
+              <div className="flex-1 h-0.5 bg-white/10">
+                <div className={clsx(
+                  'h-full transition-all duration-500',
+                  currentSpec.design ? 'bg-blue-500' : 'bg-transparent'
+                )} />
+              </div>
+              <div className={clsx(
+                'w-3 h-3 rounded-full',
+                currentSpec.design?.status === 'human_reviewed' || currentSpec.design?.status === 'frozen'
+                  ? 'bg-green-500' : currentSpec.design ? 'bg-yellow-500' : 'bg-gray-500'
+              )} />
+              <div className="flex-1 h-0.5 bg-white/10">
+                <div className={clsx(
+                  'h-full transition-all duration-500',
+                  currentSpec.tasks ? 'bg-purple-500' : 'bg-transparent'
+                )} />
+              </div>
+              <div className={clsx(
+                'w-3 h-3 rounded-full',
+                currentSpec.tasks?.status === 'human_reviewed' || currentSpec.tasks?.status === 'frozen'
+                  ? 'bg-green-500' : currentSpec.tasks ? 'bg-yellow-500' : 'bg-gray-500'
+              )} />
+            </div>
+            <div className="flex justify-between text-xs text-white/40 mt-1">
+              <span>Requirements</span>
+              <span>Design</span>
+              <span>Tasks</span>
+            </div>
+          </div>
+
+          {/* Workflow Action Buttons */}
+          {artifact.status === 'human_reviewed' && (
+            <>
+              {artifactType === 'requirements' && !currentSpec.design && onGenerateDesign && (
+                <div className="space-y-3">
+                  <div className="text-center">
+                    <p className="text-sm text-white/70 mb-2">
+                      **Do the requirements look good? If so, we can move on to the design.**
+                    </p>
+                  </div>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={onGenerateDesign}
+                    disabled={loading}
+                    className="w-full px-4 py-3 bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/30 hover:bg-blue-500/30 transition-all text-sm font-medium flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? (
+                      <>
+                        <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>Generating Design...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>✨</span>
+                        <span>Generate Design Document</span>
+                      </>
+                    )}
+                  </motion.button>
+                </div>
+              )}
+              
+              {artifactType === 'design' && !currentSpec.tasks && onGenerateTasks && (
+                <div className="space-y-3">
+                  <div className="text-center">
+                    <p className="text-sm text-white/70 mb-2">
+                      **Does the design look good? If so, we can move on to the implementation tasks.**
+                    </p>
+                  </div>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={onGenerateTasks}
+                    disabled={loading}
+                    className="w-full px-4 py-3 bg-purple-500/20 text-purple-400 rounded-lg border border-purple-500/30 hover:bg-purple-500/30 transition-all text-sm font-medium flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? (
+                      <>
+                        <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>Generating Tasks...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>📋</span>
+                        <span>Generate Implementation Tasks</span>
+                      </>
+                    )}
+                  </motion.button>
+                </div>
+              )}
+
+              {artifactType === 'tasks' && currentSpec.tasks?.status === 'human_reviewed' && (
+                <div className="space-y-3">
+                  <div className="text-center">
+                    <p className="text-sm text-white/70 mb-2">
+                      **Do the tasks look good? You can now freeze the specification to move to the Plan stage.**
+                    </p>
+                  </div>
+                  <div className="text-xs text-white/50 text-center">
+                    Use the "Freeze Spec" button in the header to complete the specification.
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* Review Dialog */}
       <AnimatePresence>
@@ -850,6 +1181,183 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             >
               Apply Suggestion
             </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+
+interface TasksViewerProps {
+  content: string
+  onChange: (content: string) => void
+  disabled: boolean
+}
+
+const TasksViewer: React.FC<TasksViewerProps> = ({ content, onChange, disabled }) => {
+  const [tasks, setTasks] = useState<Array<{ id: string; text: string; completed: boolean; level: number }>>([])
+  const [editMode, setEditMode] = useState(false)
+
+  useEffect(() => {
+    // Parse markdown tasks from content
+    const parsedTasks = parseTasksFromMarkdown(content)
+    setTasks(parsedTasks)
+  }, [content])
+
+  const parseTasksFromMarkdown = (markdown: string) => {
+    const lines = markdown.split('\n')
+    const tasks: Array<{ id: string; text: string; completed: boolean; level: number }> = []
+    
+    lines.forEach((line, index) => {
+      const taskMatch = line.match(/^(\s*)-\s*\[([ x])\]\s*(.+)/)
+      if (taskMatch) {
+        const [, indent, status, text] = taskMatch
+        const level = Math.floor(indent.length / 2)
+        tasks.push({
+          id: `task-${index}`,
+          text: text.trim(),
+          completed: status === 'x',
+          level
+        })
+      }
+    })
+    
+    return tasks
+  }
+
+  const toggleTask = (taskId: string) => {
+    if (disabled) return
+    
+    const updatedTasks = tasks.map(task => 
+      task.id === taskId ? { ...task, completed: !task.completed } : task
+    )
+    setTasks(updatedTasks)
+    
+    // Update the markdown content
+    const updatedMarkdown = generateMarkdownFromTasks(updatedTasks, content)
+    onChange(updatedMarkdown)
+  }
+
+  const generateMarkdownFromTasks = (tasks: Array<{ id: string; text: string; completed: boolean; level: number }>, originalContent: string) => {
+    const lines = originalContent.split('\n')
+    let taskIndex = 0
+    
+    const updatedLines = lines.map(line => {
+      const taskMatch = line.match(/^(\s*)-\s*\[([ x])\]\s*(.+)/)
+      if (taskMatch && taskIndex < tasks.length) {
+        const task = tasks[taskIndex]
+        const [, indent] = taskMatch
+        taskIndex++
+        return `${indent}- [${task.completed ? 'x' : ' '}] ${task.text}`
+      }
+      return line
+    })
+    
+    return updatedLines.join('\n')
+  }
+
+  const startTask = (task: { id: string; text: string; completed: boolean; level: number }) => {
+    // This would integrate with Kiro's task execution system
+    console.log('Starting task:', task.text)
+    // In a real implementation, this would:
+    // 1. Open Kiro with the task context
+    // 2. Set up the workspace for the task
+    // 3. Provide the task instructions to Kiro
+  }
+
+  if (editMode) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="flex justify-between items-center mb-4">
+          <h4 className="text-sm font-medium text-white">Edit Tasks (Markdown)</h4>
+          <button
+            onClick={() => setEditMode(false)}
+            className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded text-xs hover:bg-blue-500/30 transition-all"
+          >
+            View Tasks
+          </button>
+        </div>
+        <textarea
+          value={content}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Enter tasks in markdown format..."
+          className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none font-mono text-sm"
+          disabled={disabled}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex justify-between items-center mb-4">
+        <h4 className="text-sm font-medium text-white">Implementation Tasks</h4>
+        <button
+          onClick={() => setEditMode(true)}
+          className="px-3 py-1 bg-white/10 text-white/70 rounded text-xs hover:bg-white/20 transition-all"
+        >
+          Edit Markdown
+        </button>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto space-y-2">
+        {tasks.map((task) => (
+          <motion.div
+            key={task.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={clsx(
+              'flex items-start space-x-3 p-3 rounded-lg border transition-all',
+              task.level === 0 ? 'bg-white/5 border-white/10' : 'bg-white/2 border-white/5 ml-6',
+              task.completed && 'opacity-60'
+            )}
+          >
+            <button
+              onClick={() => toggleTask(task.id)}
+              disabled={disabled}
+              className={clsx(
+                'flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all mt-0.5',
+                task.completed
+                  ? 'bg-green-500 border-green-500 text-white'
+                  : 'border-white/30 hover:border-white/50',
+                disabled && 'cursor-not-allowed'
+              )}
+            >
+              {task.completed && (
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+              )}
+            </button>
+            
+            <div className="flex-1 min-w-0">
+              <p className={clsx(
+                'text-sm text-white',
+                task.completed && 'line-through text-white/60'
+              )}>
+                {task.text}
+              </p>
+            </div>
+            
+            {!task.completed && !disabled && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => startTask(task)}
+                className="flex-shrink-0 px-3 py-1 bg-blue-500/20 text-blue-400 rounded text-xs border border-blue-500/30 hover:bg-blue-500/30 transition-all"
+              >
+                Start Task
+              </motion.button>
+            )}
+          </motion.div>
+        ))}
+        
+        {tasks.length === 0 && (
+          <div className="text-center py-8 text-white/60">
+            <p className="text-sm">No tasks found in the content.</p>
+            <p className="text-xs mt-1">Tasks should be in markdown format: - [ ] Task description</p>
           </div>
         )}
       </div>

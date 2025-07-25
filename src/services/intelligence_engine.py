@@ -15,14 +15,14 @@ from sqlalchemy.exc import SQLAlchemyError
 
 try:
     from ..models.base import db
-    from ..models.project import Project
+    from ..models.mission_control_project import MissionControlProject
     from ..models.conversation import Conversation
     from ..models.system_map import SystemMap
     from ..services.graph_service import GraphService, ProjectGraphService
     from ..services.distributed_cache import get_distributed_cache
 except ImportError:
     from models.base import db
-    from models.project import Project
+    from models.mission_control_project import MissionControlProject
     from models.conversation import Conversation
     from models.system_map import SystemMap
     from services.graph_service import GraphService, ProjectGraphService
