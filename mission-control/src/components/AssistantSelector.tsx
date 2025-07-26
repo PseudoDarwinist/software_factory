@@ -16,7 +16,7 @@
  * - 1.5: Disable Kiro option when not available with tooltip
  */
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import { missionControlApi } from '@/services/api/missionControlApi'
@@ -35,6 +35,7 @@ export interface AssistantOption {
 
 export interface AssistantSelectorProps {
   onAssistantSelect: (assistant: AssistantType) => void
+  onToggle?: (isOpen: boolean) => void
   disabled?: boolean
   className?: string
   defaultAssistant?: AssistantType
@@ -42,6 +43,7 @@ export interface AssistantSelectorProps {
 
 export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
   onAssistantSelect,
+  onToggle,
   disabled = false,
   className,
   defaultAssistant = 'claude'
@@ -76,6 +78,12 @@ export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
   const [loading, setLoading] = useState(true)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
+  const toggleDropdown = useCallback(() => {
+    const newIsOpen = !isOpen
+    setIsOpen(newIsOpen)
+    onToggle?.(newIsOpen)
+  }, [isOpen, onToggle])
+
   // Check Kiro availability on mount
   useEffect(() => {
     checkKiroAvailability()
@@ -85,13 +93,15 @@ export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
+        if (isOpen) {
+          toggleDropdown()
+        }
       }
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [isOpen, toggleDropdown])
 
   const checkKiroAvailability = async () => {
     try {
@@ -141,7 +151,9 @@ export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
     if (!assistant?.available) return
 
     setSelectedAssistant(assistantId)
-    setIsOpen(false)
+    if (isOpen) {
+      toggleDropdown()
+    }
     onAssistantSelect(assistantId)
   }
 
@@ -153,7 +165,7 @@ export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
       <motion.button
         whileHover={!disabled ? { scale: 1.02 } : {}}
         whileTap={!disabled ? { scale: 0.98 } : {}}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onClick={() => !disabled && toggleDropdown()}
         disabled={disabled}
         className={clsx(
           'flex items-center space-x-1 text-sm font-medium text-white/80',

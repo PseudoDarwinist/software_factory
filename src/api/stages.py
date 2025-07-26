@@ -24,6 +24,7 @@ except ImportError:
     from events.event_store import EventStore
 from datetime import datetime
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -671,7 +672,7 @@ def create_specification_with_model_garden(item_id):
             context = {
                 'idea_title': feed_item.title,
                 'idea_summary': feed_item.summary,
-                'idea_content': feed_item.content,
+                'idea_content': feed_item.summary or feed_item.title,
                 'project_id': project_id,
                 'provider': 'model_garden'
             }
@@ -860,27 +861,20 @@ def generate_design_document(spec_id):
 
 @stages_bp.route('/api/specification/<spec_id>/generate-tasks', methods=['POST'])
 def generate_tasks_document(spec_id):
-    """Generate tasks document based on approved design"""
+    """Generate tasks document based on approved design.
+    This version streams interim text chunks over WebSocket so the
+    frontend can render the document in real-time.
+    """
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({
-                'success': False,
-                'error': 'Request body must be JSON',
-                'timestamp': datetime.utcnow().isoformat(),
-                'version': '1.0.0',
-            }), 400
-        
+        data = request.get_json() or {}
         project_id = data.get('projectId')
         if not project_id:
-            return jsonify({
-                'success': False,
-                'error': 'Project ID is required',
-                'timestamp': datetime.utcnow().isoformat(),
-                'version': '1.0.0',
-            }), 400
-        
-        # Import required modules
+            return jsonify({'success': False, 'error': 'Project ID is required'}), 400
+
+        from flask import current_app as _cur_app
+        app_obj = _cur_app._get_current_object()
+
+        # Import heavy modules once
         try:
             from ..models.specification_artifact import SpecificationArtifact, ArtifactType
             from ..agents.define_agent import DefineAgent
@@ -891,177 +885,122 @@ def generate_tasks_document(spec_id):
             from agents.define_agent import DefineAgent
             from services.ai_broker import AIBroker
             from events.event_router import EventBus
-        
-        # Get requirements and design artifacts to use as context
+
+        # Grab SocketIO instance
+        socketio = app_obj.extensions.get('socketio')
+        if socketio is None:
+            logger.error('SocketIO not initialised')
+            return jsonify({'success': False, 'error': 'WebSocket unavailable'}), 500
+
+        # Fetch artifacts (same logic as before)
         requirements_artifact = SpecificationArtifact.query.filter_by(
             spec_id=spec_id,
             artifact_type=ArtifactType.REQUIREMENTS
         ).first()
-        
+
         design_artifact = SpecificationArtifact.query.filter_by(
             spec_id=spec_id,
             artifact_type=ArtifactType.DESIGN
         ).first()
-        
+
         if not requirements_artifact or not design_artifact:
-            return jsonify({
-                'success': False,
-                'error': 'Requirements and design documents must exist before generating tasks',
-                'timestamp': datetime.utcnow().isoformat(),
-                'version': '1.0.0',
-            }), 400
-        
-        # Initialize DefineAgent
-        from flask import current_app
-        event_bus = EventBus()
-        ai_broker = AIBroker()
-        
-        with current_app.app_context():
-            ai_broker.start()
-        
-        define_agent = DefineAgent(event_bus, ai_broker)
-        
-        # Generate tasks document
-        try:
-            logger.info(f"Generating tasks document for spec {spec_id}")
-            tasks_content = define_agent.generate_tasks_document(
-                spec_id=spec_id,
-                project_id=project_id,
-                requirements_content=requirements_artifact.content,
-                design_content=design_artifact.content
-            )
-            
-            # If AI generation fails, create a basic template
-            if not tasks_content:
-                logger.warning(f"AI generation failed for tasks document, creating template")
-                tasks_content = f"""# Implementation Plan
+            return jsonify({'success': False, 'error': 'Requirements and design docs required'}), 400
 
-## Overview
-This implementation plan breaks down the approved requirements and design into actionable coding tasks.
+        def _bg_generate():
+            try:
+                with app_obj.app_context():
+                    event_bus = EventBus()
+                    ai_broker = AIBroker()
+                    ai_broker.start()
+                    define_agent = DefineAgent(event_bus, ai_broker)
 
-## Development Tasks
+                    from claude_code_sdk import query, ClaudeCodeOptions, Message, TextBlock, AssistantMessage
+                    import anyio, os
 
-- [ ] 1. Set up project structure and core interfaces
-  - Create directory structure following existing patterns
-  - Define interfaces and types
-  - Set up configuration files
-  - _Requirements: Core system setup_
+                    collected: list[str] = []
 
-- [ ] 2. Implement data models and validation
-- [ ] 2.1 Create core data model classes
-  - Write data model classes following existing patterns
-  - Implement validation functions
-  - Create unit tests for models
-  - _Requirements: Data layer implementation_
+                    async def _run():
+                        socketio.emit('spec.tasks_start', {'spec_id': spec_id})
+                        
+                        # CONSTRUCT THE FULL PROMPT HERE
+                        prompt_context = define_agent._prepare_tasks_context(
+                            requirements_artifact.content,
+                            design_artifact.content,
+                            define_agent.get_project_context(project_id)
+                        )
+                        full_prompt = f"""You are an expert technical project manager. Your task is to create a detailed implementation plan in a `tasks.md` file based on the provided requirements and design documents.
 
-- [ ] 2.2 Create database migrations
-  - Write migration scripts following existing patterns
-  - Update database schemas
-  - Test migration rollback procedures
-  - _Requirements: Database schema updates_
+=== APPROVED REQUIREMENTS ===
+{requirements_artifact.content}
 
-- [ ] 3. Implement business logic layer
-- [ ] 3.1 Create service classes
-  - Implement core business logic
-  - Add error handling and logging
-  - Write unit tests for services
-  - _Requirements: Business logic implementation_
+=== APPROVED DESIGN ===
+{design_artifact.content}
 
-- [ ] 3.2 Add integration with existing services
-  - Connect to existing APIs and services
-  - Implement data transformation logic
-  - Add integration tests
-  - _Requirements: System integration_
+=== PROJECT CONTEXT ===
+{prompt_context}
 
-- [ ] 4. Create API endpoints
-- [ ] 4.1 Implement REST API controllers
-  - Create API endpoint handlers
-  - Add request/response validation
-  - Implement authentication/authorization
-  - _Requirements: API layer implementation_
+TASK:
+Create a markdown checklist of all user stories from the requirements document. For each user story, create a set of small, one-story-point sub-tasks (with unchecked checkboxes) that break down the story into concrete implementation steps.
 
-- [ ] 4.2 Add API documentation
-  - Document API endpoints
-  - Create API usage examples
-  - Update API documentation
-  - _Requirements: Documentation_
+Follow this exact format:
 
-- [ ] 5. Implement user interface components
-- [ ] 5.1 Create UI components
-  - Build user interface components
-  - Implement user interactions
-  - Add client-side validation
-  - _Requirements: User interface_
+# Implementation Plan
 
-- [ ] 5.2 Add responsive design
-  - Ensure mobile compatibility
-  - Test across different browsers
-  - Optimize for accessibility
-  - _Requirements: User experience_
+- [ ] **User Story: As a user, I want to connect my Gmail account securely, so that the application can access my emails.**
+  - [ ] Implement the backend OAuth2 flow for Google API authentication in `src/services/auth_service.py`.
+  - [ ] Create a new API endpoint `/api/gmail/auth/start` to initiate the OAuth flow.
+  - [ ] Create a callback endpoint `/api/gmail/auth/callback` to handle the response from Google.
+  - [ ] Securely store the user's refresh and access tokens in the database.
+  - [ ] Build a frontend component in `src/components/` that presents the "Connect to Gmail" button.
 
-- [ ] 6. Testing and quality assurance
-- [ ] 6.1 Write comprehensive tests
-  - Complete unit test coverage
-  - Add integration tests
-  - Implement end-to-end tests
-  - _Requirements: Quality assurance_
+- [ ] **User Story: As a user, I want the application to automatically scan my inbox and identify booking confirmation emails.**
+  - [ ] Create a background job in `src/services/background.py` to periodically fetch new emails using the Gmail API.
+  - [ ] Implement a parsing function that uses regex or a classification model to identify booking emails from their content.
+  - [ ] Define a `Booking` data model in `src/models/booking.py` to store extracted information.
+  - [ ] Write unit tests for the email parsing logic.
 
-- [ ] 6.2 Performance optimization
-  - Profile application performance
-  - Optimize database queries
-  - Implement caching strategies
-  - _Requirements: Performance requirements_
-
-- [ ] 7. Documentation and deployment
-- [ ] 7.1 Complete documentation
-  - Update user documentation
-  - Create deployment guides
-  - Document configuration options
-  - _Requirements: Documentation_
-
-- [ ] 7.2 Prepare for deployment
-  - Set up deployment pipeline
-  - Configure monitoring and logging
-  - Perform security review
-  - _Requirements: Deployment readiness_
-
----
-*This implementation plan was generated based on the approved requirements and design. Please review and modify tasks as needed before starting development.*
+Ensure the top-level items are the user stories, and the sub-tasks are the specific technical steps to implement them.
 """
-            
-            # Create or update tasks artifact
-            tasks_artifact_id = f"{spec_id}_tasks"
-            tasks_artifact = SpecificationArtifact.query.get(tasks_artifact_id)
-            
-            if tasks_artifact:
-                tasks_artifact.update_content(tasks_content, 'define_agent')
-            else:
-                tasks_artifact = SpecificationArtifact.create_artifact(
-                    spec_id=spec_id,
-                    project_id=project_id,
-                    artifact_type=ArtifactType.TASKS,
-                    content=tasks_content,
-                    created_by='define_agent'
-                )
-                db.session.commit()
-            
-            logger.info(f"Tasks document generated successfully for spec {spec_id}")
-            
-            return jsonify({
-                'success': True,
-                'data': tasks_artifact.to_dict(),
-                'timestamp': datetime.utcnow().isoformat(),
-                'version': '1.0.0',
-            })
-            
-        except Exception as agent_error:
-            logger.error(f"Error generating tasks document for spec {spec_id}: {agent_error}")
-            return jsonify({
-                'success': False,
-                'error': 'Failed to generate tasks document',
-                'timestamp': datetime.utcnow().isoformat(),
-                'version': '1.0.0',
-            }), 500
+                        async for message in query(
+                            prompt=full_prompt,
+                            options=ClaudeCodeOptions(cwd=os.getcwd())
+                        ):
+                            if isinstance(message, AssistantMessage):
+                                for block in message.content:
+                                    if isinstance(block, TextBlock):
+                                        text = block.text
+                                        collected.append(text)
+                                        socketio.emit('spec.tasks_progress', {'spec_id': spec_id, 'delta': text})
+
+                    try:
+                        anyio.run(_run)
+                        tasks_content = ''.join(collected)
+                    except Exception as stream_err:
+                        # Emit error to UI and fall back to non-stream generation
+                        logger.error(f"Streaming tasks generation failed: {stream_err}")
+                        socketio.emit('spec.tasks_error', {'spec_id': spec_id, 'error': str(stream_err)})
+
+                        tasks_content = define_agent.generate_tasks_document(
+                            spec_id=spec_id,
+                            project_id=project_id,
+                            requirements_content=requirements_artifact.content,
+                            design_content=design_artifact.content
+                        ) or ''
+
+                    # Store result (streamed or fallback)
+                    if tasks_content:
+                        define_agent._store_specifications(spec_id, project_id, {'tasks': tasks_content})
+
+                    socketio.emit('spec.tasks_done', {'spec_id': spec_id})
+            except Exception as e:
+                logger.error(f"Background tasks generation fatal error: {e}")
+                socketio.emit('spec.tasks_error', {'spec_id': spec_id, 'error': str(e)})
+
+        import threading, os
+        threading.Thread(target=_bg_generate, daemon=True).start()
+
+        # Immediately inform client that generation has begun
+        return '', 202
         
     except Exception as e:
         logger.error(f"Error in generate_tasks_document for spec {spec_id}: {e}")
@@ -1095,6 +1034,9 @@ def freeze_specification(spec_id):
                 'version': '1.0.0',
             }), 400
         
+        # Optional flag to re-emit the event even if the spec is already frozen.
+        force_refreeze = bool(data.get('force', False))
+
         # Import SpecificationArtifact model and events
         try:
             from ..models.specification_artifact import SpecificationArtifact
@@ -1118,10 +1060,10 @@ def freeze_specification(spec_id):
         
         # Check if all artifacts are human reviewed
         completion_status = SpecificationArtifact.get_spec_completion_status(spec_id)
-        if not completion_status['ready_to_freeze']:
+        if not completion_status['ready_to_freeze'] and not force_refreeze:
             return jsonify({
                 'success': False,
-                'error': 'Specification is not ready to freeze. All artifacts must be human reviewed.',
+                'error': 'Specification is not ready to freeze. All artifacts must be human reviewed. (Pass force=true to re-emit event for an already frozen spec).',
                 'timestamp': datetime.utcnow().isoformat(),
                 'version': '1.0.0',
             }), 400
@@ -1164,7 +1106,22 @@ def freeze_specification(spec_id):
                 
                 # Publish to Redis channel for WebSocket server
                 result = redis_client.publish('mission_control:events', json.dumps(event_envelope))
+                
+                # ALSO publish to the main event bus channel so PlannerAgent can receive it
+                result2 = redis_client.publish('software_factory:events', json.dumps({
+                    'event_type': 'spec.frozen',
+                    'event_id': event.metadata.event_id,
+                    'timestamp': time.time(),
+                    'source': 'stages_api',
+                    'data': {
+                        'spec_id': spec_id,
+                        'project_id': project_id,
+                        'frozen_by': 'user'
+                    },
+                    'project_id': project_id
+                }))
                 logger.info(f"Published spec.frozen event to Redis, subscribers: {result}")
+                logger.info(f"Published spec.frozen event to event bus, subscribers: {result2}")
                 
             except Exception as redis_error:
                 logger.error(f"Failed to publish spec.frozen event to Redis: {redis_error}")

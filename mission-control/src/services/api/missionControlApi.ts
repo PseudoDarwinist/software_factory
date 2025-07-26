@@ -334,12 +334,10 @@ class MissionControlApi {
 
   async generateTasksDocument(specId: string, projectId: string): Promise<any> {
     try {
-      const response = await this.client.post<ApiResponse<any>>(`/specification/${specId}/generate-tasks`, {
-        projectId
-      }, {
-        timeout: 360000 // 6 minutes for Claude Code SDK tasks generation
-      })
-      return response.data.data
+      const response = await this.client.post(`/specification/${specId}/generate-tasks`, { projectId })
+      // If backend streams, we get 202 with empty body – simply return null
+      if (response.status === 202) return null
+      return (response.data as any)?.data || null
     } catch (error) {
       console.error('Failed to generate tasks document:', error)
       throw new Error('Failed to generate tasks document')
@@ -666,6 +664,78 @@ class MissionControlApi {
     } catch (error) {
       console.error('Failed to check for updates:', error)
       return { projects: false, feed: false, conversations: false }
+    }
+  }
+
+  // Task management endpoints
+  async getTasks(projectId?: string, status?: string): Promise<any[]> {
+    try {
+      const params = new URLSearchParams()
+      if (projectId) params.append('project_id', projectId)
+      if (status) params.append('status', status)
+      
+      const response = await this.client.get<{ tasks: any[]; total: number }>(`/tasks?${params.toString()}`)
+      return response.data.tasks || []
+    } catch (error) {
+      console.error('Failed to fetch tasks:', error)
+      throw new Error('Failed to fetch tasks')
+    }
+  }
+
+  async getTaskContext(taskId: string): Promise<{ taskId: string; context: string; timestamp: string }> {
+    try {
+      const response = await this.client.get<ApiResponse<{ taskId: string; context: string; timestamp: string }>>(`/tasks/${taskId}/context`)
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to fetch task context:', error)
+      throw new Error('Failed to fetch task context')
+    }
+  }
+
+  async startTask(taskId: string, agentId: string): Promise<void> {
+    try {
+      await this.client.post(`/tasks/${taskId}/start`, { agentId })
+    } catch (error) {
+      console.error('Failed to start task:', error)
+      throw new Error('Failed to start task')
+    }
+  }
+
+  async retryTask(taskId: string, agentId: string): Promise<void> {
+    try {
+      await this.client.post(`/tasks/${taskId}/retry`, { agentId })
+    } catch (error) {
+      console.error('Failed to retry task:', error)
+      throw new Error('Failed to retry task')
+    }
+  }
+
+  async cancelTask(taskId: string): Promise<void> {
+    try {
+      await this.client.post(`/tasks/${taskId}/cancel`)
+    } catch (error) {
+      console.error('Failed to cancel task:', error)
+      throw new Error('Failed to cancel task')
+    }
+  }
+
+  async getTaskDetail(taskId: string): Promise<any> {
+    try {
+      const response = await this.client.get<ApiResponse<any>>(`/tasks/${taskId}`)
+      return response.data.data
+    } catch (error) {
+      console.error('Failed to fetch task detail:', error)
+      throw new Error('Failed to fetch task detail')
+    }
+  }
+
+  async checkTaskConflicts(files: string[]): Promise<any[]> {
+    try {
+      const response = await this.client.get<ApiResponse<{ conflicts: any[] }>>(`/tasks/conflicts?files=${files.join(',')}`)
+      return response.data.data?.conflicts || []
+    } catch (error) {
+      console.error('Failed to check task conflicts:', error)
+      throw new Error('Failed to check task conflicts')
     }
   }
 }

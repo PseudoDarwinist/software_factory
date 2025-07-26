@@ -26,6 +26,7 @@ import { FeedColumn } from './FeedColumn'
 import { ConversationColumn } from './ConversationColumn'
 import { DefineStage } from '@/components/stages/DefineStage'
 import { ThinkStage } from '@/components/stages/ThinkStage'
+import { PlanStage } from '@/components/stages/PlanStage'
 import type { ProjectSummary, FeedItem, ConversationPayload, SDLCStage } from '@/types'
 
 interface MissionControlLayoutProps {
@@ -155,6 +156,7 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
                 collapsed={railCollapsed}
                 onToggleCollapse={() => setRailCollapsed(!railCollapsed)}
                 isMobile={isMobile}
+                activeStage={activeStage} // Pass activeStage down
               />
             </motion.div>
           )}
@@ -201,15 +203,10 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
               )}
               
               {activeStage === 'plan' && (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center text-white/60">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
-                      <span className="text-white/40 text-2xl">📋</span>
-                    </div>
-                    <h3 className="text-lg font-medium mb-2">Plan Stage</h3>
-                    <p className="text-sm">Coming soon - Task planning and breakdown</p>
-                  </div>
-                </div>
+                <PlanStage
+                  selectedProject={selectedProject}
+                  onStageChange={onStageChange}
+                />
               )}
               
               {activeStage === 'build' && (

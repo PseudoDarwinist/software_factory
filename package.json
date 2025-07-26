@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@types/node": "^24.0.15",
-    "playwright": "^1.54.1"
+    "playwright": "^1.54.1",
+    "react-resizable-panels": "^3.0.3"
   }
 }

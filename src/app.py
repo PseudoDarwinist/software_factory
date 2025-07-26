@@ -48,7 +48,8 @@ try:
         cache,
         intelligence,
         monitoring,
-        kiro_endpoints
+        kiro_endpoints,
+        tasks
     )
 except ImportError as e:
     # Handle direct execution for scripts, etc.
@@ -67,7 +68,7 @@ except ImportError as e:
     import services.context_aware_ai as context_aware_ai
     import services.ai_agents as ai_agents
     import services.auth_service as auth_service
-    from api import system, ai, mission_control, conversations, stages, events, graph, vector, webhooks, cache, intelligence, monitoring, kiro_endpoints
+    from api import system, ai, mission_control, conversations, stages, events, graph, vector, webhooks, cache, intelligence, monitoring, kiro_endpoints, tasks
     from api import ai_broker as ai_broker_api
 
 migrate = Migrate()
@@ -198,6 +199,18 @@ def create_app(config_class=Config):
     except Exception as e:
         app.logger.warning(f"DefineAgent bridge initialization failed: {e}")
 
+    # Initialize PlannerAgent
+    try:
+        from .services.planner_agent_bridge import init_planner_agent_bridge
+        init_planner_agent_bridge(app)
+        app.logger.info("PlannerAgent bridge initialized successfully")
+    except ImportError:
+        from services.planner_agent_bridge import init_planner_agent_bridge
+        init_planner_agent_bridge(app)
+        app.logger.info("PlannerAgent bridge initialized successfully")
+    except Exception as e:
+        app.logger.warning(f"PlannerAgent bridge initialization failed: {e}")
+
     # Initialize Prometheus metrics server
     try:
         from .services.metrics_service import start_metrics_server
@@ -253,6 +266,7 @@ def register_blueprints(app):
     app.register_blueprint(intelligence.intelligence_bp)
     app.register_blueprint(monitoring.monitoring_bp)
     app.register_blueprint(kiro_endpoints.kiro_bp)
+    app.register_blueprint(tasks.tasks_bp)
     app.logger.info("API blueprints registered successfully")
 
 

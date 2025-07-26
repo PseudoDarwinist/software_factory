@@ -323,6 +323,68 @@ export type DeepPartial<T> = {
 export type Awaited<T> = T extends Promise<infer U> ? U : T
 
 // ========================================
+// Task Management Types
+// ========================================
+
+export type TaskStatus = 'ready' | 'running' | 'review' | 'done' | 'failed'
+export type TaskPriority = 'low' | 'medium' | 'high' | 'critical'
+
+export interface Task {
+  id: string
+  spec_id: string
+  project_id: string
+  title: string
+  description?: string
+  task_number: string
+  parent_task_id?: string
+  status: TaskStatus
+  priority: TaskPriority
+  effort_estimate_hours?: number
+  suggested_owner?: string
+  assigned_to?: string
+  assignment_confidence?: number
+  requirements_refs?: string[]
+  depends_on?: string[]
+  blocks?: string[]
+  related_files?: string[]
+  related_components?: string[]
+  created_by?: string
+  created_at?: string
+  updated_by?: string
+  updated_at?: string
+  started_at?: string
+  completed_at?: string
+  started_by?: string
+  completed_by?: string
+  pr_url?: string
+  build_status?: string
+  agent?: string
+  branchName?: string
+  repoUrl?: string
+  progressMessages?: Array<{
+    timestamp: string
+    message: string
+    percent?: number
+  }>
+  touchedFiles?: string[]
+  error?: string
+}
+
+export interface TaskContext {
+  taskId: string
+  context: string
+  timestamp: string
+}
+
+export interface Agent {
+  id: string
+  name: string
+  description: string
+  capabilities?: string[]
+  status?: 'active' | 'inactive' | 'error'
+}
+
+// ========================================
 // Integration Types (for existing systems)
 // ========================================
 

@@ -60,14 +60,11 @@ class AgentConfig:
 
 @dataclass
 class ProjectContext:
-    """Context information for a project."""
-    
+    """Represents the context for a specific project."""
     project_id: str
+    project_name: Optional[str] = None
+    repo_url: Optional[str] = None
     system_map: Optional[Dict[str, Any]] = None
-    documentation: List[Dict[str, Any]] = field(default_factory=list)
-    team_members: List[str] = field(default_factory=list)
-    git_repository: Optional[str] = None
-    external_integrations: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

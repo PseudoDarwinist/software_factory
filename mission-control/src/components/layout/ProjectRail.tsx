@@ -32,6 +32,7 @@ import missionControlApi from '@/services/api/missionControlApi'
 import { tokens } from '@/styles/tokens'
 import type { ProjectSummary, SystemMapStatus } from '@/types'
 import { useActions } from '@/stores/missionControlStore'
+import { SDLCStage } from '@/types'
 
 interface ProjectRailProps {
   projects: ProjectSummary[]
@@ -42,6 +43,7 @@ interface ProjectRailProps {
   collapsed: boolean
   onToggleCollapse: () => void
   isMobile: boolean
+  activeStage: SDLCStage
 }
 
 export const ProjectRail: React.FC<ProjectRailProps> = React.memo(({
@@ -53,6 +55,7 @@ export const ProjectRail: React.FC<ProjectRailProps> = React.memo(({
   collapsed,
   onToggleCollapse,
   isMobile,
+  activeStage,
 }) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [hoveredProject, setHoveredProject] = useState<string | null>(null)
@@ -225,7 +228,7 @@ export const ProjectRail: React.FC<ProjectRailProps> = React.memo(({
 
       {/* Add project button */}
       <AnimatePresence>
-        {!collapsed && !isMobile && (
+        {!collapsed && !isMobile && activeStage === 'think' && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

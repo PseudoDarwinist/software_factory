@@ -9,11 +9,21 @@ from .base import db
 
 
 class TaskStatus(Enum):
-    """Status of tasks in the workflow"""
+    """Status of tasks in the workflow.
+
+    NOTE: Values are lowercase to match the Postgres enum defined in the Alembic
+    migration (see 008_add_task_execution_fields). Using different values than
+    the underlying DB enum causes commit failures such as
+    `invalid input value for enum taskstatus`. Keeping them aligned here
+    prevents runtime 500 errors when the API attempts to transition task
+    status during the start endpoint.
+    """
+
     READY = "ready"
-    IN_PROGRESS = "in_progress"
+    RUNNING = "running"
+    REVIEW = "review"
     DONE = "done"
-    BLOCKED = "blocked"
+    FAILED = "failed"
 
 
 class TaskPriority(Enum):
@@ -46,6 +56,14 @@ class Task(db.Model):
     status = db.Column(db.Enum(TaskStatus), default=TaskStatus.READY, nullable=False)
     priority = db.Column(db.Enum(TaskPriority), default=TaskPriority.MEDIUM, nullable=False)
     effort_estimate_hours = db.Column(db.Float)  # Estimated effort in hours
+    
+    # Task execution fields (required by task execution API)
+    agent = db.Column(db.String(100))  # Agent assigned to execute this task
+    branch_name = db.Column(db.String(200))  # Git branch for this task
+    repo_url = db.Column(db.String(500))  # Repository URL
+    progress_messages = db.Column(JSON, default=list)  # List of progress messages
+    touched_files = db.Column(JSON, default=list)  # List of files modified by this task
+    error = db.Column(db.Text)  # Error message if task failed
     
     # Assignment and ownership
     suggested_owner = db.Column(db.String(100))  # AI-suggested owner based on expertise
@@ -119,7 +137,14 @@ class Task(db.Model):
             'started_by': self.started_by,
             'completed_by': self.completed_by,
             'pr_url': self.pr_url,
-            'build_status': self.build_status
+            'build_status': self.build_status,
+            # Task execution fields
+            'agent': self.agent,
+            'branchName': self.branch_name,
+            'repoUrl': self.repo_url,
+            'progressMessages': self.progress_messages or [],
+            'touchedFiles': self.touched_files or [],
+            'error': self.error
         }
     
     @classmethod
@@ -170,13 +195,15 @@ class Task(db.Model):
             query = query.filter_by(status=status)
         return query.order_by(cls.priority.desc(), cls.created_at).all()
     
-    def start_task(self, started_by: str):
+    def start_task(self, started_by: str, agent: str = None):
         """Mark task as started"""
-        self.status = TaskStatus.IN_PROGRESS
+        self.status = TaskStatus.RUNNING
         self.started_at = datetime.utcnow()
         self.started_by = started_by
         self.updated_by = started_by
         self.updated_at = datetime.utcnow()
+        if agent:
+            self.agent = agent
         db.session.commit()
     
     def complete_task(self, completed_by: str, pr_url: str = None):
@@ -233,6 +260,71 @@ class Task(db.Model):
         dependencies = self.get_dependencies()
         return all(dep.status == TaskStatus.DONE for dep in dependencies)
     
+    def add_progress_message(self, message: str, percent: int = None):
+        """Add a progress message to the task"""
+        if not self.progress_messages:
+            self.progress_messages = []
+        
+        progress_entry = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'message': message
+        }
+        if percent is not None:
+            progress_entry['percent'] = percent
+            
+        self.progress_messages.append(progress_entry)
+        self.updated_at = datetime.utcnow()
+        db.session.commit()
+    
+    def set_error(self, error_message: str):
+        """Set task error and mark as failed"""
+        self.error = error_message
+        self.status = TaskStatus.FAILED
+        self.updated_at = datetime.utcnow()
+        db.session.commit()
+    
+    def reset_for_retry(self):
+        """Reset task for retry"""
+        self.progress_messages = []
+        self.error = None
+        self.touched_files = []
+        self.branch_name = None
+        self.status = TaskStatus.READY
+        self.updated_at = datetime.utcnow()
+        db.session.commit()
+    
+    def can_retry(self):
+        """Check if task can be retried"""
+        return self.status in [TaskStatus.FAILED, TaskStatus.REVIEW]
+    
+    def add_touched_file(self, file_path: str):
+        """Add a file to the touched files list"""
+        if not self.touched_files:
+            self.touched_files = []
+        
+        if file_path not in self.touched_files:
+            self.touched_files.append(file_path)
+            self.updated_at = datetime.utcnow()
+            db.session.commit()
+    
+    @classmethod
+    def get_running_tasks_with_files(cls, file_paths: list):
+        """Get running tasks that claim any of the specified files"""
+        if not file_paths:
+            return []
+        
+        running_tasks = cls.query.filter_by(status=TaskStatus.RUNNING).all()
+        conflicting_tasks = []
+        
+        for task in running_tasks:
+            if task.touched_files:
+                for file_path in file_paths:
+                    if file_path in task.touched_files:
+                        conflicting_tasks.append(task)
+                        break
+        
+        return conflicting_tasks
+    
     def get_effort_summary(self):
         """Get effort summary including subtasks"""
         total_estimate = self.effort_estimate_hours or 0
@@ -257,9 +349,10 @@ class Task(db.Model):
             return {
                 'total_tasks': 0,
                 'ready': 0,
-                'in_progress': 0,
+                'running': 0,
+                'review': 0,
                 'done': 0,
-                'blocked': 0,
+                'failed': 0,
                 'completion_percentage': 0.0,
                 'total_effort_hours': 0.0,
                 'completed_effort_hours': 0.0
@@ -283,9 +376,10 @@ class Task(db.Model):
         return {
             'total_tasks': total_tasks,
             'ready': status_counts['ready'],
-            'in_progress': status_counts['in_progress'],
+            'running': status_counts['running'],
+            'review': status_counts['review'],
             'done': status_counts['done'],
-            'blocked': status_counts['blocked'],
+            'failed': status_counts['failed'],
             'completion_percentage': completion_percentage,
             'total_effort_hours': total_effort,
             'completed_effort_hours': completed_effort,

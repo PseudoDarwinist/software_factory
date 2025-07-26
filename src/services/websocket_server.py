@@ -323,6 +323,87 @@ class WebSocketServer:
                 'client_data': data
             })
         
+        @self.socketio.on('subscribe_task')
+        def handle_task_subscription(data):
+            """Handle client subscription to task progress"""
+            client_id = request.sid
+            
+            if client_id not in self.connected_clients:
+                emit('error', {'message': 'Client not registered'})
+                return
+            
+            client_info = self.connected_clients[client_id]
+            if not client_info.get('authenticated'):
+                emit('error', {'message': 'Authentication required'})
+                return
+            
+            try:
+                task_id = data.get('taskId')
+                if not task_id:
+                    emit('error', {'message': 'taskId is required'})
+                    return
+                
+                # TODO: Add permission check for task access based on project
+                # For now, allow all authenticated users
+                
+                room = f'task_{task_id}'
+                join_room(room)
+                client_info['subscriptions'].add(room)
+                
+                if room not in self.room_subscriptions:
+                    self.room_subscriptions[room] = set()
+                self.room_subscriptions[room].add(client_id)
+                
+                logger.info(f"Client {client_id} subscribed to task {task_id}")
+                
+                emit('task_subscribed', {
+                    'taskId': task_id,
+                    'room': room
+                })
+                
+            except Exception as e:
+                logger.error(f"Error handling task subscription: {e}")
+                emit('error', {'message': 'Task subscription failed'})
+                self.stats['errors'] += 1
+        
+        @self.socketio.on('unsubscribe_task')
+        def handle_task_unsubscription(data):
+            """Handle client unsubscription from task progress"""
+            client_id = request.sid
+            
+            if client_id not in self.connected_clients:
+                emit('error', {'message': 'Client not registered'})
+                return
+            
+            try:
+                task_id = data.get('taskId')
+                if not task_id:
+                    emit('error', {'message': 'taskId is required'})
+                    return
+                
+                room = f'task_{task_id}'
+                leave_room(room)
+                
+                client_info = self.connected_clients[client_id]
+                client_info['subscriptions'].discard(room)
+                
+                if room in self.room_subscriptions:
+                    self.room_subscriptions[room].discard(client_id)
+                    if not self.room_subscriptions[room]:
+                        del self.room_subscriptions[room]
+                
+                logger.info(f"Client {client_id} unsubscribed from task {task_id}")
+                
+                emit('task_unsubscribed', {
+                    'taskId': task_id,
+                    'room': room
+                })
+                
+            except Exception as e:
+                logger.error(f"Error handling task unsubscription: {e}")
+                emit('error', {'message': 'Task unsubscription failed'})
+                self.stats['errors'] += 1
+        
         @self.socketio.on('get_presence')
         def handle_get_presence(data):
             """Handle request for user presence information"""
@@ -787,6 +868,30 @@ class WebSocketServer:
                 self.stats['errors'] += 1
         
         logger.info(f"Broadcasted {event_type} to {len(client_ids)} connections for user {user_id}")
+    
+    def broadcast_task_progress(self, task_id: str, progress_data: Dict[str, Any]):
+        """Broadcast task progress update to subscribed clients"""
+        try:
+            room = f'task_{task_id}'
+            
+            # Check if anyone is subscribed to this task
+            if room not in self.room_subscriptions or not self.room_subscriptions[room]:
+                logger.debug(f"No subscribers for task {task_id}")
+                return
+            
+            # Broadcast to the task room
+            self.socketio.emit('task_progress', {
+                'taskId': task_id,
+                'timestamp': datetime.utcnow().isoformat(),
+                **progress_data
+            }, room=room)
+            
+            self.stats['messages_sent'] += 1
+            logger.debug(f"Broadcasted task progress for {task_id} to {len(self.room_subscriptions[room])} clients")
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting task progress for {task_id}: {e}")
+            self.stats['errors'] += 1
     
     def health_check(self) -> bool:
         """Check if WebSocket server is healthy"""

@@ -26,6 +26,7 @@ import { SpecWorkflowEditor } from './SpecWorkflowEditor'
 import { AssistantSelector, type AssistantType } from '@/components/AssistantSelector'
 import { KiroWorkflowManager, type GeneratedSpecs } from '@/components/KiroWorkflowManager'
 import type { FeedItem, SDLCStage } from '@/types'
+import { io as socketIOClient } from 'socket.io-client'
 
 interface DefineStageProps {
   feedItems: FeedItem[]
@@ -83,6 +84,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
   error,
 }) => {
   const [ideasInDefinition, setIdeasInDefinition] = useState<FeedItem[]>([])
+  const [openAssistantSelector, setOpenAssistantSelector] = useState<string | null>(null)
   const [currentSpec, setCurrentSpec] = useState<SpecificationSet | null>(null)
   const [specLoading, setSpecLoading] = useState(false)
   const [specError, setSpecError] = useState<string | null>(null)
@@ -93,6 +95,8 @@ export const DefineStage: React.FC<DefineStageProps> = ({
   const [selectedAssistant, setSelectedAssistant] = useState<AssistantType>('claude')
   const [showKiroWorkflow, setShowKiroWorkflow] = useState(false)
   const [kiroFeedItem, setKiroFeedItem] = useState<FeedItem | null>(null)
+  const [tasksStreamingContent, setTasksStreamingContent] = useState<string>('')
+  const [tasksGenerating, setTasksGenerating] = useState(false)
 
   // Filter ideas that are in definition stage
   useEffect(() => {
@@ -123,15 +127,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
       setSpecLoading(true)
       setSpecError(null)
       
-      console.log(`🔄 Loading specification for item: ${itemId}, project: ${projectId}`)
       const spec = await missionControlApi.getSpecification(itemId, projectId)
-      console.log('📄 Loaded specification:', {
-        spec_id: spec?.spec_id,
-        requirements_length: spec?.requirements?.content?.length || 0,
-        requirements_preview: spec?.requirements?.content?.substring(0, 100) || 'No content',
-        design: !!spec?.design,
-        tasks: !!spec?.tasks
-      })
       setCurrentSpec(spec)
     } catch (error) {
       setSpecError('Failed to load specification')
@@ -265,35 +261,21 @@ export const DefineStage: React.FC<DefineStageProps> = ({
     if (!currentSpec || !selectedProject) return
 
     try {
-      setSpecLoading(true)
-      setSpecError(null)
-      
-      console.log('Generating tasks document for spec:', currentSpec.spec_id)
-      
-      const tasksArtifact = await missionControlApi.generateTasksDocument(
+      setTasksGenerating(true)
+      setTasksStreamingContent('')
+      // create placeholder artifact
+      setCurrentSpec(prev => prev ? { ...prev, tasks: { ...(prev.tasks || {} as any), content: '', status: 'ai_draft' } } : prev)
+      // switch to tasks tab immediately
+      setActiveTab('tasks')
+      await missionControlApi.generateTasksDocument(
         currentSpec.spec_id,
         selectedProject
       )
-      
-      // Update the current spec with the new tasks artifact
-      setCurrentSpec(prev => {
-        if (!prev) return null
-        return {
-          ...prev,
-          tasks: tasksArtifact
-        }
-      })
-      
-      // Switch to tasks tab to show the generated content
-      setActiveTab('tasks')
-      
-      console.log('Tasks document generated successfully')
-      
+      // we rely on websocket for progress/done
     } catch (error) {
       console.error('Error generating tasks document:', error)
       setSpecError('Failed to generate tasks document')
-    } finally {
-      setSpecLoading(false)
+      setTasksGenerating(false)
     }
   }, [currentSpec, selectedProject])
 
@@ -472,6 +454,37 @@ export const DefineStage: React.FC<DefineStageProps> = ({
     }
   }, [isDraggingLeft, isDraggingRight, handleLeftResize, handleRightResize])
 
+  useEffect(() => {
+    if (!currentSpec) return
+    const socketUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
+    const socket = socketIOClient(socketUrl, { transports: ['websocket'] })
+
+    const progressHandler = (data: any) => {
+      if (data.spec_id === currentSpec.spec_id) {
+        setTasksStreamingContent(prev => prev + data.delta)
+      }
+    }
+    const doneHandler = (data: any) => {
+      if (data.spec_id === currentSpec.spec_id) {
+        setTasksGenerating(false)
+        if (selectedProject) {
+          // Correctly extract item_id from spec_id for the API call
+          const itemId = currentSpec.spec_id.startsWith('spec_')
+            ? currentSpec.spec_id.substring(5)
+            : currentSpec.spec_id
+          loadSpecification(itemId, selectedProject)
+        }
+      }
+    }
+    socket.on('spec.tasks_progress', progressHandler)
+    socket.on('spec.tasks_done', doneHandler)
+    return () => {
+      socket.off('spec.tasks_progress', progressHandler)
+      socket.off('spec.tasks_done', doneHandler)
+      socket.disconnect()
+    }
+  }, [currentSpec?.spec_id])
+
   return (
     <div className="h-full flex">
       {/* Left Side - Ideas in Definition */}
@@ -490,13 +503,17 @@ export const DefineStage: React.FC<DefineStageProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {ideasInDefinition.map((item) => (
+          {ideasInDefinition.map((item, index) => (
             <motion.div
               key={item.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
+              className={clsx(
+                'relative',
+                openAssistantSelector === item.id ? 'z-20' : `z-${10 - index}`
+              )}
             >
               <LiquidCard
                 variant="feed"
@@ -528,6 +545,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                       <div className="flex items-center space-x-2">
                         <AssistantSelector
                           onAssistantSelect={(assistant) => handleAssistantSelect(assistant, item)}
+                          onToggle={(isOpen) => setOpenAssistantSelector(isOpen ? item.id : null)}
                           disabled={specLoading}
                           className="min-w-[180px]"
                         />
@@ -667,6 +685,8 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                   currentSpec={currentSpec}
                   onGenerateDesign={generateDesignDocument}
                   onGenerateTasks={generateTasksDocument}
+                  streamingContent={tasksStreamingContent}
+                  generating={tasksGenerating}
                 />
               </div>
               
@@ -770,6 +790,8 @@ interface SimpleSpecificationEditorProps {
   currentSpec: SpecificationSet
   onGenerateDesign?: () => void
   onGenerateTasks?: () => void
+  streamingContent?: string
+  generating?: boolean
 }
 
 const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
@@ -782,6 +804,8 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
   currentSpec,
   onGenerateDesign,
   onGenerateTasks,
+  streamingContent = '',
+  generating = false,
 }) => {
   const [content, setContent] = useState(artifact?.content || '')
   const [reviewNotes, setReviewNotes] = useState('')
@@ -877,6 +901,8 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
               content={content}
               onChange={handleContentChange}
               disabled={artifact.status === 'frozen'}
+              streamingContent={streamingContent}
+              generating={generating}
             />
           ) : (
             <textarea
@@ -1194,9 +1220,11 @@ interface TasksViewerProps {
   content: string
   onChange: (content: string) => void
   disabled: boolean
+  streamingContent?: string
+  generating?: boolean
 }
 
-const TasksViewer: React.FC<TasksViewerProps> = ({ content, onChange, disabled }) => {
+const TasksViewer: React.FC<TasksViewerProps> = ({ content, onChange, disabled, streamingContent = '' }) => {
   const [tasks, setTasks] = useState<Array<{ id: string; text: string; completed: boolean; level: number }>>([])
   const [editMode, setEditMode] = useState(false)
 
@@ -1210,15 +1238,16 @@ const TasksViewer: React.FC<TasksViewerProps> = ({ content, onChange, disabled }
     const lines = markdown.split('\n')
     const tasks: Array<{ id: string; text: string; completed: boolean; level: number }> = []
     
+    const taskRegex = /^(\s*)[-*•–]\s*(?:\[([ xX])\]\s*)?(.+)/
     lines.forEach((line, index) => {
-      const taskMatch = line.match(/^(\s*)-\s*\[([ x])\]\s*(.+)/)
+      const taskMatch = line.match(taskRegex)
       if (taskMatch) {
         const [, indent, status, text] = taskMatch
         const level = Math.floor(indent.length / 2)
         tasks.push({
           id: `task-${index}`,
           text: text.trim(),
-          completed: status === 'x',
+          completed: status?.toLowerCase() === 'x',
           level
         })
       }
@@ -1241,21 +1270,11 @@ const TasksViewer: React.FC<TasksViewerProps> = ({ content, onChange, disabled }
   }
 
   const generateMarkdownFromTasks = (tasks: Array<{ id: string; text: string; completed: boolean; level: number }>, originalContent: string) => {
-    const lines = originalContent.split('\n')
-    let taskIndex = 0
-    
-    const updatedLines = lines.map(line => {
-      const taskMatch = line.match(/^(\s*)-\s*\[([ x])\]\s*(.+)/)
-      if (taskMatch && taskIndex < tasks.length) {
-        const task = tasks[taskIndex]
-        const [, indent] = taskMatch
-        taskIndex++
-        return `${indent}- [${task.completed ? 'x' : ' '}] ${task.text}`
-      }
-      return line
-    })
-    
-    return updatedLines.join('\n')
+    const rebuilt = tasks.map(t => {
+      const indent = '  '.repeat(t.level)
+      return `${indent}- [${t.completed ? 'x' : ' '}] ${t.text}`
+    }).join('\n')
+    return rebuilt
   }
 
   const startTask = (task: { id: string; text: string; completed: boolean; level: number }) => {

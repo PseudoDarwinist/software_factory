@@ -11,7 +11,7 @@ from datetime import datetime
 
 # revision identifiers, used by Alembic.
 revision = '007_add_background_job_updated_at'
-down_revision = '006_add_task_table'
+down_revision = '006'
 branch_labels = None
 depends_on = None
 

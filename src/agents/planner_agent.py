@@ -317,7 +317,7 @@ class PlannerAgent(BaseAgent):
             return round(base_effort)  # Round to hour increments
     
     def _suggest_task_owner(self, task_data: Dict[str, Any], project_context) -> Optional[Dict[str, Any]]:
-        """Suggest task owner based on content analysis and team expertise."""
+        """Suggest task owner based on content analysis and team expertise using Git blame analysis."""
         title = task_data.get('title', '').lower()
         description = task_data.get('description', '').lower()
         content = f"{title} {description}"
@@ -334,10 +334,48 @@ class PlannerAgent(BaseAgent):
         
         # Find the highest scoring expertise area
         top_expertise = max(expertise_scores, key=expertise_scores.get)
-        confidence = min(expertise_scores[top_expertise] / 5.0, 1.0)  # Max confidence of 1.0
+        base_confidence = min(expertise_scores[top_expertise] / 5.0, 1.0)  # Max confidence of 1.0
         
-        # Map expertise to team members (simplified - in real implementation,
-        # this would use Git blame analysis and team expertise graphs)
+        # Use GraphService to get team expertise based on Git blame analysis
+        try:
+            from ..services.graph_service import GraphService
+            team_expertise = GraphService.get_team_expertise(project_context.project_id)
+            
+            # Find team members with matching expertise
+            best_match = None
+            highest_expertise_score = 0
+            
+            for member_id, member_data in team_expertise.get('team_members', {}).items():
+                expertise_areas = member_data.get('expertise_areas', {})
+                
+                if top_expertise in expertise_areas:
+                    expertise_level = expertise_areas[top_expertise].get('level', 0)
+                    if expertise_level > highest_expertise_score:
+                        highest_expertise_score = expertise_level
+                        best_match = {
+                            'member_id': member_id,
+                            'expertise_level': expertise_level,
+                            'member_data': member_data
+                        }
+            
+            if best_match:
+                # Combine content matching confidence with expertise level
+                git_confidence = min(best_match['expertise_level'] / 10.0, 1.0)
+                combined_confidence = (base_confidence + git_confidence) / 2.0
+                
+                return {
+                    'owner': best_match['member_id'],
+                    'confidence': combined_confidence,
+                    'expertise_area': top_expertise,
+                    'reasoning': f"Git blame analysis shows {best_match['member_id']} has {best_match['expertise_level']}/10 expertise in {top_expertise}",
+                    'git_expertise_level': best_match['expertise_level'],
+                    'content_match_score': expertise_scores[top_expertise]
+                }
+        
+        except Exception as e:
+            logger.warning(f"Failed to get team expertise from Git blame analysis: {e}")
+        
+        # Fallback to simplified mapping if Git blame analysis fails
         expertise_to_owner = {
             'frontend': 'frontend-dev',
             'backend': 'backend-dev',
@@ -352,9 +390,10 @@ class PlannerAgent(BaseAgent):
         
         return {
             'owner': suggested_owner,
-            'confidence': confidence,
+            'confidence': base_confidence,
             'expertise_area': top_expertise,
-            'reasoning': f"Task content matches {top_expertise} expertise"
+            'reasoning': f"Task content matches {top_expertise} expertise (fallback mapping)",
+            'fallback_used': True
         }
     
     def _determine_task_priority(self, task_data: Dict[str, Any]) -> str:

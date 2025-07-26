@@ -529,21 +529,14 @@ Generate a comprehensive, repository-aware requirements document that demonstrat
                 priority=Priority.HIGH,
                 max_tokens=32000,
                 timeout_seconds=300.0,
-                preferred_models=['claude-opus-4', 'goose-gemini'],  # Model Garden first, then Goose
+                preferred_models=['claude-opus-4'],  # Use Model Garden Anthropic model only
                 metadata={'agent': self.config.agent_id, 'type': 'requirements', 'approach': 'clean_define_agent'}
             )
             
             logger.info(f"Submitting clean DefineAgent request with models: {ai_request.preferred_models}")
             logger.info(f"Request ID: {ai_request.request_id}, Clean prompt length: {len(clean_prompt)}")
             
-            import time
-            start_time = time.time()
             response = self.ai_broker.submit_request_sync(ai_request, timeout=120.0)
-            elapsed_time = time.time() - start_time
-            
-            logger.info(f"AI response received after {elapsed_time:.2f}s - Success: {response.success}")
-            logger.info(f"Response model: {getattr(response, 'model_used', 'unknown')}")
-            logger.info(f"Response content length: {len(getattr(response, 'content', ''))}")
             
             # The clean prompt should work for both GooseAI and Model Garden
             # No need for fallback with different prompts since we've eliminated layering
@@ -583,7 +576,7 @@ Generate a comprehensive, repository-aware requirements document that demonstrat
                             result = claude_service.create_specification(idea_content, system_context)
                             
                             if result.get('success'):
-                                logger.info("Claude Code SDK successfully generated requirements")
+                                logger.info("Claude Code SDK generated requirements")
                                 return result.get('output', '')
                             else:
                                 logger.error(f"Claude Code SDK failed: {result.get('error')}")
@@ -741,14 +734,7 @@ Generate a comprehensive, repository-aware requirements document that demonstrat
             import time
             start_time = time.time()
             response = self.ai_broker.submit_request_sync(ai_request, timeout=300.0)
-            elapsed_time = time.time() - start_time
-            
-            logger.info(f"AI response received after {elapsed_time:.2f}s - Success: {response.success}")
-            logger.info(f"Response model: {getattr(response, 'model_used', 'unknown')}")
-            logger.info(f"Response content length: {len(getattr(response, 'content', ''))}")
-            
             if response.success:
-                logger.info(f"Generated repository-aware requirements using {response.model_used}")
                 return response.content
             else:
                 logger.error(f"Failed to generate requirements: {response.error_message}")
@@ -932,55 +918,75 @@ ORIGINAL IDEA:
                 error_message=str(e)
             )
     
-    def _get_project_repository_path(self, project_context: ProjectContext = None) -> str:
-        """Get the repository path for the current project"""
+    def get_project_context(self, project_id: str) -> ProjectContext:
+        """
+        Retrieve and cache the project context.
+        This ensures we are not repeatedly querying the database for the same information.
+        """
+        # Simple caching mechanism
+        if hasattr(self, '_project_context_cache') and self._project_context_cache.get('project_id') == project_id:
+            return self._project_context_cache['context']
+
+        logger.info(f"Fetching project context for project_id: {project_id}")
+        # Import here to avoid circular dependency at module level
         try:
-            if not project_context or not project_context.project_id:
-                logger.warning("No project context available, using current directory")
-                return os.getcwd()
-            
-            # Import MissionControlProject model
-            try:
-                from ..models.mission_control_project import MissionControlProject
-            except ImportError:
-                from models.mission_control_project import MissionControlProject
-            
-            # Look up the project to get repository URL
-            project = MissionControlProject.query.filter_by(id=project_context.project_id).first()
-            
-            if not project or not project.repo_url:
-                logger.warning(f"No repository URL found for project {project_context.project_id}")
-                return os.getcwd()
-            
-            # For GitHub repositories, we need to clone or find the local path
-            # For now, let's try to find if it's already cloned in a temporary directory
+            from ..models.mission_control_project import MissionControlProject
+            from ..models.system_map import SystemMap
+        except ImportError:
+            from models.mission_control_project import MissionControlProject
+            from models.system_map import SystemMap
+
+        project = MissionControlProject.query.get(project_id)
+        system_map_data = SystemMap.query.filter_by(project_id=project_id).first()
+
+        context = ProjectContext(
+            project_id=project_id,
+            project_name=project.name if project else "Unknown Project",
+            repo_url=project.repo_url if project else None,
+            system_map=system_map_data.content if system_map_data else None
+        )
+        
+        # Cache the result
+        self._project_context_cache = {'project_id': project_id, 'context': context}
+        
+        return context
+
+    def _get_project_repository_path(self, project_context: ProjectContext) -> str:
+        """
+        Get the local filesystem path for the project's repository.
+        If the repository is remote, it will be cloned to a temporary directory.
+        If it has been cloned before, the existing path will be returned.
+        """
+        if not project_context or not project_context.repo_url:
+            logger.error("CRITICAL: No repository URL found in project context. Cannot proceed.")
+            raise ValueError("Repository URL is missing from the project context.")
+
+        try:
             import tempfile
             import hashlib
-            
-            # Create a consistent temporary directory name based on repo URL
-            repo_hash = hashlib.md5(project.repo_url.encode()).hexdigest()[:8]
-            temp_dir = os.path.join(tempfile.gettempdir(), f"repo_{repo_hash}")
-            
-            if os.path.exists(temp_dir):
-                logger.info(f"Found existing repository clone at: {temp_dir}")
-                return temp_dir
-            
-            # If not found, clone the repository
-            logger.info(f"Cloning repository {project.repo_url} to {temp_dir}")
-            try:
-                from git import Repo
-                Repo.clone_from(project.repo_url, temp_dir, depth=1)
-                logger.info(f"Successfully cloned repository to {temp_dir}")
-                return temp_dir
-            except Exception as clone_error:
-                logger.error(f"Failed to clone repository: {clone_error}")
-                # Fallback to current directory
-                return os.getcwd()
-                
-        except Exception as e:
-            logger.error(f"Error getting project repository path: {e}")
-            return os.getcwd()
+            from git import Repo
 
+            # Create a consistent directory name from a hash of the repo URL
+            repo_hash = hashlib.md5(project_context.repo_url.encode()).hexdigest()
+            clone_dir = os.path.join(tempfile.gettempdir(), f"sf_project_clone_{repo_hash}")
+
+            if os.path.exists(clone_dir):
+                logger.info(f"Found existing repository clone at: {clone_dir}")
+                # Optional: You could add logic here to pull latest changes
+                return clone_dir
+            
+            # If the directory doesn't exist, clone the repository
+            logger.info(f"Cloning repository {project_context.repo_url} into {clone_dir}")
+            Repo.clone_from(project_context.repo_url, clone_dir, depth=1)
+            logger.info(f"Successfully cloned repository.")
+            return clone_dir
+
+        except ImportError:
+            logger.error("GitPython is not installed. Please install it with 'pip install GitPython'.")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to get project repository path: {e}")
+            raise
 
     def _generate_design(self, requirements_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
         """Generate design.md. Try Claude Code SDK first, then fall back to AI Broker"""
@@ -999,7 +1005,61 @@ ORIGINAL IDEA:
             if claude_service.is_available():
                 logger.info("Using Claude Code SDK for design generation")
 
-                claude_prompt = f"""Analyze this repository and create a detailed design.md for the approved requirements below.\n\n=== APPROVED REQUIREMENTS ===\n{requirements_content}\n\n=== PROJECT CONTEXT ===\n{ai_context}\n\nTASK:\nCreate a comprehensive design.md that extends the existing architecture, references concrete files/modules, and follows project conventions. Include diagrams using Mermaid where useful."""
+                claude_prompt = f"""You are a senior software architect. Your task is to create a detailed `design.md` document based on the provided requirements.
+
+=== APPROVED REQUIREMENTS ===
+{requirements_content}
+
+=== PROJECT CONTEXT ===
+{ai_context}
+
+TASK:
+Create a comprehensive `design.md` document that extends the existing architecture, references concrete files/modules, and follows project conventions.
+
+Follow this exact format:
+
+# Design Document
+
+## 1. Overview
+A brief, high-level summary of the technical approach. Mention key architectural decisions and how the new feature integrates with the existing system.
+
+## 2. Component Architecture
+A breakdown of the new or modified components. Use a Mermaid diagram to illustrate relationships where helpful.
+
+```mermaid
+graph TD
+    A[User via Frontend] --> B(API Endpoint: /api/new-feature);
+    B --> C{{NewFeatureService}};
+    C --> D[ExistingAuthService];
+    C --> E[Database Models];
+```
+
+## 3. Database Design
+Details of any new database tables, columns, or relationships. Include schema definitions.
+
+**`new_feature` table:**
+- `id`: PK
+- `user_id`: FK to `users.id`
+- `data`: TEXT
+- `created_at`: TIMESTAMP
+
+## 4. API Endpoints
+Specification for any new or modified API endpoints.
+
+- **`POST /api/new-feature`**
+  - **Description**: Creates a new feature record.
+  - **Request Body**: `{{ "data": "string" }}`
+  - **Response**: `201 Created`
+
+## 5. File Changes
+A list of files that will be created or modified.
+
+- **`CREATE`**: `src/services/new_feature_service.py`
+- **`MODIFY`**: `src/api/routes.py` (to add new endpoint)
+- **`MODIFY`**: `src/models/user.py` (if relationships are added)
+
+Your design should be concrete, referencing the project's existing patterns and file structure.
+"""
 
                 result = claude_service.execute_task(claude_prompt)
                 if result.get("success"):
@@ -1014,7 +1074,7 @@ ORIGINAL IDEA:
             # 2) Fallback – AI Broker with preferred Anthropic model, then Goose
             # -----------------------------------------------------------------
             prompt = f"""You are a senior software architect with full filesystem access to analyze this repository.\n\n{ai_context}\n\nINSTRUCTIONS:\n1. **ANALYZE THE REPOSITORY**: Use your filesystem access to examine\n   - Current architecture and design patterns\n   - Database schemas and data models\n   - API structures and service patterns\n   - UI/UX components and design systems\n   - Integration patterns and middleware\n\n2. **CREATE REPOSITORY-AWARE DESIGN**: Generate design.md that:\n   - Extends existing architectural patterns\n   - Integrates with current data models and APIs\n   - Follows established design conventions\n   - References specific files and components\n   - Uses the same technology stack\n\nCreate a design.md document with this structure:\n\n# Design Document\n\n## Overview\n- Feature overview and architectural approach\n- Integration with existing system components\n- Key design decisions and rationale\n\n## Architecture\n- High-level architecture diagram (Mermaid if applicable)\n- Component relationships and data flow\n- Integration points with existing services\n\n## Components and Interfaces\n- Detailed component specifications\n- API endpoints and data contracts\n- Database schema changes\n- UI/UX component specifications\n\n## Data Models\n- Entity relationships and schemas\n- Data validation and constraints\n- Migration strategies for existing data\n\n## Error Handling\n- Error scenarios and handling strategies\n- Logging and monitoring approaches\n- Fallback mechanisms\n\n## Testing Strategy\n- Unit testing approach\n- Integration testing plans\n- End-to-end testing scenarios\n\nGenerate a comprehensive, repository-aware design document."""
-
+            
             ai_request = AIRequest(
                 request_id=f"design_{uuid.uuid4().hex[:8]}",
                 task_type=TaskType.DOCUMENTATION,
@@ -1022,24 +1082,24 @@ ORIGINAL IDEA:
                 priority=Priority.HIGH,
                 max_tokens=32000,
                 timeout_seconds=300.0,
-                preferred_models=["claude-opus-4", "goose-gemini"],
+                preferred_models=["claude-opus-4"],
                 metadata={"agent": self.config.agent_id, "type": "design"}
             )
-
+            
             logger.info("Generating design document with AI Broker fallback")
             response = self.ai_broker.submit_request_sync(ai_request, timeout=120.0)
-
+            
             if response.success:
                 logger.info(f"Generated design document using {response.model_used}")
                 return response.content
             else:
                 logger.error(f"Failed to generate design document via AI Broker: {response.error_message}")
                 return None
-
+                
         except Exception as e:
             logger.error(f"Error generating design document: {e}")
             return None
-
+    
     # ------------------------------------------------------------
     # Update _generate_tasks with similar Claude-first strategy
     # ------------------------------------------------------------
@@ -1058,7 +1118,39 @@ ORIGINAL IDEA:
             if claude_service.is_available():
                 logger.info("Using Claude Code SDK for tasks generation")
 
-                claude_prompt = f"""Analyze this repository and create a detailed tasks.md implementation plan based on the approved design.\n\n=== APPROVED REQUIREMENTS ===\n{requirements_content}\n\n=== APPROVED DESIGN ===\n{design_content}\n\n=== PROJECT CONTEXT ===\n{ai_context}\n\nTASK:\nBreak the implementation into incremental coding tasks formatted as a markdown checklist with clear references to requirements. Focus only on steps that involve writing, modifying, or testing code."""
+                claude_prompt = f"""You are an expert technical project manager. Your task is to create a detailed implementation plan in a `tasks.md` file based on the provided requirements and design documents.
+
+=== APPROVED REQUIREMENTS ===
+{requirements_content}
+
+=== APPROVED DESIGN ===
+{design_content}
+
+=== PROJECT CONTEXT ===
+{ai_context}
+
+TASK:
+Create a markdown checklist of all user stories from the requirements document. For each user story, create a set of small, one-story-point sub-tasks (with unchecked checkboxes) that break down the story into concrete implementation steps.
+
+Follow this exact format:
+
+# Implementation Plan
+
+- [ ] **User Story: As a user, I want to connect my Gmail account securely, so that the application can access my emails.**
+  - [ ] Implement the backend OAuth2 flow for Google API authentication in `src/services/auth_service.py`.
+  - [ ] Create a new API endpoint `/api/gmail/auth/start` to initiate the OAuth flow.
+  - [ ] Create a callback endpoint `/api/gmail/auth/callback` to handle the response from Google.
+  - [ ] Securely store the user's refresh and access tokens in the database.
+  - [ ] Build a frontend component in `src/components/` that presents the "Connect to Gmail" button.
+
+- [ ] **User Story: As a user, I want the application to automatically scan my inbox and identify booking confirmation emails.**
+  - [ ] Create a background job in `src/services/background.py` to periodically fetch new emails using the Gmail API.
+  - [ ] Implement a parsing function that uses regex or a classification model to identify booking emails from their content.
+  - [ ] Define a `Booking` data model in `src/models/booking.py` to store extracted information.
+  - [ ] Write unit tests for the email parsing logic.
+
+Ensure the top-level items are the user stories, and the sub-tasks are the specific technical steps to implement them.
+"""
 
                 result = claude_service.execute_task(claude_prompt)
                 if result.get("success"):
@@ -1071,7 +1163,7 @@ ORIGINAL IDEA:
 
             # 2) Fallback to AI Broker
             prompt = f"""You are a senior technical lead with full filesystem access to analyze this repository.\n\n{ai_context}\n\nINSTRUCTIONS:\n1. **ANALYZE THE REPOSITORY**: Use your filesystem access to examine current code organization, testing frameworks, and build processes.\n2. **CREATE IMPLEMENTATION PLAN**: Generate tasks.md where each checklist item is a discrete coding task that references requirements and builds incrementally.\n\nGenerate a comprehensive tasks.md document."""
-
+            
             ai_request = AIRequest(
                 request_id=f"tasks_{uuid.uuid4().hex[:8]}",
                 task_type=TaskType.DOCUMENTATION,
@@ -1079,20 +1171,20 @@ ORIGINAL IDEA:
                 priority=Priority.HIGH,
                 max_tokens=32000,
                 timeout_seconds=300.0,
-                preferred_models=["claude-opus-4", "goose-gemini"],
+                preferred_models=["claude-opus-4"],
                 metadata={"agent": self.config.agent_id, "type": "tasks"}
             )
-
+            
             logger.info("Generating tasks document with AI Broker fallback")
             response = self.ai_broker.submit_request_sync(ai_request, timeout=120.0)
-
+            
             if response.success:
                 logger.info(f"Generated tasks document using {response.model_used}")
                 return response.content
             else:
                 logger.error(f"Failed to generate tasks document via AI Broker: {response.error_message}")
                 return None
-
+                
         except Exception as e:
             logger.error(f"Error generating tasks document: {e}")
             return None
@@ -1258,7 +1350,7 @@ Generate a concise design.md with system architecture, components, and integrati
                 priority=Priority.HIGH,
                 max_tokens=32000,
                 timeout_seconds=300.0,
-                preferred_models=['claude-opus-4', 'goose-gemini'],
+                preferred_models=['claude-opus-4'],
                 metadata={'agent': self.config.agent_id, 'type': 'design'}
             )
             
@@ -1318,7 +1410,7 @@ Generate a tasks.md document with:
                     result = claude_service.create_specification(tasks_prompt, ai_context)
                     
                     if result.get('success'):
-                        logger.info("Claude Code SDK successfully generated tasks document")
+                        logger.info("✅ Claude Code SDK successfully generated tasks document")
                         return result.get('output', '')
                     else:
                         logger.error(f"Claude Code SDK failed: {result.get('error')}")
@@ -1349,7 +1441,7 @@ Convert the approved requirements and design into actionable coding tasks. Focus
                 priority=Priority.HIGH,
                 max_tokens=32000,
                 timeout_seconds=300.0,
-                preferred_models=['claude-opus-4', 'goose-gemini'],
+                preferred_models=['claude-opus-4'],
                 metadata={'agent': self.config.agent_id, 'type': 'tasks'}
             )
             
@@ -1366,12 +1458,6 @@ Convert the approved requirements and design into actionable coding tasks. Focus
         except Exception as e:
             logger.error(f"Error generating tasks document: {e}")
             return None
-
-    def _get_project_repository_path(self, project_context: ProjectContext) -> str:
-        """Get the repository path for Claude Code SDK"""
-        # Default to current working directory if no specific path is available
-        import os
-        return os.getcwd()
 
     def _store_specifications(self, spec_id: str, project_id: str, specifications: Dict[str, str]):
         """Store generated specifications in the database"""
@@ -1390,11 +1476,6 @@ Convert the approved requirements and design into actionable coding tasks. Focus
             for spec_type, content in specifications.items():
                 if spec_type in artifact_type_mapping and content is not None:
                     artifact_type = artifact_type_mapping[spec_type]
-                    
-                    # Create specification artifact
-                    logger.info(f"Storing {spec_type} artifact with {len(content)} characters")
-                    logger.info(f"Content preview: {content[:100]}...")
-                    logger.info(f"Content ending: ...{content[-100:]}")
                     
                     # Check if artifact already exists and update it, or create new one
                     artifact_id = f"{spec_id}_{artifact_type.value}"
