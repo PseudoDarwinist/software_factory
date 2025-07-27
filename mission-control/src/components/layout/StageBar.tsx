@@ -40,31 +40,31 @@ interface StageBarProps {
 const stages: { id: SDLCStage; label: string; icon: string; description: string }[] = [
   {
     id: 'think',
-    label: 'Think',
+    label: 'Refinery',
     icon: '💭',
     description: 'Capture ideas and thoughts',
   },
   {
     id: 'define',
-    label: 'Define',
+    label: 'Foundry',
     icon: '📝',
     description: 'Create product briefs and specs',
   },
   {
     id: 'plan',
-    label: 'Plan',
+    label: 'Planner',
     icon: '📋',
     description: 'Break down work into tasks',
   },
   {
     id: 'build',
-    label: 'Build',
+    label: 'Assembler',
     icon: '🔨',
     description: 'Write code and implement features',
   },
   {
     id: 'validate',
-    label: 'Validate',
+    label: 'Validator',
     icon: '✅',
     description: 'Test and validate implementation',
   },

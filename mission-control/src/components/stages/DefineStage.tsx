@@ -1365,7 +1365,7 @@ const TasksViewer: React.FC<TasksViewerProps> = ({ content, onChange, disabled, 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => startTask(task)}
-                className="flex-shrink-0 px-3 py-1 bg-blue-500/20 text-blue-400 rounded text-xs border border-blue-500/30 hover:bg-blue-500/30 transition-all"
+                className="neon-btn neon-btn--gray px-3 py-1 text-xs"
               >
                 Start Task
               </motion.button>

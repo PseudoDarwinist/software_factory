@@ -12,13 +12,19 @@ from sqlalchemy.exc import SQLAlchemyError
 try:
     from ..models.task import Task, TaskStatus
     from ..models.base import db
+    from ..models.mission_control_project import MissionControlProject
     from ..services.background import get_job_manager
     from ..services.websocket_server import get_websocket_server
+    from ..services.github_branch_service import get_github_branch_service
+    from ..services.claude_code_task_service import get_claude_code_task_service
 except ImportError:
     from models.task import Task, TaskStatus
     from models.base import db
+    from models.mission_control_project import MissionControlProject
     from services.background import get_job_manager
     from services.websocket_server import get_websocket_server
+    from services.github_branch_service import get_github_branch_service
+    from services.claude_code_task_service import get_claude_code_task_service
 
 tasks_bp = Blueprint('tasks', __name__, url_prefix='/api/tasks')
 logger = logging.getLogger(__name__)
@@ -71,7 +77,12 @@ def start_task(task_id):
     """
     Start a task execution
     POST /api/tasks/:id/start
-    Body: { agentId }
+    Body: { 
+        agentId: string,
+        contextOptions?: { spec_files, requirements, design, task, code_paths },
+        branchName?: string,
+        baseBranch?: string 
+    }
     """
     try:
         data = request.get_json()
@@ -79,6 +90,9 @@ def start_task(task_id):
             return jsonify({'error': 'agentId is required'}), 400
         
         agent_id = data['agentId']
+        context_options = data.get('contextOptions', {})
+        branch_name = data.get('branchName')
+        base_branch = data.get('baseBranch', 'main')
         
         # Look up task
         task = Task.query.get(task_id)
@@ -93,13 +107,43 @@ def start_task(task_id):
         if not task.can_start():
             return jsonify({'error': 'Task dependencies are not met'}), 400
         
+        # Generate or validate branch name
+        if not branch_name:
+            # Auto-generate branch name if not provided
+            project = MissionControlProject.query.get(task.project_id)
+            if project and project.repo_url and project.github_token:
+                branch_service = get_github_branch_service()
+                
+                # Use asyncio to run the async function
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                branch_result = loop.run_until_complete(
+                    branch_service.generate_available_branch_name(
+                        task_id=task.id,
+                        task_title=task.title,
+                        repo_url=project.repo_url,
+                        github_token=project.github_token
+                    )
+                )
+                
+                branch_name = branch_result['branch_name']
+        
+        # Store branch name in task
+        if branch_name:
+            task.branch_name = branch_name
+        
         # Mark task as running
         task.start_task(started_by='api_user', agent=agent_id)
         
         # For now, execute immediately without background job to avoid issues
         # TODO: Re-enable background job execution once debugging is complete
         try:
-            _execute_task_background(task_id, agent_id)
+            _execute_task_background(task_id, agent_id, context_options, base_branch)
         except Exception as bg_error:
             logger.error(f"Error in background task execution: {bg_error}")
             import traceback
@@ -290,16 +334,316 @@ def get_task_detail(task_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 
-def _execute_task_background(task_id: str, agent_id: str):
+@tasks_bp.route('/<task_id>/suggest-assignee', methods=['POST'])
+def suggest_assignee(task_id):
     """
-    Background function that executes a task
-    This is a stub implementation - in the real system this would:
-    1. Gather context (spec markdown, design notes, repo URL)
-    2. Create a branch
-    3. Generate code with the chosen agent
-    4. Run tests
-    5. Create PR
-    6. Report progress via WebSocket
+    Generate AI suggestion for task assignee
+    POST /api/tasks/:id/suggest-assignee
+    """
+    try:
+        task = Task.query.get(task_id)
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+        
+        # For now, provide a mock suggestion based on task characteristics
+        # In the real implementation, this would use Claude Code SDK
+        suggestion = _generate_assignee_suggestion(task)
+        
+        # Update task with suggestion
+        task.suggested_owner = suggestion['assignee']
+        task.assignment_confidence = suggestion['confidence']
+        task.assignment_reasoning = suggestion['reasoning']
+        db.session.commit()
+        
+        return jsonify(suggestion), 200
+        
+    except Exception as e:
+        logger.error(f"Error generating assignee suggestion for task {task_id}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@tasks_bp.route('/<task_id>/suggest-estimate', methods=['POST'])
+def suggest_estimate(task_id):
+    """
+    Generate AI suggestion for task effort estimate
+    POST /api/tasks/:id/suggest-estimate
+    """
+    try:
+        task = Task.query.get(task_id)
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+        
+        # For now, provide a mock suggestion based on task characteristics
+        # In the real implementation, this would use Claude Code SDK
+        suggestion = _generate_effort_suggestion(task)
+        
+        # Update task with suggestion
+        task.effort_estimate_hours = suggestion['hours']
+        task.effort_reasoning = suggestion['reasoning']
+        db.session.commit()
+        
+        return jsonify(suggestion), 200
+        
+    except Exception as e:
+        logger.error(f"Error generating effort suggestion for task {task_id}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@tasks_bp.route('/<task_id>/suggest-agent', methods=['POST'])
+def suggest_agent(task_id):
+    """
+    Generate AI suggestion for Claude Code sub-agent
+    POST /api/tasks/:id/suggest-agent
+    """
+    try:
+        task = Task.query.get(task_id)
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+        
+        # Generate agent suggestion based on task content
+        suggestion = _generate_agent_suggestion(task)
+        
+        # Update task with suggestion
+        task.suggested_agent = suggestion['agent']
+        task.agent_reasoning = suggestion['reasoning']
+        db.session.commit()
+        
+        return jsonify(suggestion), 200
+        
+    except Exception as e:
+        logger.error(f"Error generating agent suggestion for task {task_id}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@tasks_bp.route('/<task_id>/update-field', methods=['PATCH'])
+def update_task_field(task_id):
+    """
+    Update a specific field on a task
+    PATCH /api/tasks/:id/update-field
+    Body: { field: 'priority', value: 'high' }
+    """
+    try:
+        task = Task.query.get(task_id)
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+        
+        data = request.get_json()
+        if not data or 'field' not in data or 'value' not in data:
+            return jsonify({'error': 'field and value are required'}), 400
+        
+        field = data['field']
+        value = data['value']
+        
+        # Update allowed fields
+        if field == 'priority':
+            from ..models.task import TaskPriority
+            try:
+                task.priority = TaskPriority(value.lower())
+            except ValueError:
+                return jsonify({'error': f'Invalid priority: {value}'}), 400
+        elif field == 'assigned_to':
+            task.assigned_to = value
+        elif field == 'effort_estimate_hours':
+            try:
+                task.effort_estimate_hours = float(value)
+            except ValueError:
+                return jsonify({'error': 'effort_estimate_hours must be a number'}), 400
+        else:
+            return jsonify({'error': f'Field {field} is not editable'}), 400
+        
+        db.session.commit()
+        
+        return jsonify({
+            'message': f'Updated {field} successfully',
+            'task': task.to_dict()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error updating task field {task_id}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@tasks_bp.route('/<task_id>/generate-branch-name', methods=['POST'])
+def generate_branch_name(task_id):
+    """
+    Generate an available branch name for a task
+    POST /api/tasks/:id/generate-branch-name
+    Body: { taskType?: 'feature'|'bug'|'hotfix' }
+    """
+    try:
+        task = Task.query.get(task_id)
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+        
+        # Get project to access GitHub token and repo URL
+        project = MissionControlProject.query.get(task.project_id)
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        if not project.repo_url or not project.github_token:
+            return jsonify({'error': 'Project GitHub configuration incomplete'}), 400
+        
+        data = request.get_json() or {}
+        task_type = data.get('taskType')
+        
+        # Generate available branch name
+        branch_service = get_github_branch_service()
+        
+        # Use asyncio to run the async function
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        result = loop.run_until_complete(
+            branch_service.generate_available_branch_name(
+                task_id=task.id,
+                task_title=task.title,
+                repo_url=project.repo_url,
+                github_token=project.github_token,
+                task_type=task_type
+            )
+        )
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"Error generating branch name for task {task_id}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@tasks_bp.route('/<task_id>/validate-branch-name', methods=['POST'])
+def validate_branch_name(task_id):
+    """
+    Validate a branch name for a task
+    POST /api/tasks/:id/validate-branch-name
+    Body: { branchName: 'feature/task-123-example-20241201' }
+    """
+    try:
+        task = Task.query.get(task_id)
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+        
+        data = request.get_json()
+        if not data or 'branchName' not in data:
+            return jsonify({'error': 'branchName is required'}), 400
+        
+        branch_name = data['branchName']
+        
+        # Validate branch name
+        branch_service = get_github_branch_service()
+        validation_result = branch_service.validate_branch_name(branch_name)
+        
+        # If valid, also check if it exists in the repository
+        if validation_result['valid']:
+            project = MissionControlProject.query.get(task.project_id)
+            if project and project.repo_url and project.github_token:
+                # Use asyncio to run the async function
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                exists = loop.run_until_complete(
+                    branch_service.check_branch_exists(
+                        project.repo_url,
+                        branch_name,
+                        project.github_token
+                    )
+                )
+                
+                validation_result['exists'] = exists
+                if exists:
+                    validation_result['warnings'] = ['Branch already exists in repository']
+        
+        return jsonify(validation_result), 200
+        
+    except Exception as e:
+        logger.error(f"Error validating branch name for task {task_id}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@tasks_bp.route('/<task_id>/check-branch-collision', methods=['POST'])
+def check_branch_collision(task_id):
+    """
+    Check for branch name collisions and suggest alternatives
+    POST /api/tasks/:id/check-branch-collision
+    Body: { branchName: 'feature/task-123-example-20241201' }
+    """
+    try:
+        task = Task.query.get(task_id)
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+        
+        # Get project to access GitHub token and repo URL
+        project = MissionControlProject.query.get(task.project_id)
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        if not project.repo_url or not project.github_token:
+            return jsonify({'error': 'Project GitHub configuration incomplete'}), 400
+        
+        data = request.get_json()
+        if not data or 'branchName' not in data:
+            return jsonify({'error': 'branchName is required'}), 400
+        
+        branch_name = data['branchName']
+        
+        # Check for collision and resolve
+        branch_service = get_github_branch_service()
+        
+        # Use asyncio to run the async function
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Check if original name exists
+        exists = loop.run_until_complete(
+            branch_service.check_branch_exists(
+                project.repo_url,
+                branch_name,
+                project.github_token
+            )
+        )
+        
+        result = {
+            'original_name': branch_name,
+            'exists': exists
+        }
+        
+        if exists:
+            # Resolve collision
+            resolved_name = loop.run_until_complete(
+                branch_service.resolve_branch_collision(
+                    project.repo_url,
+                    branch_name,
+                    project.github_token
+                )
+            )
+            
+            result['resolved_name'] = resolved_name
+            result['collision_resolved'] = resolved_name != branch_name
+        else:
+            result['resolved_name'] = branch_name
+            result['collision_resolved'] = False
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"Error checking branch collision for task {task_id}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+def _execute_task_background(task_id: str, agent_id: str, context_options: dict = None, base_branch: str = 'main'):
+    """
+    Background function that executes a task using Claude Code SDK with Git workspace
     """
     try:
         # Check if task was cancelled
@@ -313,40 +657,72 @@ def _execute_task_background(task_id: str, agent_id: str):
             logger.error(f"Task {task_id} not found during execution")
             return
         
-        # Simulate task execution with progress updates
-        steps = [
-            ("Gathering context...", 10),
-            ("Creating branch...", 20),
-            ("Analyzing requirements...", 40),
-            ("Generating code...", 60),
-            ("Running tests...", 80),
-            ("Creating pull request...", 90),
-            ("Task completed", 100)
-        ]
+        # Import Claude Code task service
+        try:
+            from ..services.claude_code_task_service import get_claude_code_task_service
+        except ImportError:
+            from services.claude_code_task_service import get_claude_code_task_service
         
-        for message, percent in steps:
-            # Check for cancellation
-            if task_id in _cancelled_tasks:
-                logger.info(f"Task {task_id} cancelled during execution")
-                return
-            
-            # Update progress
-            task.add_progress_message(message, percent)
-            
-            # Broadcast progress via WebSocket
+        # Execute task with Claude Code SDK
+        claude_task_service = get_claude_code_task_service()
+        
+        # Set up progress broadcasting
+        def broadcast_progress():
             _broadcast_task_update(task_id, {
                 'status': task.status.value,
-                'message': message,
-                'percent': percent
+                'progress_messages': [msg.to_dict() for msg in task.progress_messages] if task.progress_messages else []
             })
-            
-            # Simulate work
-            import time
-            time.sleep(1)
         
-        # Mark task as review (simulating successful completion)
-        task.status = TaskStatus.REVIEW
-        task.branch_name = f"task/{task_id}-implementation"
+        # Execute the task
+        result = claude_task_service.execute_task(
+            task_id=task_id,
+            agent_id=agent_id,
+            context_options=context_options or {},
+            base_branch=base_branch
+        )
+        
+        # Broadcast final progress
+        broadcast_progress()
+        
+        if result['success']:
+            logger.info(f"Task {task_id} completed successfully with branch {result.get('branch_name')}")
+        else:
+            logger.error(f"Task {task_id} failed: {result['error']}")
+        
+        # Commit any database changes
+        db.session.commit()
+        
+        # Use the proper branch naming if not already set
+        if not task.branch_name:
+            # Get project for branch naming
+            project = MissionControlProject.query.get(task.project_id)
+            if project and project.repo_url and project.github_token:
+                branch_service = get_github_branch_service()
+                
+                # Use asyncio to run the async function
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                try:
+                    branch_result = loop.run_until_complete(
+                        branch_service.generate_available_branch_name(
+                            task_id=task.id,
+                            task_title=task.title,
+                            repo_url=project.repo_url,
+                            github_token=project.github_token
+                        )
+                    )
+                    task.branch_name = branch_result['branch_name']
+                except Exception as branch_error:
+                    logger.warning(f"Could not generate branch name: {branch_error}")
+                    task.branch_name = f"task/{task_id}-implementation"  # Fallback
+            else:
+                task.branch_name = f"task/{task_id}-implementation"  # Fallback
+        
         task.repo_url = "https://github.com/example/repo"
         task.add_touched_file("src/example.py")
         task.add_touched_file("tests/test_example.py")
@@ -411,6 +787,116 @@ def _broadcast_task_update(task_id: str, partial_update: dict):
 
     except Exception as e:
         logger.error(f"Error broadcasting task update for {task_id}: {e}")
+
+
+def _generate_assignee_suggestion(task: Task) -> dict:
+    """
+    Generate AI suggestion for task assignee
+    This is a mock implementation - in the real system this would use Claude Code SDK
+    """
+    # Mock logic based on task characteristics
+    if 'test' in task.title.lower() or 'testing' in (task.description or '').lower():
+        return {
+            'assignee': 'QA Engineer',
+            'confidence': 0.85,
+            'reasoning': 'because this task involves testing and quality assurance work'
+        }
+    elif 'ui' in task.title.lower() or 'frontend' in (task.description or '').lower():
+        return {
+            'assignee': 'Frontend Developer',
+            'confidence': 0.90,
+            'reasoning': 'because this task involves UI/frontend development work'
+        }
+    elif 'api' in task.title.lower() or 'backend' in (task.description or '').lower():
+        return {
+            'assignee': 'Backend Developer',
+            'confidence': 0.88,
+            'reasoning': 'because this task involves API/backend development work'
+        }
+    else:
+        return {
+            'assignee': 'Full Stack Developer',
+            'confidence': 0.70,
+            'reasoning': 'because this is a general development task requiring full-stack skills'
+        }
+
+
+def _generate_effort_suggestion(task: Task) -> dict:
+    """
+    Generate AI suggestion for task effort estimate
+    This is a mock implementation - in the real system this would use Claude Code SDK
+    """
+    # Mock logic based on task complexity
+    title_length = len(task.title)
+    description_length = len(task.description or '')
+    
+    # Simple heuristic based on content length and keywords
+    base_hours = 2.0
+    
+    if title_length > 50:
+        base_hours += 1.0
+    if description_length > 200:
+        base_hours += 2.0
+    
+    # Adjust based on complexity keywords
+    complex_keywords = ['integration', 'migration', 'refactor', 'architecture']
+    simple_keywords = ['fix', 'update', 'add', 'remove']
+    
+    content = (task.title + ' ' + (task.description or '')).lower()
+    
+    if any(keyword in content for keyword in complex_keywords):
+        base_hours *= 1.5
+        reasoning = 'because this task involves complex architectural or integration work'
+    elif any(keyword in content for keyword in simple_keywords):
+        base_hours *= 0.8
+        reasoning = 'because this appears to be a straightforward implementation task'
+    else:
+        reasoning = 'based on task complexity analysis and historical patterns'
+    
+    return {
+        'hours': round(base_hours, 1),
+        'confidence': 0.75,
+        'reasoning': reasoning
+    }
+
+
+def _generate_agent_suggestion(task: Task) -> dict:
+    """
+    Generate AI suggestion for Claude Code sub-agent
+    This is a mock implementation - in the real system this would analyze task content
+    """
+    content = (task.title + ' ' + (task.description or '')).lower()
+    
+    if 'test' in content or 'testing' in content:
+        return {
+            'agent': 'test-runner',
+            'confidence': 0.90,
+            'reasoning': 'because this task focuses on testing functionality'
+        }
+    elif any(keyword in content for keyword in ['bug', 'fix', 'error', 'issue']):
+        return {
+            'agent': 'debugger',
+            'confidence': 0.85,
+            'reasoning': 'because this task involves debugging and fixing issues'
+        }
+    elif any(keyword in content for keyword in ['review', 'refactor', 'optimize']):
+        return {
+            'agent': 'code-reviewer',
+            'confidence': 0.80,
+            'reasoning': 'because this task involves code review and optimization'
+        }
+    elif 'design' in content or 'figma' in content:
+        return {
+            'agent': 'design-to-code',
+            'confidence': 0.88,
+            'reasoning': 'because this task involves implementing design specifications'
+        }
+    else:
+        return {
+            'agent': 'feature-builder',
+            'confidence': 0.75,
+            'reasoning': 'because this is a general feature development task'
+        }
 
 
 def _get_task_context_stub(task: Task) -> str:
@@ -487,3 +973,94 @@ def setup_task_websocket_events(socketio):
             from flask_socketio import leave_room
             leave_room(f'task_{task_id}')
             logger.info(f"Client unsubscribed from task {task_id}")
+
+
+@tasks_bp.route('/<task_id>/workspace', methods=['GET'])
+def get_task_workspace(task_id):
+    """
+    Get workspace information for a task
+    GET /api/tasks/:id/workspace
+    """
+    try:
+        claude_task_service = get_claude_code_task_service()
+        workspace_info = claude_task_service.get_workspace_info(task_id)
+        
+        if not workspace_info:
+            return jsonify({'error': 'Workspace not found'}), 404
+        
+        return jsonify(workspace_info), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting task workspace: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@tasks_bp.route('/<task_id>/workspace', methods=['DELETE'])
+def cleanup_task_workspace(task_id):
+    """
+    Clean up workspace for a task
+    DELETE /api/tasks/:id/workspace
+    """
+    try:
+        claude_task_service = get_claude_code_task_service()
+        success = claude_task_service.cleanup_task_workspace(task_id)
+        
+        if success:
+            return jsonify({'message': 'Workspace cleaned up successfully'}), 200
+        else:
+            return jsonify({'error': 'Failed to cleanup workspace'}), 500
+        
+    except Exception as e:
+        logger.error(f"Error cleaning up task workspace: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@tasks_bp.route('/workspaces', methods=['GET'])
+def list_all_workspaces():
+    """
+    List all active task workspaces
+    GET /api/tasks/workspaces
+    """
+    try:
+        try:
+            from ..services.git_workspace_service import get_git_workspace_service
+        except ImportError:
+            from services.git_workspace_service import get_git_workspace_service
+        
+        git_service = get_git_workspace_service()
+        workspaces = git_service.list_workspaces()
+        runs_info = git_service.get_runs_directory_info()
+        
+        return jsonify({
+            'workspaces': workspaces,
+            'runs_directory_info': runs_info
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error listing workspaces: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@tasks_bp.route('/workspaces/cleanup', methods=['POST'])
+def cleanup_all_workspaces():
+    """
+    Clean up all task workspaces
+    POST /api/tasks/workspaces/cleanup
+    """
+    try:
+        try:
+            from ..services.git_workspace_service import get_git_workspace_service
+        except ImportError:
+            from services.git_workspace_service import get_git_workspace_service
+        
+        git_service = get_git_workspace_service()
+        results = git_service.cleanup_all_workspaces()
+        
+        return jsonify({
+            'message': 'Workspace cleanup completed',
+            'results': results
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error cleaning up all workspaces: {e}")
+        return jsonify({'error': 'Internal server error'}), 500

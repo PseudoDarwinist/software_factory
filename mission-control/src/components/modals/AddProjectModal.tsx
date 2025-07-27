@@ -46,6 +46,7 @@ type StepStatus = 'pending' | 'in_progress' | 'completed' | 'error'
 interface ProjectData {
   name: string
   repoUrl: string
+  githubToken: string
   slackChannels: string[]
   systemMapStatus: StepStatus
   docs: File[]
@@ -67,6 +68,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
   const [projectData, setProjectData] = useState<ProjectData>({
     name: '',
     repoUrl: '',
+    githubToken: '',
     slackChannels: [],
     systemMapStatus: 'pending',
     docs: []
@@ -164,6 +166,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
       const result = await missionControlApi.createProject({
         name: currentData.name,
         repoUrl: currentData.repoUrl,
+        githubToken: currentData.githubToken,
         slackChannels: currentData.slackChannels,
       })
       
@@ -250,6 +253,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
       setProjectData({
         name: '',
         repoUrl: '',
+        githubToken: '',
         slackChannels: [],
         systemMapStatus: 'pending',
         docs: []
@@ -345,6 +349,31 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                         </div>
                       </div>
 
+                      <div>
+                        <label className="block text-sm font-medium text-white/80 mb-2">
+                          GitHub Personal Access Token
+                          <span className="text-xs text-white/50 ml-2">(required for agent runs)</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="password"
+                            value={projectData.githubToken}
+                            onChange={(e) => setProjectData(prev => ({ ...prev, githubToken: e.target.value }))}
+                            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                            className={clsx(
+                              'w-full px-4 py-3 rounded-lg',
+                              'bg-white/5 border border-white/10',
+                              'text-white placeholder-white/50',
+                              'focus:outline-none focus:border-green-500/50 focus:bg-white/10',
+                              'transition-all duration-200'
+                            )}
+                          />
+                        </div>
+                        <p className="text-xs text-white/40 mt-1">
+                          Create a token at GitHub Settings → Developer settings → Personal access tokens
+                        </p>
+                      </div>
+
                       {projectData.name && (
                         <div>
                           <label className="block text-sm font-medium text-white/80 mb-2">
@@ -368,7 +397,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                       <div className="flex justify-end">
                         <button
                           onClick={() => setCurrentStep(2)}
-                          disabled={!projectData.repoUrl || !projectData.name}
+                          disabled={!projectData.repoUrl || !projectData.name || !projectData.githubToken}
                           className="neon-btn disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Continue

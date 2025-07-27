@@ -30,9 +30,11 @@ interface PlanStageProps {
 }
 
 const AGENTS: Agent[] = [
-  { id: 'claude-code', name: 'Claude Code', description: 'Advanced code generation and refactoring' },
-  { id: 'goose', name: 'Goose', description: 'Rapid prototyping and iteration' },
-  { id: 'jacob', name: 'Jacob', description: 'Full-stack development and testing' }
+  { id: 'feature-builder', name: 'Agent - Feature Builder', description: 'full repo write • best for feature work' },
+  { id: 'test-runner', name: 'Agent - Test Runner', description: 'runs tests • fixes failing tests' },
+  { id: 'code-reviewer', name: 'Agent - Code Reviewer', description: 'read-only quality & security review' },
+  { id: 'debugger', name: 'Agent - Debugger', description: 'reproduce failure • minimal fix' },
+  { id: 'design-to-code', name: 'Agent - Design to Code', description: 'converts designs to implementation' }
 ]
 
 export const PlanStage: React.FC<PlanStageProps> = ({
@@ -48,6 +50,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
   const [selectedAgent, setSelectedAgent] = useState<string>('')
   const [isStarting, setIsStarting] = useState(false)
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [sidePanelWidth, setSidePanelWidth] = useState(384) // 24rem = 384px
 
   // Fetch initial tasks from API
   const fetchTasks = useCallback(async () => {
@@ -176,7 +179,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
   }, [])
 
   // Handle task start/retry
-  const handleStartTask = useCallback(async () => {
+  const handleStartTask = useCallback(async (contextOptions: any, branchName: string, baseBranch: string) => {
     if (!selectedTask || !selectedAgent) return
 
     try {
@@ -185,7 +188,11 @@ export const PlanStage: React.FC<PlanStageProps> = ({
       if (selectedTask.status === 'failed') {
         await missionControlApi.retryTask(selectedTask.id, selectedAgent)
       } else {
-        await missionControlApi.startTask(selectedTask.id, selectedAgent)
+        await missionControlApi.startTask(selectedTask.id, selectedAgent, {
+          contextOptions,
+          branchName,
+          baseBranch
+        })
       }
 
       // Close side panel and refresh tasks
@@ -226,6 +233,101 @@ export const PlanStage: React.FC<PlanStageProps> = ({
       .map(t => t!.title)
   }, [tasks])
 
+  // Handle field updates
+  const handleUpdateField = useCallback(async (taskId: string, field: string, value: any) => {
+    try {
+      const response = await missionControlApi.updateTaskField(taskId, field, value)
+      if (response.task) {
+        // Update local state
+        setTasks(prevTasks => 
+          prevTasks.map(task => 
+            task.id === taskId ? { ...task, ...response.task } : task
+          )
+        )
+      }
+    } catch (error) {
+      console.error('Error updating task field:', error)
+    }
+  }, [])
+
+  // Handle assignee suggestion
+  const handleSuggestAssignee = useCallback(async (taskId: string) => {
+    try {
+      const suggestion = await missionControlApi.suggestAssignee(taskId)
+      // Update local state with suggestion
+      setTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === taskId ? { 
+            ...task, 
+            suggested_owner: suggestion.assignee,
+            assignment_confidence: suggestion.confidence,
+            assignment_reasoning: suggestion.reasoning
+          } : task
+        )
+      )
+    } catch (error) {
+      console.error('Error getting assignee suggestion:', error)
+    }
+  }, [])
+
+  // Handle effort estimate suggestion
+  const handleSuggestEstimate = useCallback(async (taskId: string) => {
+    try {
+      const suggestion = await missionControlApi.suggestEstimate(taskId)
+      // Update local state with suggestion
+      setTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === taskId ? { 
+            ...task, 
+            effort_estimate_hours: suggestion.hours,
+            effort_reasoning: suggestion.reasoning
+          } : task
+        )
+      )
+    } catch (error) {
+      console.error('Error getting effort suggestion:', error)
+    }
+  }, [])
+
+  // Handle agent suggestion
+  const handleSuggestAgent = useCallback(async (taskId: string) => {
+    try {
+      const suggestion = await missionControlApi.suggestAgent(taskId)
+      // Update local state with suggestion
+      setTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === taskId ? { 
+            ...task, 
+            suggested_agent: suggestion.agent,
+            agent_reasoning: suggestion.reasoning
+          } : task
+        )
+      )
+    } catch (error) {
+      console.error('Error getting agent suggestion:', error)
+    }
+  }, [])
+
+  // Handle side panel resize
+  const handleSidePanelResize = useCallback((e: React.MouseEvent) => {
+    const startX = e.clientX
+    const startWidth = sidePanelWidth
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = startX - e.clientX
+      const newWidth = Math.max(320, Math.min(800, startWidth + deltaX)) // Min 320px, Max 800px
+      setSidePanelWidth(newWidth)
+    }
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }, [sidePanelWidth])
+
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -254,56 +356,65 @@ export const PlanStage: React.FC<PlanStageProps> = ({
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Main Kanban Board */}
-      <div className="flex-1 flex flex-col p-6">
-        {/* Header */}
-        <div className="flex-shrink-0 mb-6">
-          <h1 className="text-2xl font-bold text-white mb-2">Plan</h1>
-          <p className="text-white/60">Task execution launchpad</p>
-        </div>
-
-        {/* Kanban Columns */}
-        <div className="flex-1 flex min-h-0">
-          <PanelGroup direction="horizontal">
-            <Panel defaultSize={33}>
-              <KanbanColumn
-                title="Ready"
-                tasks={tasksByStatus.ready}
-                onTaskSelect={handleTaskSelect}
-                isTaskBlocked={isTaskBlocked}
-                getBlockingTasks={getBlockingTasks}
-              />
-            </Panel>
-            <PanelResizeHandle className="w-1 bg-white/10 hover:bg-purple-500/50 cursor-col-resize transition-colors relative group">
-              <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-purple-500/20" />
-            </PanelResizeHandle>
-            <Panel defaultSize={33}>
-              <KanbanColumn
-                title="In Progress"
-                tasks={[...tasksByStatus.running, ...tasksByStatus.review]}
-                onTaskSelect={handleTaskSelect}
-                isTaskBlocked={isTaskBlocked}
-                getBlockingTasks={getBlockingTasks}
-              />
-            </Panel>
-            <PanelResizeHandle className="w-1 bg-white/10 hover:bg-purple-500/50 cursor-col-resize transition-colors relative group">
-              <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-purple-500/20" />
-            </PanelResizeHandle>
-            <Panel defaultSize={34}>
-              <KanbanColumn
-                title="Done"
-                tasks={[...tasksByStatus.done, ...tasksByStatus.failed]}
-                onTaskSelect={handleTaskSelect}
-                isTaskBlocked={isTaskBlocked}
-                getBlockingTasks={getBlockingTasks}
-              />
-            </Panel>
-          </PanelGroup>
-        </div>
+    <div className="h-full flex flex-col p-6 space-y-4">
+      {/* Header */}
+      <div className="flex-shrink-0">
+        <h1 className="text-2xl font-bold text-white mb-2">Plan</h1>
+        <p className="text-white/60">Task execution launchpad</p>
       </div>
 
-      {/* Side Panel */}
+      {/* Kanban Columns */}
+      <div className="flex-1 flex min-h-0">
+        <PanelGroup direction="horizontal">
+          <Panel defaultSize={33}>
+            <KanbanColumn
+              title="Ready"
+              tasks={tasksByStatus.ready}
+              onTaskSelect={handleTaskSelect}
+              isTaskBlocked={isTaskBlocked}
+              getBlockingTasks={getBlockingTasks}
+              onUpdateField={handleUpdateField}
+              onSuggestAssignee={handleSuggestAssignee}
+              onSuggestEstimate={handleSuggestEstimate}
+              onSuggestAgent={handleSuggestAgent}
+            />
+          </Panel>
+          <PanelResizeHandle className="w-1 bg-white/10 hover:bg-purple-500/50 cursor-col-resize transition-colors relative group">
+            <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-purple-500/20" />
+          </PanelResizeHandle>
+          <Panel defaultSize={33}>
+            <KanbanColumn
+              title="In Progress"
+              tasks={[...tasksByStatus.running, ...tasksByStatus.review]}
+              onTaskSelect={handleTaskSelect}
+              isTaskBlocked={isTaskBlocked}
+              getBlockingTasks={getBlockingTasks}
+              onUpdateField={handleUpdateField}
+              onSuggestAssignee={handleSuggestAssignee}
+              onSuggestEstimate={handleSuggestEstimate}
+              onSuggestAgent={handleSuggestAgent}
+            />
+          </Panel>
+          <PanelResizeHandle className="w-1 bg-white/10 hover:bg-purple-500/50 cursor-col-resize transition-colors relative group">
+            <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-purple-500/20" />
+          </PanelResizeHandle>
+          <Panel defaultSize={34}>
+            <KanbanColumn
+              title="Done"
+              tasks={[...tasksByStatus.done, ...tasksByStatus.failed]}
+              onTaskSelect={handleTaskSelect}
+              isTaskBlocked={isTaskBlocked}
+              getBlockingTasks={getBlockingTasks}
+              onUpdateField={handleUpdateField}
+              onSuggestAssignee={handleSuggestAssignee}
+              onSuggestEstimate={handleSuggestEstimate}
+              onSuggestAgent={handleSuggestAgent}
+            />
+          </Panel>
+        </PanelGroup>
+      </div>
+
+      {/* Side Panel with Resizable Handle */}
       <AnimatePresence>
         {showSidePanel && selectedTask && (
           <motion.div
@@ -311,9 +422,17 @@ export const PlanStage: React.FC<PlanStageProps> = ({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 400, opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="w-96 bg-black/20 backdrop-blur-md border-l border-white/10 flex flex-col"
+            className="fixed top-0 right-0 h-full z-50 flex"
           >
-            <TaskSidePanel
+            {/* Resize Handle */}
+            <div 
+              className="w-1 bg-white/10 hover:bg-purple-500/50 cursor-col-resize transition-colors relative group"
+              onMouseDown={handleSidePanelResize}
+            >
+              <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-purple-500/20" />
+            </div>
+            <div style={{ width: sidePanelWidth }}>
+              <PrepareAgentRunPanel
               task={selectedTask}
               taskContext={taskContext}
               selectedAgent={selectedAgent}
@@ -327,7 +446,9 @@ export const PlanStage: React.FC<PlanStageProps> = ({
               }}
               isStarting={isStarting}
               agents={AGENTS}
+              projectId={selectedProject}
             />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -342,6 +463,10 @@ interface KanbanColumnProps {
   onTaskSelect: (task: Task) => void
   isTaskBlocked: (task: Task) => boolean
   getBlockingTasks: (task: Task) => string[]
+  onUpdateField: (taskId: string, field: string, value: any) => void
+  onSuggestAssignee: (taskId: string) => void
+  onSuggestEstimate: (taskId: string) => void
+  onSuggestAgent: (taskId: string) => void
 }
 
 const KanbanColumn: React.FC<KanbanColumnProps> = ({
@@ -349,7 +474,11 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   tasks,
   onTaskSelect,
   isTaskBlocked,
-  getBlockingTasks
+  getBlockingTasks,
+  onUpdateField,
+  onSuggestAssignee,
+  onSuggestEstimate,
+  onSuggestAgent
 }) => {
   return (
     <div className="flex flex-col h-full bg-white/5 p-4 rounded-lg mx-2">
@@ -358,7 +487,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
         <div className="text-sm text-white/60">{tasks.length} tasks</div>
       </div>
       
-      <div className="flex-1 space-y-4 overflow-y-auto min-h-0">
+      <div className="flex-1 space-y-4 overflow-y-auto pr-2 min-h-0">
         {tasks.map((task, index) => (
           <TaskCard
             key={task.id}
@@ -367,6 +496,10 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
             isBlocked={isTaskBlocked(task)}
             blockingTasks={getBlockingTasks(task)}
             index={index}
+            onUpdateField={onUpdateField}
+            onSuggestAssignee={onSuggestAssignee}
+            onSuggestEstimate={onSuggestEstimate}
+            onSuggestAgent={onSuggestAgent}
           />
         ))}
         
@@ -387,6 +520,10 @@ interface TaskCardProps {
   isBlocked: boolean
   blockingTasks: string[]
   index: number
+  onUpdateField: (taskId: string, field: string, value: any) => void
+  onSuggestAssignee: (taskId: string) => void
+  onSuggestEstimate: (taskId: string) => void
+  onSuggestAgent: (taskId: string) => void
 }
 
 const TaskCard: React.FC<TaskCardProps> = ({
@@ -394,7 +531,11 @@ const TaskCard: React.FC<TaskCardProps> = ({
   onSelect,
   isBlocked,
   blockingTasks,
-  index
+  index,
+  onUpdateField,
+  onSuggestAssignee,
+  onSuggestEstimate,
+  onSuggestAgent
 }) => {
   const getStatusColor = () => {
     switch (task.status) {
@@ -478,26 +619,126 @@ const TaskCard: React.FC<TaskCardProps> = ({
             )}
           </div>
 
-          {/* Task details */}
+          {/* Goal line from acceptance criteria */}
+          {task.goal_line && (
+            <div className="mb-3 p-2 bg-white/5 rounded text-xs text-white/80 italic">
+              "{task.goal_line}"
+            </div>
+          )}
+
+          {/* Task details with editable fields */}
           <div className="space-y-2 text-sm">
+            {/* Assignee with Suggest button */}
             <div className="flex items-center justify-between">
-              <span className="text-white/60">Suggested:</span>
-              <span className="text-white">{task.suggested_owner || 'Unassigned'}</span>
+              <span className="text-white/60">Assignee:</span>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  value={task.assigned_to || task.suggested_owner || ''}
+                  onChange={(e) => onUpdateField(task.id, 'assigned_to', e.target.value)}
+                  className="bg-white/10 text-white text-xs px-2 py-1 rounded w-20 border-none outline-none"
+                  placeholder="Unassigned"
+                />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSuggestAssignee(task.id)
+                  }}
+                  className="text-xs bg-blue-500/20 text-blue-300 px-2 py-1 rounded hover:bg-blue-500/30 transition-colors"
+                >
+                  Suggest
+                </button>
+              </div>
             </div>
             
-            {task.effort_estimate_hours && (
-              <div className="flex items-center justify-between">
-                <span className="text-white/60">Effort:</span>
-                <span className="text-white">{task.effort_estimate_hours} hours</span>
+            {/* Show assignee reasoning if available */}
+            {task.assignment_reasoning && (
+              <div className="text-xs text-blue-300 italic">
+                because {task.assignment_reasoning}
               </div>
             )}
             
+            {/* Effort estimate with Suggest button */}
+            <div className="flex items-center justify-between">
+              <span className="text-white/60">Effort:</span>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="number"
+                  value={task.effort_estimate_hours || ''}
+                  onChange={(e) => onUpdateField(task.id, 'effort_estimate_hours', parseFloat(e.target.value) || 0)}
+                  className="bg-white/10 text-white text-xs px-2 py-1 rounded w-16 border-none outline-none"
+                  placeholder="0"
+                  step="0.5"
+                />
+                <span className="text-white/60 text-xs">hrs</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSuggestEstimate(task.id)
+                  }}
+                  className="text-xs bg-green-500/20 text-green-300 px-2 py-1 rounded hover:bg-green-500/30 transition-colors"
+                >
+                  Suggest
+                </button>
+              </div>
+            </div>
+            
+            {/* Show effort reasoning if available */}
+            {task.effort_reasoning && (
+              <div className="text-xs text-green-300 italic">
+                because {task.effort_reasoning}
+              </div>
+            )}
+            
+            {/* Priority with color coding */}
             <div className="flex items-center justify-between">
               <span className="text-white/60">Priority:</span>
-              <span className={getPriorityColor()}>
-                {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
-              </span>
+              <select
+                value={task.priority}
+                onChange={(e) => onUpdateField(task.id, 'priority', e.target.value)}
+                className="bg-white/10 text-white text-xs px-2 py-1 rounded border-none outline-none"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <option value="low" className="bg-gray-800">Low</option>
+                <option value="medium" className="bg-gray-800">Medium</option>
+                <option value="high" className="bg-gray-800">High</option>
+                <option value="critical" className="bg-gray-800">Critical</option>
+              </select>
             </div>
+            
+            {/* Suggested agent */}
+            {task.suggested_agent && (
+              <div className="flex items-center justify-between">
+                <span className="text-white/60">Agent:</span>
+                <div className="flex items-center space-x-2">
+                  <span className="text-white text-xs">{task.suggested_agent}</span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onSuggestAgent(task.id)
+                    }}
+                    className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded hover:bg-purple-500/30 transition-colors"
+                  >
+                    Re-suggest
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {/* Show agent reasoning if available */}
+            {task.agent_reasoning && (
+              <div className="text-xs text-purple-300 italic">
+                because {task.agent_reasoning}
+              </div>
+            )}
+            
+            {/* Likely touches hint */}
+            {task.likely_touches && task.likely_touches.length > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-white/60">Likely touches:</span>
+                <span className="text-white/80 text-xs">{task.likely_touches.slice(0, 2).join(', ')}</span>
+              </div>
+            )}
             
             {task.requirements_refs && task.requirements_refs.length > 0 && (
               <div className="flex items-center justify-between">
@@ -523,17 +764,15 @@ const TaskCard: React.FC<TaskCardProps> = ({
 
           {/* Start button for ready tasks */}
           {task.status === 'ready' && !isBlocked && (
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+            <button
               onClick={(e) => {
                 e.stopPropagation()
                 onSelect()
               }}
-              className="w-full mt-4 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-black font-semibold rounded-lg hover:from-green-500 hover:to-blue-600 transition-all"
+              className="neon-btn neon-btn--gray w-full mt-4 py-2"
             >
               ⚡ Start Task
-            </motion.button>
+            </button>
           )}
 
           {/* Retry button for failed tasks */}
@@ -556,19 +795,20 @@ const TaskCard: React.FC<TaskCardProps> = ({
   )
 }
 
-// Task Side Panel Component
-interface TaskSidePanelProps {
+// Prepare Agent Run Side Panel Component
+interface PrepareAgentRunPanelProps {
   task: Task
   taskContext: TaskContext | null
   selectedAgent: string
   onAgentSelect: (agentId: string) => void
-  onStart: () => void
+  onStart: (contextOptions: any, branchName: string, baseBranch: string) => void
   onClose: () => void
   isStarting: boolean
   agents: Agent[]
+  projectId: string | null
 }
 
-const TaskSidePanel: React.FC<TaskSidePanelProps> = ({
+const PrepareAgentRunPanel: React.FC<PrepareAgentRunPanelProps> = ({
   task,
   taskContext,
   selectedAgent,
@@ -576,57 +816,151 @@ const TaskSidePanel: React.FC<TaskSidePanelProps> = ({
   onStart,
   onClose,
   isStarting,
-  agents
+  agents,
+  projectId
 }) => {
+  const [contextOptions, setContextOptions] = useState({
+    spec_files: true,
+    requirements: true,
+    design: true,
+    task: true,
+    code_paths: true
+  })
+
+  const [branchName, setBranchName] = useState(() => {
+    const taskTitle = task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30)
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    return `feature/${task.id}-${taskTitle}-${date}`
+  })
+
+  const [baseBranch] = useState('main')
+  const [githubStatus, setGithubStatus] = useState<{
+    connected: boolean
+    repo_accessible: boolean
+    repo_url?: string
+    base_branch?: string
+    error?: string
+  } | null>(null)
+
+  // Load GitHub status on mount
+  useEffect(() => {
+    const loadGithubStatus = async () => {
+      try {
+        console.log('🔍 Loading GitHub status for project:', projectId)
+        const status = await missionControlApi.getGitHubStatus(projectId || undefined)
+        console.log('✅ GitHub status received:', status)
+        setGithubStatus(status)
+      } catch (error) {
+        console.error('❌ Failed to load GitHub status:', error)
+        setGithubStatus({ connected: false, repo_accessible: false, error: 'Failed to check status' })
+      }
+    }
+    loadGithubStatus()
+  }, [projectId])
+
+  // Set default agent selection
+  useEffect(() => {
+    if (!selectedAgent && task.suggested_agent) {
+      onAgentSelect(task.suggested_agent)
+    } else if (!selectedAgent) {
+      onAgentSelect('feature-builder') // Default to feature-builder
+    }
+  }, [selectedAgent, task.suggested_agent, onAgentSelect])
+
+  const handleStart = () => {
+    onStart(contextOptions, branchName, baseBranch)
+  }
+
+  const getDryRunSummary = () => {
+    const agent = selectedAgent || 'feature-builder'
+    const contextParts = []
+    if (contextOptions.spec_files) contextParts.push('spec')
+    if (contextOptions.requirements) contextParts.push('requirements')
+    if (contextOptions.design) contextParts.push('design')
+    if (contextOptions.task) contextParts.push('task')
+    
+    const contextStr = contextParts.length > 0 ? contextParts.join('+') : 'minimal context'
+    const pathsStr = task.likely_touches?.join(', ') || 'suggested paths'
+    
+    return `Create branch from ${baseBranch}, pass ${contextStr}, limit writes to ${pathsStr}, run tests, push, open draft PR.`
+  }
+
+  const canStart = githubStatus?.connected && githubStatus?.repo_accessible && selectedAgent && !isStarting
+
   return (
-    <>
+    <div className="h-full w-full bg-gray-900/95 backdrop-blur-lg border-l border-gray-700/50 flex flex-col shadow-2xl">
       {/* Header */}
-      <div className="p-4 border-b border-white/10">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">
-            {task.status === 'failed' ? 'Retry Task' : 'Start Task'}
-          </h3>
+      <div className="p-6 border-b border-gray-700/50 bg-gray-800/50">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-xl font-bold text-white">Plan • Prepare Agent Run</h2>
           <button
             onClick={onClose}
-            className="text-white/60 hover:text-white/80 p-1"
+            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-700/50 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <p className="text-sm text-white/70 mt-1">
-          {task.task_number} - {task.title}
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        <p className="text-sm text-gray-300">
+          Task: {task.task_number} — {task.title}
         </p>
       </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {/* Task Context */}
-        {taskContext && (
-          <div>
-            <h4 className="text-sm font-medium text-white/80 mb-3">Context Summary</h4>
-            <div className="bg-white/5 rounded-lg p-3 max-h-40 overflow-y-auto">
-              <pre className="text-xs text-white/70 whitespace-pre-wrap">
-                {taskContext.context.substring(0, 500)}
-                {taskContext.context.length > 500 && '...'}
-              </pre>
+      {/* Content - Scrollable */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+        {/* Preflight Status */}
+        <div className={clsx(
+          'rounded-xl p-4 border backdrop-blur-sm',
+          githubStatus?.connected && githubStatus?.repo_accessible
+            ? 'bg-green-500/10 border-green-500/30 shadow-lg shadow-green-500/5'
+            : 'bg-red-500/10 border-red-500/30 shadow-lg shadow-red-500/5'
+        )}>
+          {githubStatus?.connected && githubStatus?.repo_accessible ? (
+            <div>
+              <div className="flex items-center space-x-2 mb-1">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                <span className="text-sm text-green-400 font-medium">GitHub connected</span>
+              </div>
+              <div className="text-xs text-gray-400">
+                {githubStatus.repo_url} • base: {githubStatus.base_branch || 'main'}
+              </div>
             </div>
-          </div>
-        )}
+          ) : (
+            <div>
+              <div className="flex items-center space-x-2 mb-2">
+                <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
+                <span className="text-sm text-red-400 font-medium">GitHub not connected</span>
+              </div>
+              <button className="text-xs text-blue-400 hover:text-blue-300 underline transition-colors">
+                Connect GitHub
+              </button>
+            </div>
+          )}
+        </div>
 
-        {/* Agent Selection */}
+        {/* Dry-run Summary */}
+        <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/30 shadow-lg">
+          <div className="text-sm text-gray-300 mb-2 font-medium">What will happen:</div>
+          <div className="text-xs text-gray-400 leading-relaxed bg-gray-900/30 rounded-lg p-3 border border-gray-700/20">
+            {getDryRunSummary()}
+          </div>
+        </div>
+
+        {/* 1. Agent Profile */}
         <div>
-          <h4 className="text-sm font-medium text-white/80 mb-3">Select Agent</h4>
-          <div className="space-y-2">
+          <h3 className="text-lg font-semibold text-blue-400 mb-4 flex items-center">
+            <span className="bg-blue-500/20 text-blue-400 rounded-full w-6 h-6 flex items-center justify-center text-sm mr-2">1</span>
+            Agent profile
+          </h3>
+          <div className="space-y-3">
             {agents.map((agent) => (
               <label
                 key={agent.id}
                 className={clsx(
-                  'flex items-start space-x-3 p-3 rounded-lg cursor-pointer transition-all',
+                  'flex items-start space-x-3 p-4 rounded-xl cursor-pointer transition-all border backdrop-blur-sm',
                   selectedAgent === agent.id
-                    ? 'bg-blue-500/20 border border-blue-500/50'
-                    : 'bg-white/5 hover:bg-white/10'
+                    ? 'bg-blue-500/10 border-blue-500/30 shadow-lg shadow-blue-500/5'
+                    : 'bg-gray-800/30 border-gray-700/30 hover:bg-gray-700/30 hover:border-gray-600/40'
                 )}
               >
                 <input
@@ -635,60 +969,98 @@ const TaskSidePanel: React.FC<TaskSidePanelProps> = ({
                   value={agent.id}
                   checked={selectedAgent === agent.id}
                   onChange={() => onAgentSelect(agent.id)}
-                  className="mt-1"
+                  className="mt-1 text-blue-400 focus:ring-blue-400 focus:ring-offset-gray-900"
                 />
                 <div>
                   <div className="text-sm font-medium text-white">{agent.name}</div>
-                  <div className="text-xs text-white/60">{agent.description}</div>
+                  <div className="text-xs text-gray-400">{agent.description}</div>
                 </div>
               </label>
             ))}
           </div>
         </div>
 
-        {/* Previous execution info for retries */}
-        {task.status === 'failed' && task.agent && (
-          <div>
-            <h4 className="text-sm font-medium text-white/80 mb-3">Previous Execution</h4>
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-              <div className="text-sm text-white mb-2">
-                <strong>Agent:</strong> {task.agent}
-              </div>
-              {task.error && (
-                <div className="text-xs text-red-300">
-                  <strong>Error:</strong> {task.error}
+        {/* 2. Context Groups */}
+        <div>
+          <h3 className="text-lg font-semibold text-purple-400 mb-4 flex items-center">
+            <span className="bg-purple-500/20 text-purple-400 rounded-full w-6 h-6 flex items-center justify-center text-sm mr-2">2</span>
+            Context groups
+          </h3>
+          <div className="space-y-3">
+            {[
+              { key: 'spec_files', label: 'Spec files', desc: 'requirements.md, design.md', checked: contextOptions.spec_files },
+              { key: 'requirements', label: 'Requirements', desc: 'acceptance criteria and user stories', checked: contextOptions.requirements },
+              { key: 'design', label: 'Design notes', desc: 'design documents and mockups', checked: contextOptions.design },
+              { key: 'task', label: 'Task text', desc: `task description and goals`, checked: contextOptions.task },
+              { key: 'code_paths', label: 'Suggested code paths', desc: task.likely_touches?.join(' • ') || 'likely files to modify', checked: contextOptions.code_paths }
+            ].map((option) => (
+              <label key={option.key} className="flex items-start space-x-3 cursor-pointer p-3 rounded-lg hover:bg-gray-800/30 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={option.checked}
+                  onChange={(e) => setContextOptions(prev => ({ ...prev, [option.key]: e.target.checked }))}
+                  className="mt-1 text-purple-400 focus:ring-purple-400 focus:ring-offset-gray-900 rounded"
+                />
+                <div>
+                  <div className="text-sm font-medium text-white">{option.label}</div>
+                  <div className="text-xs text-gray-400">{option.desc}</div>
                 </div>
-              )}
-            </div>
+              </label>
+            ))}
           </div>
-        )}
+        </div>
+
+        {/* 3. Branch Name */}
+        <div>
+          <h3 className="text-lg font-semibold text-orange-400 mb-4 flex items-center">
+            <span className="bg-orange-500/20 text-orange-400 rounded-full w-6 h-6 flex items-center justify-center text-sm mr-2">3</span>
+            Branch name
+          </h3>
+          <div className="text-xs text-gray-400 mb-3 bg-gray-800/30 rounded-lg p-2 border border-gray-700/30">
+            Base branch: <span className="text-orange-400 font-mono">{baseBranch}</span>
+          </div>
+          <input
+            type="text"
+            value={branchName}
+            onChange={(e) => setBranchName(e.target.value)}
+            className="w-full bg-gray-800/50 text-white text-sm px-4 py-3 rounded-xl border border-gray-700/30 focus:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400/20 transition-all font-mono"
+            placeholder={`feature/${task.id}-task-name-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`}
+          />
+        </div>
       </div>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-white/10">
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={onStart}
-          disabled={!selectedAgent || isStarting}
-          className={clsx(
-            'w-full py-3 rounded-lg font-semibold transition-all',
-            selectedAgent && !isStarting
-              ? 'bg-gradient-to-r from-green-400 to-blue-500 text-black hover:from-green-500 hover:to-blue-600'
-              : 'bg-white/10 text-white/50 cursor-not-allowed'
-          )}
-        >
-          {isStarting ? (
-            <div className="flex items-center justify-center space-x-2">
-              <div className="w-4 h-4 border-2 border-white/20 border-t-white/80 rounded-full animate-spin"></div>
-              <span>Starting...</span>
-            </div>
-          ) : (
-            `🚀 ${task.status === 'failed' ? 'Retry' : 'Run'}`
-          )}
-        </motion.button>
+      {/* Footer - Fixed at bottom */}
+      <div className="p-6 border-t border-gray-700/50 bg-gray-800/30 backdrop-blur-sm">
+        {canStart ? (
+          <button
+            onClick={handleStart}
+            disabled={isStarting}
+            className={clsx(
+              'neon-btn w-full py-3',
+              isStarting 
+                ? 'neon-btn--disabled cursor-not-allowed' 
+                : 'neon-btn--gray'
+            )}
+          >
+            {isStarting ? (
+              <div className="flex items-center justify-center space-x-2">
+                <div className="w-4 h-4 border-2 border-gray-300/30 border-t-gray-300 rounded-full animate-spin"></div>
+                <span>Starting...</span>
+              </div>
+            ) : (
+              '⚡ Start Agent Run'
+            )}
+          </button>
+        ) : (
+          <button
+            onClick={() => alert('Please set up GitHub integration first')}
+            className="neon-btn neon-btn--blue w-full py-3"
+          >
+            Connect GitHub
+          </button>
+        )}
       </div>
-    </>
+    </div>
   )
 }
 

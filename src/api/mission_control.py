@@ -119,15 +119,17 @@ def create_mission_control_project():
         
         name = data.get('name')
         repo_url = data.get('repoUrl')
+        github_token = data.get('githubToken')  # Optional GitHub token
         slack_channels = data.get('slackChannels', [])  # List of channel IDs
         
         # Enhanced debugging for each field
         print(f"DEBUG: Extracted fields - name: '{name}' (type: {type(name)})")
         print(f"DEBUG: Extracted fields - repo_url: '{repo_url}' (type: {type(repo_url)})")
+        print(f"DEBUG: Extracted fields - github_token: {'***masked***' if github_token else 'None'} (provided: {bool(github_token)})")
         print(f"DEBUG: Extracted fields - slack_channels: {slack_channels} (type: {type(slack_channels)}, len: {len(slack_channels) if slack_channels else 'N/A'})")
         
-        logger.info(f"Creating project with data: name={name}, repo_url={repo_url}, slack_channels={slack_channels}")
-        print(f"DEBUG: Creating project with data: name={name}, repo_url={repo_url}, slack_channels={slack_channels}")
+        logger.info(f"Creating project with data: name={name}, repo_url={repo_url}, github_token={'***masked***' if github_token else 'None'}, slack_channels={slack_channels}")
+        print(f"DEBUG: Creating project with data: name={name}, repo_url={repo_url}, github_token={'***masked***' if github_token else 'None'}, slack_channels={slack_channels}")
         
         if not name or not repo_url:
             return jsonify({
@@ -146,6 +148,7 @@ def create_mission_control_project():
             name=name,
             description=f"Project created from {repo_url}",
             repo_url=repo_url,
+            github_token=github_token,  # Store GitHub token
             metadata={
                 'repoUrl': repo_url,
                 'systemMapGenerated': False,
@@ -287,11 +290,12 @@ def delete_mission_control_project(project_id):
         
         project_name = project.name
         
-        # Delete related data
-        FeedItem.query.filter_by(project_id=project_id).delete()
-        Stage.query.filter_by(project_id=project_id).delete()
-        StageTransition.query.filter_by(project_id=project_id).delete()
-        ProductBrief.query.filter_by(project_id=project_id).delete()
+        # Delete related data that doesn't cascade automatically
+        ChannelMapping.query.filter_by(project_id=project_id).delete()
+        FeedItem.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+        Stage.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+        StageTransition.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+        ProductBrief.query.filter_by(project_id=project_id).delete(synchronize_session=False)
         
         # Delete project
         db.session.delete(project)

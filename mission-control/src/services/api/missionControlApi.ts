@@ -97,7 +97,7 @@ class MissionControlApi {
     }
   }
 
-  async createProject(data: { name: string; repoUrl: string; slackChannels?: string[] }): Promise<ProjectSummary> {
+  async createProject(data: { name: string; repoUrl: string; githubToken?: string; slackChannels?: string[] }): Promise<ProjectSummary> {
     try {
       const response = await this.client.post<ApiResponse<ProjectSummary>>('/mission-control/projects', data)
       return response.data.data!
@@ -692,9 +692,18 @@ class MissionControlApi {
     }
   }
 
-  async startTask(taskId: string, agentId: string): Promise<void> {
+  async startTask(taskId: string, agentId: string, options?: {
+    contextOptions?: { spec_files?: boolean; requirements?: boolean; design?: boolean; task?: boolean; code_paths?: boolean };
+    branchName?: string;
+    baseBranch?: string;
+  }): Promise<void> {
     try {
-      await this.client.post(`/tasks/${taskId}/start`, { agentId })
+      const payload: any = { agentId }
+      if (options?.contextOptions) payload.contextOptions = options.contextOptions
+      if (options?.branchName) payload.branchName = options.branchName
+      if (options?.baseBranch) payload.baseBranch = options.baseBranch
+      
+      await this.client.post(`/tasks/${taskId}/start`, payload)
     } catch (error) {
       console.error('Failed to start task:', error)
       throw new Error('Failed to start task')
@@ -736,6 +745,62 @@ class MissionControlApi {
     } catch (error) {
       console.error('Failed to check task conflicts:', error)
       throw new Error('Failed to check task conflicts')
+    }
+  }
+
+  // GitHub integration endpoints
+  async getGitHubStatus(projectId?: string): Promise<{ connected: boolean; repo_accessible: boolean; repo_url?: string; base_branch?: string; error?: string }> {
+    try {
+      const params = projectId ? { project_id: projectId } : {}
+      const response = await this.client.get<{ connected: boolean; repo_accessible: boolean; repo_url?: string; base_branch?: string; error?: string }>('/github/status', { params })
+      return response.data
+    } catch (error) {
+      console.error('Failed to get GitHub status:', error)
+      return { connected: false, repo_accessible: false, error: 'Failed to check GitHub status' }
+    }
+  }
+
+  // Task intelligence endpoints
+  async updateTaskField(taskId: string, field: string, value: any): Promise<{ message: string; task: any }> {
+    try {
+      const response = await this.client.patch<ApiResponse<{ message: string; task: any }>>(`/tasks/${taskId}/update-field`, {
+        field,
+        value
+      })
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to update task field:', error)
+      throw new Error('Failed to update task field')
+    }
+  }
+
+  async suggestAssignee(taskId: string): Promise<{ assignee: string; confidence: number; reasoning: string }> {
+    try {
+      const response = await this.client.post<ApiResponse<{ assignee: string; confidence: number; reasoning: string }>>(`/tasks/${taskId}/suggest-assignee`)
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to get assignee suggestion:', error)
+      throw new Error('Failed to get assignee suggestion')
+    }
+  }
+
+  async suggestEstimate(taskId: string): Promise<{ hours: number; confidence: number; reasoning: string }> {
+    try {
+      const response = await this.client.post<ApiResponse<{ hours: number; confidence: number; reasoning: string }>>(`/tasks/${taskId}/suggest-estimate`)
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to get effort estimate suggestion:', error)
+      throw new Error('Failed to get effort estimate suggestion')
+    }
+  }
+
+  async suggestAgent(taskId: string): Promise<{ agent: string; confidence: number; reasoning: string }> {
+    try {
+      const response = await this.client.post<ApiResponse<{ agent: string; confidence: number; reasoning: string }>>(`/tasks/${taskId}/suggest-agent`)
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to get agent suggestion:', error)
+      throw new Error('Failed to get agent suggestion')
     }
   }
 }

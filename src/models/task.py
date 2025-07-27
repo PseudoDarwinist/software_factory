@@ -69,6 +69,16 @@ class Task(db.Model):
     suggested_owner = db.Column(db.String(100))  # AI-suggested owner based on expertise
     assigned_to = db.Column(db.String(100))  # Actually assigned owner
     assignment_confidence = db.Column(db.Float)  # Confidence in AI suggestion (0-1)
+    assignment_reasoning = db.Column(db.Text)  # AI reasoning for assignment suggestion
+    
+    # AI-generated suggestions and reasoning
+    suggested_agent = db.Column(db.String(50))  # Suggested Claude Code sub-agent
+    agent_reasoning = db.Column(db.Text)  # Reasoning for agent suggestion
+    effort_reasoning = db.Column(db.Text)  # Reasoning for effort estimate
+    
+    # Code impact analysis
+    likely_touches = db.Column(JSON)  # List of file paths/folders this task will likely modify
+    goal_line = db.Column(db.String(200))  # Short goal from acceptance criteria
     
     # Requirements traceability
     requirements_refs = db.Column(JSON)  # List of requirement IDs this task addresses
@@ -123,6 +133,12 @@ class Task(db.Model):
             'suggested_owner': self.suggested_owner,
             'assigned_to': self.assigned_to,
             'assignment_confidence': self.assignment_confidence,
+            'assignment_reasoning': self.assignment_reasoning,
+            'suggested_agent': self.suggested_agent,
+            'agent_reasoning': self.agent_reasoning,
+            'effort_reasoning': self.effort_reasoning,
+            'likely_touches': self.likely_touches or [],
+            'goal_line': self.goal_line,
             'requirements_refs': self.requirements_refs or [],
             'depends_on': self.depends_on or [],
             'blocks': self.blocks or [],

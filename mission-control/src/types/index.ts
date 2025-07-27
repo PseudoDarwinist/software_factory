@@ -343,6 +343,12 @@ export interface Task {
   suggested_owner?: string
   assigned_to?: string
   assignment_confidence?: number
+  assignment_reasoning?: string
+  suggested_agent?: string
+  agent_reasoning?: string
+  effort_reasoning?: string
+  likely_touches?: string[]
+  goal_line?: string
   requirements_refs?: string[]
   depends_on?: string[]
   blocks?: string[]

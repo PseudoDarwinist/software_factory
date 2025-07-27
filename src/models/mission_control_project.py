@@ -27,6 +27,8 @@ class MissionControlProject(db.Model):
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
     repo_url = db.Column(db.String(500))
+    github_token = db.Column(db.String(255), nullable=True)  # GitHub Personal Access Token
+    connection_status = db.Column(db.String(500), nullable=True)  # Friendly connection status
     health = db.Column(db.String(20), default=HEALTH_AMBER)
     unread_count = db.Column(db.Integer, default=0)
     last_activity = db.Column(db.DateTime, default=datetime.utcnow)
@@ -45,6 +47,8 @@ class MissionControlProject(db.Model):
             'name': self.name,
             'description': self.description,
             'repoUrl': self.repo_url,
+            'githubToken': self.github_token,  # Include in serialization (will be masked in API)
+            'connectionStatus': self.connection_status,
             'health': self.health,
             'unreadCount': self.unread_count,
             'lastActivity': self.last_activity.isoformat() if self.last_activity else None,
@@ -55,13 +59,14 @@ class MissionControlProject(db.Model):
         }
     
     @classmethod
-    def create(cls, id, name, description=None, repo_url=None, metadata=None):
+    def create(cls, id, name, description=None, repo_url=None, github_token=None, metadata=None):
         """Create a new Mission Control project"""
         project = cls(
             id=id,
             name=name,
             description=description,
             repo_url=repo_url,
+            github_token=github_token,
             meta_data=metadata or {}
         )
         
