@@ -182,9 +182,14 @@ export const PlanStage: React.FC<PlanStageProps> = ({
   const handleStartTask = useCallback(async (contextOptions: any, branchName: string, baseBranch: string) => {
     if (!selectedTask || !selectedAgent) return
 
+    // Immediately close the panel for a better user experience
+    setShowSidePanel(false)
+    setSelectedTask(null)
+    setTaskContext(null)
+    setSelectedAgent('')
+    setIsStarting(true)
+
     try {
-      setIsStarting(true)
-      
       if (selectedTask.status === 'failed') {
         await missionControlApi.retryTask(selectedTask.id, selectedAgent)
       } else {
@@ -194,23 +199,40 @@ export const PlanStage: React.FC<PlanStageProps> = ({
           baseBranch
         })
       }
+      // No longer need to manually call fetchTasks() here.
+      // The WebSocket 'task_progress' event will handle UI updates.
+    } catch (err) {
+      console.error('Error starting task:', err)
+      // If the start fails, we should probably show an error and maybe reopen the panel
+      // For now, an alert will suffice.
+      alert(err instanceof Error ? `Failed to start task: ${err.message}` : 'Failed to start task')
+      // Optionally, refetch tasks on failure to reset state
+      fetchTasks()
+    } finally {
+      setIsStarting(false)
+    }
+    // Switch to Build stage so the user can monitor live logs
+    if (onStageChange) {
+      onStageChange('build')
+    }
+  }, [selectedTask, selectedAgent, fetchTasks])
 
-      // Close side panel and refresh tasks
-      setShowSidePanel(false)
-      setSelectedTask(null)
-      setTaskContext(null)
-      setSelectedAgent('')
+  // Handle task cancellation
+  const handleCancelTask = useCallback(async (taskId: string) => {
+    try {
+      const confirmed = window.confirm('Are you sure you want to cancel this task? This will stop the agent execution.')
+      if (!confirmed) return
+
+      await missionControlApi.cancelTask(taskId)
       
       // Refresh tasks to show updated status
       await fetchTasks()
       
     } catch (err) {
-      console.error('Error starting task:', err)
-      alert(err instanceof Error ? err.message : 'Failed to start task')
-    } finally {
-      setIsStarting(false)
+      console.error('Error cancelling task:', err)
+      alert(err instanceof Error ? err.message : 'Failed to cancel task')
     }
-  }, [selectedTask, selectedAgent, fetchTasks])
+  }, [fetchTasks])
 
   // Check if task is blocked by dependencies
   const isTaskBlocked = useCallback((task: Task) => {
@@ -377,6 +399,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
               onSuggestAssignee={handleSuggestAssignee}
               onSuggestEstimate={handleSuggestEstimate}
               onSuggestAgent={handleSuggestAgent}
+              onCancelTask={handleCancelTask}
             />
           </Panel>
           <PanelResizeHandle className="w-1 bg-white/10 hover:bg-purple-500/50 cursor-col-resize transition-colors relative group">
@@ -393,6 +416,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
               onSuggestAssignee={handleSuggestAssignee}
               onSuggestEstimate={handleSuggestEstimate}
               onSuggestAgent={handleSuggestAgent}
+              onCancelTask={handleCancelTask}
             />
           </Panel>
           <PanelResizeHandle className="w-1 bg-white/10 hover:bg-purple-500/50 cursor-col-resize transition-colors relative group">
@@ -409,6 +433,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
               onSuggestAssignee={handleSuggestAssignee}
               onSuggestEstimate={handleSuggestEstimate}
               onSuggestAgent={handleSuggestAgent}
+              onCancelTask={handleCancelTask}
             />
           </Panel>
         </PanelGroup>
@@ -467,6 +492,7 @@ interface KanbanColumnProps {
   onSuggestAssignee: (taskId: string) => void
   onSuggestEstimate: (taskId: string) => void
   onSuggestAgent: (taskId: string) => void
+  onCancelTask: (taskId: string) => void
 }
 
 const KanbanColumn: React.FC<KanbanColumnProps> = ({
@@ -478,7 +504,8 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   onUpdateField,
   onSuggestAssignee,
   onSuggestEstimate,
-  onSuggestAgent
+  onSuggestAgent,
+  onCancelTask
 }) => {
   return (
     <div className="flex flex-col h-full bg-white/5 p-4 rounded-lg mx-2">
@@ -500,6 +527,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
             onSuggestAssignee={onSuggestAssignee}
             onSuggestEstimate={onSuggestEstimate}
             onSuggestAgent={onSuggestAgent}
+            onCancelTask={onCancelTask}
           />
         ))}
         
@@ -524,6 +552,7 @@ interface TaskCardProps {
   onSuggestAssignee: (taskId: string) => void
   onSuggestEstimate: (taskId: string) => void
   onSuggestAgent: (taskId: string) => void
+  onCancelTask: (taskId: string) => void
 }
 
 const TaskCard: React.FC<TaskCardProps> = ({
@@ -535,7 +564,8 @@ const TaskCard: React.FC<TaskCardProps> = ({
   onUpdateField,
   onSuggestAssignee,
   onSuggestEstimate,
-  onSuggestAgent
+  onSuggestAgent,
+  onCancelTask
 }) => {
   const getStatusColor = () => {
     switch (task.status) {
@@ -750,8 +780,21 @@ const TaskCard: React.FC<TaskCardProps> = ({
 
           {/* Progress message */}
           {task.status === 'running' && getLatestMessage() && (
-            <div className="mt-3 p-2 bg-white/10 rounded text-xs text-white/80">
-              {getLatestMessage()}
+            <div className="mt-3 p-2 bg-blue-500/20 rounded text-xs">
+              <div className="text-blue-300 font-medium mb-1">
+                {getProgressPercent() ? `${getProgressPercent()}% Complete` : 'In Progress'}
+              </div>
+              <div className="text-white/80">
+                {getLatestMessage()}
+              </div>
+              {getProgressPercent() && (
+                <div className="mt-2 bg-white/20 rounded-full h-1">
+                  <div 
+                    className="bg-blue-400 h-1 rounded-full transition-all duration-300"
+                    style={{ width: `${getProgressPercent()}%` }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -773,6 +816,21 @@ const TaskCard: React.FC<TaskCardProps> = ({
             >
               ⚡ Start Task
             </button>
+          )}
+
+          {/* Cancel button for running tasks */}
+          {task.status === 'running' && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={(e) => {
+                e.stopPropagation()
+                onCancelTask(task.id)
+              }}
+              className="w-full mt-4 py-2 bg-orange-500/80 text-white font-semibold rounded-lg hover:bg-orange-500 transition-all"
+            >
+              ⏹️ Cancel Task
+            </motion.button>
           )}
 
           {/* Retry button for failed tasks */}

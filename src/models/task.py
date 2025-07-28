@@ -105,6 +105,7 @@ class Task(db.Model):
     
     # Build integration
     pr_url = db.Column(db.String(500))  # Pull request URL when task generates code
+    pr_number = db.Column(db.Integer)  # Pull request number for API operations
     build_status = db.Column(db.String(50))  # Build status for this task
     
     # Indexes
@@ -153,6 +154,7 @@ class Task(db.Model):
             'started_by': self.started_by,
             'completed_by': self.completed_by,
             'pr_url': self.pr_url,
+            'pr_number': getattr(self, 'pr_number', None),  # Handle case where column doesn't exist yet
             'build_status': self.build_status,
             # Task execution fields
             'agent': self.agent,
@@ -160,7 +162,10 @@ class Task(db.Model):
             'repoUrl': self.repo_url,
             'progressMessages': self.progress_messages or [],
             'touchedFiles': self.touched_files or [],
-            'error': self.error
+            'error': self.error,
+            'userFriendlyError': self.get_user_friendly_error(),
+            'latestProgressMessage': self.get_latest_progress_message(),
+            'progressPercent': self.get_progress_percent()
         }
     
     @classmethod
@@ -221,6 +226,9 @@ class Task(db.Model):
         if agent:
             self.agent = agent
         db.session.commit()
+        
+        # Broadcast status change
+        self._broadcast_progress_update()
     
     def complete_task(self, completed_by: str, pr_url: str = None):
         """Mark task as completed"""
@@ -232,6 +240,9 @@ class Task(db.Model):
         if pr_url:
             self.pr_url = pr_url
         db.session.commit()
+        
+        # Broadcast status change
+        self._broadcast_progress_update()
     
     def assign_to_user(self, user_id: str, assigned_by: str):
         """Assign task to a user"""
@@ -277,7 +288,7 @@ class Task(db.Model):
         return all(dep.status == TaskStatus.DONE for dep in dependencies)
     
     def add_progress_message(self, message: str, percent: int = None):
-        """Add a progress message to the task"""
+        """Add a progress message to the task and broadcast update"""
         if not self.progress_messages:
             self.progress_messages = []
         
@@ -291,6 +302,30 @@ class Task(db.Model):
         self.progress_messages.append(progress_entry)
         self.updated_at = datetime.utcnow()
         db.session.commit()
+        
+        # Broadcast progress update immediately
+        self._broadcast_progress_update()
+    
+    def _broadcast_progress_update(self):
+        """Broadcast progress update via WebSocket"""
+        try:
+            # Import here to avoid circular imports
+            try:
+                from ..services.websocket_server import get_websocket_server
+            except ImportError:
+                from services.websocket_server import get_websocket_server
+            
+            ws_server = get_websocket_server()
+            if ws_server:
+                # Broadcast the full task data
+                task_data = self.to_dict()
+                ws_server.broadcast_task_progress(self.id, task_data)
+            
+        except Exception as e:
+            # Don't fail the task execution if broadcasting fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to broadcast progress update for task {self.id}: {e}")
     
     def set_error(self, error_message: str):
         """Set task error and mark as failed"""
@@ -298,6 +333,9 @@ class Task(db.Model):
         self.status = TaskStatus.FAILED
         self.updated_at = datetime.utcnow()
         db.session.commit()
+        
+        # Broadcast status change
+        self._broadcast_progress_update()
     
     def reset_for_retry(self):
         """Reset task for retry"""
@@ -322,6 +360,53 @@ class Task(db.Model):
             self.touched_files.append(file_path)
             self.updated_at = datetime.utcnow()
             db.session.commit()
+    
+    def get_latest_progress_message(self):
+        """Get the latest progress message"""
+        if self.progress_messages and len(self.progress_messages) > 0:
+            return self.progress_messages[-1]
+        return None
+    
+    def get_progress_percent(self):
+        """Get the latest progress percentage"""
+        latest_msg = self.get_latest_progress_message()
+        if latest_msg and 'percent' in latest_msg:
+            return latest_msg['percent']
+        return None
+    
+    def get_user_friendly_error(self):
+        """Get a user-friendly error message"""
+        if not self.error:
+            return None
+        
+        # Clean up common error patterns
+        error_msg = self.error
+        
+        # Remove stack traces and technical details
+        if 'Traceback' in error_msg:
+            lines = error_msg.split('\n')
+            # Find the last line that looks like an error message
+            for line in reversed(lines):
+                line = line.strip()
+                if line and not line.startswith('File ') and not line.startswith('  '):
+                    error_msg = line
+                    break
+        
+        # Remove common prefixes
+        prefixes_to_remove = [
+            'Task execution failed: ',
+            'Error: ',
+            'Exception: ',
+            'RuntimeError: ',
+            'ValueError: '
+        ]
+        
+        for prefix in prefixes_to_remove:
+            if error_msg.startswith(prefix):
+                error_msg = error_msg[len(prefix):]
+                break
+        
+        return error_msg
     
     @classmethod
     def get_running_tasks_with_files(cls, file_paths: list):

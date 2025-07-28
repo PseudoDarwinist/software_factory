@@ -209,7 +209,11 @@ class WebSocketServer:
                 return
             
             client_info = self.connected_clients[client_id]
-            if not client_info.get('authenticated'):
+            # Allow subscription in dev/test environments even without full auth. If an
+            # auth service is configured we still enforce it, but when auth_service is
+            # None (e.g. local development) we skip the check so the frontend can
+            # receive live task progress without JWT setup.
+            if self.auth_service is not None and not client_info.get('authenticated'):
                 emit('error', {'message': 'Authentication required'})
                 return
             
@@ -333,7 +337,11 @@ class WebSocketServer:
                 return
             
             client_info = self.connected_clients[client_id]
-            if not client_info.get('authenticated'):
+            # Allow subscription in dev/test environments even without full auth. If an
+            # auth service is configured we still enforce it, but when auth_service is
+            # None (e.g. local development) we skip the check so the frontend can
+            # receive live task progress without JWT setup.
+            if self.auth_service is not None and not client_info.get('authenticated'):
                 emit('error', {'message': 'Authentication required'})
                 return
             
@@ -588,29 +596,40 @@ class WebSocketServer:
     def _setup_heartbeat(self):
         """Setup heartbeat monitoring for connection health"""
         def heartbeat_monitor():
-            while True:
-                try:
-                    current_time = datetime.utcnow()
-                    timeout_threshold = current_time - timedelta(seconds=self.connection_timeout)
-                    
-                    # Check for timed out connections
-                    timed_out_clients = []
-                    for client_id, client_info in self.connected_clients.items():
-                        last_heartbeat = client_info.get('last_heartbeat')
-                        if last_heartbeat and last_heartbeat < timeout_threshold:
-                            timed_out_clients.append(client_id)
-                    
-                    # Disconnect timed out clients
-                    for client_id in timed_out_clients:
-                        logger.warning(f"Disconnecting timed out client: {client_id}")
-                        self.disconnect_client(client_id, "Connection timeout")
-                    
-                    # Sleep until next check
-                    eventlet.sleep(self.heartbeat_interval)
-                    
-                except Exception as e:
-                    logger.error(f"Error in heartbeat monitor: {e}")
-                    eventlet.sleep(self.heartbeat_interval)
+            # Push application context for the entire thread
+            ctx = self.app.app_context()
+            ctx.push()
+            
+            try:
+                while True:
+                    try:
+                        current_time = datetime.utcnow()
+                        timeout_threshold = current_time - timedelta(seconds=self.connection_timeout)
+                        
+                        # Check for timed out connections
+                        timed_out_clients = []
+                        for client_id, client_info in self.connected_clients.items():
+                            last_heartbeat = client_info.get('last_heartbeat')
+                            if last_heartbeat and last_heartbeat < timeout_threshold:
+                                timed_out_clients.append(client_id)
+                        
+                        # Disconnect timed out clients
+                        for client_id in timed_out_clients:
+                            logger.warning(f"Disconnecting timed out client: {client_id}")
+                            try:
+                                self.disconnect_client(client_id, "Connection timeout")
+                            except Exception as disconnect_error:
+                                logger.error(f"Error disconnecting client {client_id}: {disconnect_error}")
+                        
+                        # Sleep until next check
+                        eventlet.sleep(self.heartbeat_interval)
+                        
+                    except Exception as e:
+                        logger.error(f"Error in heartbeat monitor: {e}")
+                        eventlet.sleep(self.heartbeat_interval)
+            finally:
+                # Clean up context when thread exits
+                ctx.pop()
         
         # Start heartbeat monitor in background
         eventlet.spawn(heartbeat_monitor)

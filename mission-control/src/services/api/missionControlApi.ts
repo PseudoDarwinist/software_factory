@@ -803,6 +803,58 @@ class MissionControlApi {
       throw new Error('Failed to get agent suggestion')
     }
   }
+
+  // Build stage specific endpoints
+  async getBuildTasks(projectId?: string): Promise<any[]> {
+    try {
+      const params = new URLSearchParams()
+      if (projectId) params.append('project_id', projectId)
+      // Filter to only build-related statuses
+      params.append('status', 'running,review,failed')
+      
+      const response = await this.client.get<{ tasks: any[]; total: number }>(`/tasks?${params.toString()}`)
+      return response.data.tasks || []
+    } catch (error) {
+      console.error('Failed to fetch build tasks:', error)
+      throw new Error('Failed to fetch build tasks')
+    }
+  }
+
+  async getPRDiff(prUrl: string): Promise<string | null> {
+    try {
+      // Mock implementation - in real app would fetch from GitHub API
+      // This would extract owner/repo/pr_number from prUrl and call GitHub API
+      return `--- a/ui/theme/tokens.css
++++ b/ui/theme/tokens.css
+@@ -100,6 +100,10 @@
+   text-100: #FFFFFF;
++  text-200: #F0F0F0;
++  
++  bg-900: #0A0A10;
++  bg-800: #1A1A20;`
+    } catch (error) {
+      console.error('Failed to fetch PR diff:', error)
+      return null
+    }
+  }
+
+  async approvePR(taskId: string): Promise<void> {
+    try {
+      await this.client.post(`/tasks/${taskId}/approve`)
+    } catch (error) {
+      console.error('Failed to approve PR:', error)
+      throw new Error('Failed to approve PR')
+    }
+  }
+
+  async convertPRToReady(taskId: string): Promise<void> {
+    try {
+      await this.client.post(`/tasks/${taskId}/convert-pr-to-ready`)
+    } catch (error) {
+      console.error('Failed to convert PR to ready:', error)
+      throw new Error('Failed to convert PR to ready')
+    }
+  }
 }
 
 // Create and export singleton instance

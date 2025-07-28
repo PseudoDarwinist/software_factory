@@ -63,7 +63,17 @@ class GitWorkspaceService:
             ], capture_output=True, text=True, timeout=60)
             
             if clone_result.returncode != 0:
-                raise Exception(f"Git clone failed: {clone_result.stderr}")
+                error_msg = clone_result.stderr.strip()
+                
+                # Provide more helpful error messages
+                if "does not exist" in error_msg:
+                    raise Exception(f"Repository '{repo_url}' does not exist or is not accessible. Please check the repository URL and GitHub token permissions.")
+                elif "Permission denied" in error_msg:
+                    raise Exception(f"Permission denied accessing repository '{repo_url}'. Please check the GitHub token has the required permissions.")
+                elif "Authentication failed" in error_msg:
+                    raise Exception(f"Authentication failed for repository '{repo_url}'. Please check the GitHub token is valid.")
+                else:
+                    raise Exception(f"Git clone failed: {error_msg}")
             
             # Step 2: Create and checkout new branch
             logger.info(f"Creating branch {branch_name} from {base_branch}")
@@ -229,7 +239,7 @@ class GitWorkspaceService:
         Add authentication token to GitHub URL
         
         Args:
-            repo_url: Original repository URL
+            repo_url: Original repository URL (can be full URL or owner/repo format)
             github_token: GitHub Personal Access Token
         
         Returns:
@@ -242,6 +252,9 @@ class GitWorkspaceService:
             # Convert SSH to HTTPS with token
             repo_path = repo_url.replace("git@github.com:", "")
             return f"https://{github_token}@github.com/{repo_path}"
+        elif "/" in repo_url and not repo_url.startswith("http"):
+            # Handle owner/repo format - convert to full HTTPS URL with token
+            return f"https://{github_token}@github.com/{repo_url}"
         else:
             # Assume it's already a properly formatted URL
             return repo_url
