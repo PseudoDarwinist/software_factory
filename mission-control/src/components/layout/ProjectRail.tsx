@@ -313,7 +313,7 @@ const ProjectCard: React.FC<ProjectCardProps> = React.memo(({
         onClick={onSelect}
         className={clsx(
           'transition-all duration-300',
-          isSelected && 'ring-2 ring-green-500/50',
+          isSelected && 'ring-4 ring-yellow-400/80 border-yellow-400/60',
           collapsed ? 'p-2' : 'p-3'
         )}
         breathingAnimation={project.health !== 'green'}

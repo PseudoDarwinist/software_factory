@@ -22,6 +22,8 @@ from .monitoring_metrics import (
     IntegrationStatus, 
     DashboardConfig
 )
+from .upload_session import UploadSession
+from .uploaded_file import UploadedFile
 
 __all__ = [
     'db', 
@@ -47,5 +49,7 @@ __all__ = [
     'SystemHealth',
     'AlertHistory',
     'IntegrationStatus',
-    'DashboardConfig'
+    'DashboardConfig',
+    'UploadSession',
+    'UploadedFile'
 ]

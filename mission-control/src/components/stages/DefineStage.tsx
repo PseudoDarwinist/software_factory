@@ -496,7 +496,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
         style={{ width: `${leftPaneWidth}px` }}
       >
         <div className="p-4 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white mb-2">Ideas in Definition</h2>
+          <h2 className="text-lg font-semibold text-yellow-400 mb-2">Ideas in Definition</h2>
           <div className="text-xs text-white/60 bg-white/10 px-2 py-1 rounded-full inline-block">
             {ideasInDefinition.length} items
           </div>
@@ -532,7 +532,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                   </div>
                   
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-white text-sm leading-tight">
+                    <h4 className="font-medium text-yellow-300 text-sm leading-tight">
                       {item.title}
                     </h4>
                     <p className="text-xs text-white/70 mt-1 line-clamp-2">
@@ -565,7 +565,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
               <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-white/5 flex items-center justify-center">
                 <span className="text-white/40 text-lg">📝</span>
               </div>
-              <h3 className="text-sm font-medium text-white/80 mb-2">No ideas in definition</h3>
+              <h3 className="text-sm font-medium text-yellow-400 mb-2">No ideas in definition</h3>
               <p className="text-xs text-white/60">
                 Drag ideas from Think to start defining them
               </p>
@@ -605,7 +605,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
             <div className="p-6 border-b border-white/10">
               <div className="flex items-center justify-between">
                 <div>
-                  <h1 className="text-2xl font-bold text-white mb-2">Specification</h1>
+                  <h1 className="text-2xl font-bold text-yellow-400 mb-2">Specification</h1>
                   <p className="text-white/70 text-sm">
                     {calculateProgress(currentSpec)}% human reviewed
                   </p>
@@ -659,8 +659,8 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                     className={clsx(
                       'flex-1 px-6 py-4 text-sm font-medium transition-all relative',
                       activeTab === tab
-                        ? 'text-white bg-white/5 border-b-2 border-blue-500'
-                        : 'text-white/70 hover:text-white hover:bg-white/5'
+                        ? 'text-yellow-400 bg-white/5 border-b-2 border-yellow-500'
+                        : 'text-white/70 hover:text-yellow-300 hover:bg-white/5'
                     )}
                   >
                     <div className="flex items-center justify-center space-x-2">
@@ -730,7 +730,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
                 <span className="text-white/40 text-2xl">📝</span>
               </div>
-              <h3 className="text-lg font-medium mb-2">Select an idea to define</h3>
+              <h3 className="text-lg font-medium text-yellow-400 mb-2">Select an idea to define</h3>
               <p className="text-sm">
                 Choose an idea from the left to start creating its specification
               </p>
@@ -866,7 +866,7 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
       {/* Header */}
       <div className="p-4 border-b border-white/10 flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <h3 className="text-lg font-semibold text-white capitalize">
+          <h3 className="text-lg font-semibold text-yellow-400 capitalize">
             {artifactType}.md
           </h3>
           <div className={clsx(
@@ -909,7 +909,7 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
               value={content}
               onChange={(e) => handleContentChange(e.target.value)}
               placeholder={`Enter ${artifactType} content...`}
-              className="w-full h-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none font-mono text-sm"
+              className="w-full h-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none font-mono text-sm markdown-textarea"
               disabled={artifact.status === 'frozen'}
             />
           )
@@ -923,7 +923,7 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
                   className="w-10 h-10 object-contain opacity-60"
                 />
               </div>
-              <h4 className="text-sm font-medium mb-2">No {artifactType} yet</h4>
+              <h4 className="text-sm font-medium text-yellow-400 mb-2">No {artifactType} yet</h4>
               <p className="text-xs">
                 This will be generated by the Define Agent
               </p>
@@ -1076,7 +1076,7 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
               className="bg-black/80 backdrop-blur-md border border-white/20 rounded-xl p-6 max-w-md w-full mx-4"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-semibold text-white mb-4">
+              <h3 className="text-lg font-semibold text-yellow-400 mb-4">
                 Mark as Human Reviewed
               </h3>
               <p className="text-white/70 text-sm mb-4">
@@ -1160,7 +1160,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             alt="AI Assistant" 
             className="h-10 w-auto object-contain"
           />
-          <h3 className="text-lg font-semibold text-white">AI Assistant</h3>
+          <h3 className="text-lg font-semibold text-yellow-400">AI Assistant</h3>
         </div>
         <button
           onClick={onClose}
@@ -1290,7 +1290,7 @@ const TasksViewer: React.FC<TasksViewerProps> = ({ content, onChange, disabled, 
     return (
       <div className="h-full flex flex-col">
         <div className="flex justify-between items-center mb-4">
-          <h4 className="text-sm font-medium text-white">Edit Tasks (Markdown)</h4>
+          <h4 className="text-sm font-medium text-yellow-400">Edit Tasks (Markdown)</h4>
           <button
             onClick={() => setEditMode(false)}
             className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded text-xs hover:bg-blue-500/30 transition-all"
@@ -1312,7 +1312,7 @@ const TasksViewer: React.FC<TasksViewerProps> = ({ content, onChange, disabled, 
   return (
     <div className="h-full flex flex-col">
       <div className="flex justify-between items-center mb-4">
-        <h4 className="text-sm font-medium text-white">Implementation Tasks</h4>
+        <h4 className="text-sm font-medium text-yellow-400">Implementation Tasks</h4>
         <button
           onClick={() => setEditMode(true)}
           className="px-3 py-1 bg-white/10 text-white/70 rounded text-xs hover:bg-white/20 transition-all"

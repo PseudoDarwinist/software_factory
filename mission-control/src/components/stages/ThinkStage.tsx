@@ -23,6 +23,7 @@ import { clsx } from 'clsx'
 import { LiquidCard } from '@/components/core/LiquidCard'
 
 import { SpecWorkflowEditor } from './SpecWorkflowEditor'
+import { SourcesTrayCard } from './SourcesTrayCard'
 import type { FeedItem, SDLCStage } from '@/types'
 
 interface ThinkStageProps {
@@ -234,7 +235,7 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
         {/* Header with filters and controls */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div className="flex items-center space-x-4">
-            <h2 className="text-lg font-semibold text-white">Think</h2>
+            <h2 className="text-lg font-semibold text-yellow-400">Think</h2>
             
             {/* Category filters */}
             <div className="flex items-center space-x-2">
@@ -327,6 +328,19 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
                 />
               )}
 
+              {/* Upload Sources Tray - Always visible in the center */}
+              <div className="my-8">
+                <SourcesTrayCard
+                  status="idle"
+                  files={[]}
+                  onFileAdd={(files) => console.log('Files added:', files)}
+                  onLinkAdd={(url) => console.log('Link added:', url)}
+                  onFileRemove={(index) => console.log('File removed:', index)}
+                  onAnalyze={() => console.log('Analyze clicked')}
+                  onFreezePRD={() => console.log('Freeze PRD clicked')}
+                />
+              </div>
+
               {/* Alerts Section */}
               {alerts.length > 0 && (
                 <FeedSection
@@ -342,7 +356,7 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
                 />
               )}
 
-              {/* Empty state */}
+              {/* Empty state - only show if no ideas, alerts, or upload activity */}
               {processedItems.length === 0 && (
                 <div className="text-center py-12">
                   <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
@@ -350,9 +364,12 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  <h3 className="text-lg font-medium text-white/80 mb-2">All caught up!</h3>
+                  <h3 className="text-lg font-medium text-yellow-400 mb-2">All caught up!</h3>
                   <p className="text-sm text-white/60">
                     {selectedProject ? 'No items need attention for this project' : 'No items need attention right now'}
+                  </p>
+                  <p className="text-sm text-white/40 mt-2">
+                    Use the Sources tray above to upload materials for PRD generation
                   </p>
                 </div>
               )}
@@ -470,7 +487,7 @@ const FeedSection: React.FC<FeedSectionProps> = ({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium text-white/80">{title}</h3>
+          <h3 className="text-sm font-medium text-yellow-400">{title}</h3>
           <p className="text-xs text-white/60">{subtitle}</p>
         </div>
         <div className="text-xs text-white/50 bg-white/10 px-2 py-1 rounded-full">
@@ -596,7 +613,7 @@ const FeedItemCard: React.FC<FeedItemCardProps> = ({
               )}
             </div>
             
-            <h4 className="font-medium text-white text-sm leading-tight">
+            <h4 className="font-medium text-yellow-300 text-sm leading-tight">
               {item.title}
             </h4>
             
@@ -670,7 +687,7 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
       {/* Header */}
       <div className="p-4 border-b border-white/10">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">Context</h3>
+          <h3 className="text-lg font-semibold text-yellow-400">Context</h3>
           <button
             onClick={onClose}
             className="text-white/60 hover:text-white/80 p-1"
@@ -690,11 +707,11 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
         {/* Related Items */}
         {contextData.relatedItems?.length > 0 && (
           <div>
-            <h4 className="text-sm font-medium text-white/80 mb-3">Related Items</h4>
+            <h4 className="text-sm font-medium text-yellow-400 mb-3">Related Items</h4>
             <div className="space-y-2">
               {contextData.relatedItems.map((item: FeedItem) => (
                 <div key={item.id} className="bg-white/5 rounded-lg p-3">
-                  <h5 className="text-sm font-medium text-white">{item.title}</h5>
+                  <h5 className="text-sm font-medium text-yellow-300">{item.title}</h5>
                   <p className="text-xs text-white/60 mt-1">{item.summary}</p>
                 </div>
               ))}
@@ -705,12 +722,12 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
         {/* Historical Context */}
         {contextData.historicalContext?.length > 0 && (
           <div>
-            <h4 className="text-sm font-medium text-white/80 mb-3">Historical Context</h4>
+            <h4 className="text-sm font-medium text-yellow-400 mb-3">Historical Context</h4>
             <div className="space-y-2">
               {contextData.historicalContext.map((context: any, index: number) => (
                 <div key={index} className="bg-white/5 rounded-lg p-3">
                   <div className="flex items-center justify-between">
-                    <h5 className="text-sm font-medium text-white">{context.title}</h5>
+                    <h5 className="text-sm font-medium text-yellow-300">{context.title}</h5>
                     <div className="text-xs text-green-400">
                       {Math.round(context.confidence * 100)}%
                     </div>
@@ -725,22 +742,22 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
         {/* Graph Relationships */}
         {contextData.graphRelationships && (
           <div>
-            <h4 className="text-sm font-medium text-white/80 mb-3">Connections</h4>
+            <h4 className="text-sm font-medium text-yellow-400 mb-3">Connections</h4>
             <div className="grid grid-cols-3 gap-2">
               <div className="bg-white/5 rounded-lg p-3 text-center">
-                <div className="text-lg font-bold text-white">
+                <div className="text-lg font-bold text-yellow-400">
                   {contextData.graphRelationships.connectedCommits}
                 </div>
                 <div className="text-xs text-white/60">Commits</div>
               </div>
               <div className="bg-white/5 rounded-lg p-3 text-center">
-                <div className="text-lg font-bold text-white">
+                <div className="text-lg font-bold text-yellow-400">
                   {contextData.graphRelationships.relatedSpecs}
                 </div>
                 <div className="text-xs text-white/60">Specs</div>
               </div>
               <div className="bg-white/5 rounded-lg p-3 text-center">
-                <div className="text-lg font-bold text-white">
+                <div className="text-lg font-bold text-yellow-400">
                   {contextData.graphRelationships.teamMembers}
                 </div>
                 <div className="text-xs text-white/60">People</div>

@@ -144,25 +144,25 @@ export const StageBar: React.FC<StageBarProps> = ({
         {/* Mission Control indicator and Settings */}
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span className="text-sm text-white/80 font-medium">Mission Control</span>
+            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+            <span className="text-lg text-yellow-400 font-semibold">Mission Control</span>
           </div>
           
           {/* Settings Button */}
           <motion.button
             onClick={() => navigate('/settings')}
             className={clsx(
-              'p-2 rounded-lg transition-all duration-200',
+              'p-3 rounded-lg transition-all duration-200',
               'bg-white/5 hover:bg-white/10',
-              'border border-white/10 hover:border-white/20',
-              'text-white/70 hover:text-white',
+              'border border-white/10 hover:border-yellow-400/30',
+              'text-yellow-400 hover:text-yellow-300',
               'backdrop-blur-sm'
             )}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             title="Settings & Monitoring"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path 
                 strokeLinecap="round" 
                 strokeLinejoin="round" 

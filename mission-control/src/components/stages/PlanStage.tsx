@@ -381,7 +381,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
     <div className="h-full flex flex-col p-6 space-y-4">
       {/* Header */}
       <div className="flex-shrink-0">
-        <h1 className="text-2xl font-bold text-white mb-2">Plan</h1>
+        <h1 className="text-2xl font-bold text-yellow-400 mb-2">Plan</h1>
         <p className="text-white/60">Task execution launchpad</p>
       </div>
 
@@ -510,7 +510,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   return (
     <div className="flex flex-col h-full bg-white/5 p-4 rounded-lg mx-2">
       <div className="flex-shrink-0 mb-4">
-        <h2 className="text-xl font-semibold text-white mb-1">{title}</h2>
+        <h2 className="text-xl font-semibold text-yellow-400 mb-1">{title}</h2>
         <div className="text-sm text-white/60">{tasks.length} tasks</div>
       </div>
       
@@ -950,7 +950,7 @@ const PrepareAgentRunPanel: React.FC<PrepareAgentRunPanelProps> = ({
       {/* Header */}
       <div className="p-6 border-b border-gray-700/50 bg-gray-800/50">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xl font-bold text-white">Plan • Prepare Agent Run</h2>
+          <h2 className="text-xl font-bold text-yellow-400">Plan • Prepare Agent Run</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-700/50 transition-colors"
@@ -1006,8 +1006,8 @@ const PrepareAgentRunPanel: React.FC<PrepareAgentRunPanelProps> = ({
 
         {/* 1. Agent Profile */}
         <div>
-          <h3 className="text-lg font-semibold text-blue-400 mb-4 flex items-center">
-            <span className="bg-blue-500/20 text-blue-400 rounded-full w-6 h-6 flex items-center justify-center text-sm mr-2">1</span>
+          <h3 className="text-lg font-semibold text-yellow-400 mb-4 flex items-center">
+            <span className="bg-yellow-500/20 text-yellow-400 rounded-full w-6 h-6 flex items-center justify-center text-sm mr-2">1</span>
             Agent profile
           </h3>
           <div className="space-y-3">
@@ -1040,8 +1040,8 @@ const PrepareAgentRunPanel: React.FC<PrepareAgentRunPanelProps> = ({
 
         {/* 2. Context Groups */}
         <div>
-          <h3 className="text-lg font-semibold text-purple-400 mb-4 flex items-center">
-            <span className="bg-purple-500/20 text-purple-400 rounded-full w-6 h-6 flex items-center justify-center text-sm mr-2">2</span>
+          <h3 className="text-lg font-semibold text-yellow-400 mb-4 flex items-center">
+            <span className="bg-yellow-500/20 text-yellow-400 rounded-full w-6 h-6 flex items-center justify-center text-sm mr-2">2</span>
             Context groups
           </h3>
           <div className="space-y-3">
@@ -1070,8 +1070,8 @@ const PrepareAgentRunPanel: React.FC<PrepareAgentRunPanelProps> = ({
 
         {/* 3. Branch Name */}
         <div>
-          <h3 className="text-lg font-semibold text-orange-400 mb-4 flex items-center">
-            <span className="bg-orange-500/20 text-orange-400 rounded-full w-6 h-6 flex items-center justify-center text-sm mr-2">3</span>
+          <h3 className="text-lg font-semibold text-yellow-400 mb-4 flex items-center">
+            <span className="bg-yellow-500/20 text-yellow-400 rounded-full w-6 h-6 flex items-center justify-center text-sm mr-2">3</span>
             Branch name
           </h3>
           <div className="text-xs text-gray-400 mb-3 bg-gray-800/30 rounded-lg p-2 border border-gray-700/30">

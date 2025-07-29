@@ -60,20 +60,24 @@ class ClaudeCodeTaskService:
             if not project.repo_url or not project.github_token:
                 return {'success': False, 'error': 'Project missing GitHub configuration'}
             
-            # Update task progress
-            task.add_progress_message("Setting up Git workspace...", 10)
+            # Update task progress with detailed setup information
+            task.add_progress_message("🛠️ Setting up Git workspace...", 10)
+            task.add_progress_message(f"📋 Repository: {project.repo_url}", 12)
             
             # Step 1: Create Git workspace
+            branch_name_display = task.branch_name or f"feature/task-{task_id}"
+            task.add_progress_message(f"🌿 Preparing branch: {branch_name_display}", 15)
+            
             workspace_result = self.git_workspace_service.create_task_workspace(
                 task_id=task_id,
                 repo_url=project.repo_url,
                 github_token=project.github_token,
-                branch_name=task.branch_name or f"feature/task-{task_id}",
+                branch_name=branch_name_display,
                 base_branch=base_branch
             )
             
             if not workspace_result['success']:
-                task.add_progress_message(f"Workspace setup failed: {workspace_result['error']}", 0)
+                task.add_progress_message(f"❌ Workspace setup failed: {workspace_result['error']}", 0)
                 return {
                     'success': False,
                     'error': f"Failed to create workspace: {workspace_result['error']}"
@@ -86,15 +90,18 @@ class ClaudeCodeTaskService:
             task.branch_name = branch_name
             db.session.commit()
             
-            task.add_progress_message(f"Workspace ready at {workspace_path}", 20)
-            task.add_progress_message(f"Branch {branch_name} created and pushed", 30)
+            task.add_progress_message(f"✅ Workspace created: {workspace_path}", 20)
+            task.add_progress_message(f"🌿 Branch '{branch_name}' created from '{base_branch}'", 25)
+            task.add_progress_message(f"📤 Branch pushed to remote repository", 30)
             
             # Step 2: Prepare task context
-            task.add_progress_message("Gathering task context...", 40)
+            task.add_progress_message("📋 Gathering task context and requirements...", 40)
             task_context = self._prepare_task_context(task, project, context_options)
+            task.add_progress_message(f"📄 Context prepared: {len(task_context)} characters", 45)
             
             # Step 3: Execute with Claude Code SDK
-            task.add_progress_message(f"Starting {agent_id} execution...", 50)
+            task.add_progress_message(f"🤖 Launching {agent_id} sub agent...", 50)
+            task.add_progress_message(f"🔍 Looking for .claude/agents/{agent_id}.md configuration", 52)
             
             claude_service = ClaudeCodeService(workspace_path)
             
@@ -183,8 +190,8 @@ class ClaudeCodeTaskService:
                 }
 
             if execution_result['success']:
-                task.add_progress_message("Task execution completed successfully", 90)
-                task.add_progress_message("Creating pull request...", 95)
+                task.add_progress_message("✅ Agent execution completed successfully!", 90)
+                task.add_progress_message("📋 Creating pull request...", 95)
                 
                 # Create PR (task 11.10)
                 pr_result = self._create_pull_request(task, project, branch_name, base_branch)
@@ -193,7 +200,9 @@ class ClaudeCodeTaskService:
                     task.pr_url = pr_result['pr_url']
                     task.pr_number = pr_result.get('pr_number') # Store PR number
                     task.status = TaskStatus.REVIEW
-                    task.add_progress_message(f"Pull request created: {pr_result['pr_url']}", 100)
+                    task.add_progress_message(f"🎉 Pull request created successfully!", 98)
+                    task.add_progress_message(f"🔗 PR URL: {pr_result['pr_url']}", 100)
+                    task.add_progress_message(f"📋 Task moved to Review stage - ready for code review!", 100)
                     
                     return {
                         'success': True,
@@ -206,7 +215,7 @@ class ClaudeCodeTaskService:
                     # PR creation failed, task execution is considered failed.
                     error_msg = f"Task completed but PR creation failed: {pr_result['error']}"
                     task.set_error(error_msg) # This sets status to FAILED and commits
-                    task.add_progress_message(error_msg, 100)
+                    task.add_progress_message(f"❌ {error_msg}", 100)
                     
                     return {
                         'success': False, # Critical change: return success: False
@@ -217,7 +226,7 @@ class ClaudeCodeTaskService:
                         'execution_result': execution_result
                     }
             else:
-                task.add_progress_message(f"Execution failed: {execution_result['error']}", 0)
+                task.add_progress_message(f"❌ Agent execution failed: {execution_result['error']}", 0)
                 task.set_error(execution_result['error']) # This sets status to FAILED
                 
                 return {
@@ -714,6 +723,7 @@ The {claude_agent} sub agent should handle this task according to its specialize
             import subprocess
             import json
             import os
+            import time
             
             # Update progress
             task.add_progress_message(f"Checking for .claude/agents/{agent_name}.md...", 65)
@@ -727,80 +737,307 @@ The {claude_agent} sub agent should handle this task according to its specialize
                 task.add_progress_message(f"Found custom {agent_name} configuration", 67)
             
             # Prepare Claude Code command with streaming JSON output
+            # Based on the test, stream-json works fine - let's use it properly
             cmd = [
-                'claude', '-p',
-                prompt,
+                'claude', 
                 '--output-format', 'stream-json',
-                '--verbose',           # required by CLI for stream-json with --print
-                '--dangerously-skip-permissions',  # CRITICAL: This allows Claude to actually execute commands
-                '--max-turns', '10'
+                '--verbose',
+                '--dangerously-skip-permissions',
+                '--max-turns', '10',
+                '-p', prompt
             ]
+            
+            task.add_progress_message(f"🔧 Executing: claude --output-format stream-json -p [prompt]", 71)
 
             env = os.environ.copy()
 
             task.add_progress_message(f"Launching {agent_name} sub-agent (streaming)…", 70)
+            
+            # First, test if Claude CLI is working
+            task.add_progress_message("🧪 Testing Claude Code CLI availability...", 69)
+            test_cmd = ['claude', '--version']
+            try:
+                test_result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=10)
+                if test_result.returncode == 0:
+                    task.add_progress_message(f"✅ Claude CLI working: {test_result.stdout.strip()}", 70)
+                    logger.info("Claude CLI test successful: %s", test_result.stdout.strip())
+                else:
+                    task.add_progress_message(f"⚠️ Claude CLI test failed (code {test_result.returncode}): {test_result.stderr.strip()}", 70)
+                    logger.warning("Claude CLI test failed: %s", test_result.stderr.strip())
+            except Exception as test_error:
+                task.add_progress_message(f"❌ Claude CLI test error: {str(test_error)}", 70)
+                logger.error("Claude CLI test error: %s", test_error)
 
             logger.info("Running Claude Code (stream-json): %s", ' '.join(cmd))
-
+            logger.info("Working directory: %s", workspace_path)
+            logger.info("Environment variables: PATH=%s", env.get('PATH', 'NOT_SET'))
+            
+            # Add timeout and better error handling
             process = subprocess.Popen(
                 cmd,
                 cwd=workspace_path,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                bufsize=1,
-                env=env
+                bufsize=0,  # Unbuffered for immediate output
+                env=env,
+                universal_newlines=True
             )
+            
+            task.add_progress_message(f"🚀 Claude Code process started (PID: {process.pid})", 72)
 
-            # Real-time streaming of stdout JSON lines
+            # Real-time streaming of stdout - both JSON events AND raw command output
             response_buffer = []
             session_id = None
+            last_progress_time = time.time()
+            progress_percent = 70
 
             timeout_seconds = 900  # 15-minute hard timeout
 
             try:
                 import time, select
+                import threading
 
                 start_time = time.time()
+                lines_read = 0
+                last_activity = time.time()
+                
+                # Heartbeat monitor for long-running Claude Code execution
+                heartbeat_count = [0]  # Use list to allow modification from nested function
+                def heartbeat_monitor():
+                    """Show periodic heartbeat messages during long Claude Code execution"""
+                    try:
+                        while process.poll() is None:
+                            time.sleep(15)  # Every 15 seconds
+                            elapsed = time.time() - start_time
+                            heartbeat_count[0] += 1
+                            
+                            if elapsed < 300:  # Only for first 5 minutes
+                                if heartbeat_count[0] == 1:
+                                    task.add_progress_message("🤖 Claude Code is analyzing the repository...", 74)
+                                elif heartbeat_count[0] == 2:
+                                    task.add_progress_message("📋 Understanding requirements and existing patterns...", 76)
+                                elif heartbeat_count[0] == 3:
+                                    task.add_progress_message("⚡ Implementing changes based on specifications...", 78)
+                                elif heartbeat_count[0] == 4:
+                                    task.add_progress_message("🔧 Writing code and updating files...", 80)
+                                elif heartbeat_count[0] == 5:
+                                    task.add_progress_message("🧪 Creating or updating tests...", 82)
+                                elif heartbeat_count[0] == 6:
+                                    task.add_progress_message("💾 Preparing to commit changes...", 84)
+                                elif heartbeat_count[0] >= 7:
+                                    task.add_progress_message(f"⏳ Still working... ({int(elapsed)}s elapsed)", min(85 + heartbeat_count[0], 90))
+                            else:
+                                break
+                    except Exception as e:
+                        logger.error("Error in heartbeat monitor: %s", e)
+                
+                # Monitor stderr in a separate thread
+                stderr_lines = []
+                def monitor_stderr():
+                    try:
+                        while process.poll() is None:
+                            line = process.stderr.readline()
+                            if line:
+                                stderr_lines.append(line.strip())
+                                logger.warning("Claude Code stderr: %s", line.strip())
+                                task.add_progress_message(f"⚠️ {line.strip()}", 73)
+                    except Exception as e:
+                        logger.error("Error monitoring stderr: %s", e)
+                
+                # Start monitoring threads
+                heartbeat_thread = threading.Thread(target=heartbeat_monitor, daemon=True)
+                heartbeat_thread.start()
+                stderr_thread = threading.Thread(target=monitor_stderr, daemon=True)
+                stderr_thread.start()
+                
+                task.add_progress_message("🔍 Monitoring Claude Code output...", 73)
+                logger.info("Starting output monitoring loop")
+                
                 while True:
-                    # If process finished *and* there's no more data ready, exit loop
+                    # Check if process has finished
                     if process.poll() is not None:
-                        # Use select to see if any trailing data is still buffered
-                        ready_at_end, _, _ = select.select([process.stdout], [], [], 0)
-                        if not ready_at_end:
-                            break
+                        logger.info("Process finished with return code: %s", process.returncode)
+                        # Try to read any remaining output
+                        remaining_output = process.stdout.read()
+                        if remaining_output:
+                            logger.info("Final output: %s", remaining_output[:500])
+                            task.add_progress_message(f"📝 Final output: {remaining_output[:200]}...", 85)
+                        break
 
-                    # Use select to wait for data with timeout
-                    ready, _, _ = select.select([process.stdout], [], [], 1)
+                    # Check for output with a longer timeout for initial response
+                    timeout = 30 if lines_read == 0 else 5  # Wait longer for first output
+                    ready, _, _ = select.select([process.stdout], [], [], timeout)
+                    
                     if ready:
-                        raw_line = process.stdout.readline()
-                        if not raw_line:
+                        try:
+                            raw_line = process.stdout.readline()
+                            if not raw_line:
+                                continue
+                            
+                            lines_read += 1
+                            last_activity = time.time()
+                            
+                            raw_line = raw_line.strip()
+                            if not raw_line:
+                                continue
+                            
+                            logger.debug("Claude Code output line %d: %s", lines_read, raw_line[:100])
+                            
+                            # Progress update for activity
+                            if lines_read % 10 == 0:
+                                task.add_progress_message(f"📊 Processing output... ({lines_read} lines)", min(73 + (lines_read // 10), 85))
+                        except Exception as e:
+                            logger.error("Error reading stdout line: %s", e)
                             continue
-                        raw_line = raw_line.strip()
-                        if not raw_line:
-                            continue
+                    else:
+                        # No output received in timeout period
+                        current_time = time.time()
+                        elapsed = current_time - start_time
+                        
+                        if lines_read == 0 and elapsed > 60:  # No output for 60 seconds
+                            logger.warning("No output from Claude Code after %d seconds", elapsed)
+                            task.add_progress_message(f"⏱️ Waiting for Claude Code response... ({int(elapsed)}s)", 73)
+                        elif current_time - last_activity > 120:  # No activity for 2 minutes
+                            logger.warning("No activity from Claude Code for %d seconds", current_time - last_activity)
+                            task.add_progress_message(f"🤔 Claude Code seems quiet... checking process health", 75)
+                            
+                            # Check if process is still alive
+                            if process.poll() is not None:
+                                logger.error("Process died unexpectedly!")
+                                break
+                    
+                    if not raw_line:
+                        continue
+                        
+                        # Try to parse as JSON (stream-json format)
                         try:
                             evt = json.loads(raw_line)
+                            logger.debug("Parsed JSON event: %s", evt.get('type', 'unknown'))
+                            
+                            event_type = evt.get('type')
+                            
+                            if event_type == 'system':
+                                # System initialization event
+                                session_id = evt.get('session_id', 'unknown')
+                                model = evt.get('model', 'unknown')
+                                task.add_progress_message(f"⚙️ Session started: {model} ({session_id[:8]}...)", min(progress_percent + 1, 95))
+                                logger.info("Claude session started: %s", session_id)
+                            
+                            elif event_type == 'assistant':
+                                # Assistant message
+                                parts = evt['message']['content']
+                                if parts and parts[0]['type'] == 'text':
+                                    chunk_text = parts[0]['text'].strip()
+                                    response_buffer.append(chunk_text)
+                                    # Stream assistant messages with context
+                                    task.add_progress_message(f"🤖 {agent_name}: {chunk_text[:200]}{'...' if len(chunk_text) > 200 else ''}", min(progress_percent + 1, 95))
+                                    progress_percent = min(progress_percent + 1, 95)
+                                    logger.info("Assistant message: %s", chunk_text[:100])
+                            
+                            elif event_type == 'tool_use':
+                                # Tool execution started
+                                tool_name = evt.get('name', 'unknown')
+                                tool_input = evt.get('input', {})
+                                task.add_progress_message(f"🔧 Executing tool: {tool_name}", min(progress_percent + 1, 95))
+                                logger.info("Tool execution: %s with input: %s", tool_name, str(tool_input)[:100])
+                            
+                            elif event_type == 'tool_result':
+                                # Tool execution completed
+                                tool_name = evt.get('tool_name', 'unknown')
+                                is_error = evt.get('is_error', False)
+                                content = evt.get('content', '')
+                                
+                                if is_error:
+                                    task.add_progress_message(f"❌ Tool {tool_name} failed: {content[:100]}", min(progress_percent + 1, 95))
+                                    logger.warning("Tool failed: %s - %s", tool_name, content[:100])
+                                else:
+                                    # Parse tool output for important information
+                                    enhanced_output = self._enhance_command_output(content, tool_name)
+                                    if enhanced_output:
+                                        task.add_progress_message(enhanced_output, min(progress_percent + 1, 95))
+                                    else:
+                                        task.add_progress_message(f"✅ {tool_name} completed", min(progress_percent + 1, 95))
+                                    logger.info("Tool completed: %s", tool_name)
+                            
+                            elif event_type == 'result':
+                                # Final result
+                                session_id = evt.get('session_id', 'unknown')
+                                duration_ms = evt.get('duration_ms', 0)
+                                num_turns = evt.get('num_turns', 0)
+                                result_text = evt.get('result', '')
+                                
+                                task.add_progress_message(f"✅ Session completed in {duration_ms/1000:.1f}s ({num_turns} turns)", min(progress_percent + 2, 95))
+                                logger.info("Claude session completed: %s turns, %dms", num_turns, duration_ms)
+                                
+                                if result_text:
+                                    response_buffer.append(result_text)
+                            
+                            else:
+                                # Unknown event type - log for debugging
+                                logger.debug("Unknown event type: %s", event_type)
+                            
+                            # Handle JSON events
+                            if evt.get('type') == 'assistant':
+                                parts = evt['message']['content']
+                                if parts and parts[0]['type'] == 'text':
+                                    chunk_text = parts[0]['text'].strip()
+                                    response_buffer.append(chunk_text)
+                                    # Stream assistant messages with context
+                                    task.add_progress_message(f"🤖 {agent_name}: {chunk_text[:200]}{'...' if len(chunk_text) > 200 else ''}", min(progress_percent + 1, 95))
+                                    progress_percent = min(progress_percent + 1, 95)
+                                    logger.info("Assistant message: %s", chunk_text[:100])
+                            elif evt.get('type') == 'result':
+                                session_id = evt.get('session_id')
+                                logger.info("Session completed: %s", session_id)
+                            elif evt.get('type') == 'tool_use':
+                                tool_name = evt.get('name', 'unknown')
+                                task.add_progress_message(f"🔧 Executing: {tool_name}", min(progress_percent + 1, 95))
+                                logger.info("Tool use: %s", tool_name)
+                            elif evt.get('type') == 'tool_result':
+                                tool_name = evt.get('tool_name', 'unknown')
+                                is_error = evt.get('is_error', False)
+                                if is_error:
+                                    task.add_progress_message(f"❌ Tool {tool_name} failed", min(progress_percent + 1, 95))
+                                else:
+                                    task.add_progress_message(f"✅ Tool {tool_name} completed", min(progress_percent + 1, 95))
+                                logger.info("Tool result: %s (error: %s)", tool_name, is_error)
                         except json.JSONDecodeError:
-                            logger.debug("Non-JSON stdout line from Claude: %s", raw_line)
-                            continue
-
-                        if evt.get('type') == 'assistant':
-                            parts = evt['message']['content']
-                            if parts and parts[0]['type'] == 'text':
-                                chunk_text = parts[0]['text'].strip()
-                                response_buffer.append(chunk_text)
-                                task.add_progress_message(chunk_text)
-                        elif evt.get('type') == 'result':
-                            session_id = evt.get('session_id')
+                            # This shouldn't happen with stream-json, but handle it gracefully
+                            logger.warning("Non-JSON output from stream-json mode: %s", raw_line)
+                            if raw_line:
+                                # Try to extract useful information anyway
+                                enhanced_line = self._enhance_command_output(raw_line, agent_name)
+                                if enhanced_line:
+                                    task.add_progress_message(enhanced_line, min(progress_percent + 1, 95))
+                                else:
+                                    task.add_progress_message(f"📝 {raw_line[:150]}{'...' if len(raw_line) > 150 else ''}", min(progress_percent + 1, 95))
+                                progress_percent = min(progress_percent + 1, 95)
 
                     # Timeout check
                     if time.time() - start_time > timeout_seconds:
                         raise subprocess.TimeoutExpired(cmd, timeout_seconds)
 
-                # After loop, capture any remaining stderr
-                stderr_data = process.stderr.read()
+                # Wait for stderr thread to finish
+                stderr_thread.join(timeout=5)
+                
+                # Capture final stderr and return code
+                stderr_data = '\n'.join(stderr_lines) if stderr_lines else ''
                 returncode = process.returncode
+                
+                logger.info("Claude Code execution finished. Return code: %s, Lines processed: %d", returncode, lines_read)
+                
+                if lines_read == 0:
+                    logger.error("No output received from Claude Code CLI!")
+                    task.add_progress_message("❌ No output received from Claude Code - check configuration", 85)
+                    
+                    # Try to diagnose the issue
+                    if returncode != 0:
+                        task.add_progress_message(f"🔍 Claude Code exited with code {returncode}", 85)
+                        if stderr_data:
+                            task.add_progress_message(f"📋 Error output: {stderr_data[:300]}", 85)
+                else:
+                    task.add_progress_message(f"📊 Processed {lines_read} lines of output", 87)
 
             except subprocess.TimeoutExpired:
                 logger.error("Claude Code execution timed out after %d seconds", timeout_seconds)
@@ -814,7 +1051,8 @@ The {claude_agent} sub agent should handle this task according to its specialize
                 return {
                     'success': False,
                     'error': f'Claude Code execution timed out after {timeout_seconds} seconds',
-                    'agent_used': agent_name
+                    'agent_used': agent_name,
+                    'lines_processed': lines_read
                 }
             except Exception as e:
                 logger.error("Error during Claude Code execution: %s", e)
@@ -822,22 +1060,43 @@ The {claude_agent} sub agent should handle this task according to its specialize
                 return {
                     'success': False,
                     'error': f'Claude Code execution error: {str(e)}',
-                    'agent_used': agent_name
+                    'agent_used': agent_name,
+                    'lines_processed': 0
                 }
 
             if returncode != 0:
-                logger.error("Claude Code exited with %s – %s", returncode, stderr_data)
+                error_msg = f"Claude Code exited with code {returncode}"
+                if stderr_data:
+                    error_msg += f": {stderr_data}"
+                elif lines_read == 0:
+                    error_msg += ": No output received - possible authentication or configuration issue"
+                
+                logger.error("Claude Code failed: %s", error_msg)
+                task.add_progress_message(f"❌ {error_msg}", 0)
+                
                 return {
                     'success': False,
-                    'error': stderr_data or f'Claude CLI exited {returncode}',
-                    'agent_used': agent_name
+                    'error': error_msg,
+                    'agent_used': agent_name,
+                    'lines_processed': lines_read
                 }
 
             # After success – analyse repo for changes
-            task.add_progress_message("Analyzing changes made by agent…", 75)
+            task.add_progress_message("📊 Analyzing repository changes...", 85)
 
+            # Get detailed git status
             git_status = subprocess.run(['git', 'status', '--porcelain'], cwd=workspace_path, capture_output=True, text=True)
             files_changed = [line.strip() for line in git_status.stdout.strip().split('\n') if line.strip()] if git_status.returncode == 0 else []
+            
+            if files_changed:
+                task.add_progress_message(f"📁 Files modified: {len(files_changed)} files", 87)
+                for i, file_change in enumerate(files_changed[:5]):  # Show first 5 files
+                    status_code = file_change[:2].strip()
+                    filename = file_change[3:] if len(file_change) > 3 else file_change
+                    status_emoji = "📝" if "M" in status_code else "➕" if "A" in status_code else "❌" if "D" in status_code else "📄"
+                    task.add_progress_message(f"  {status_emoji} {filename}", 87)
+                if len(files_changed) > 5:
+                    task.add_progress_message(f"  ... and {len(files_changed) - 5} more files", 87)
 
             # Use base_branch..HEAD to get only new commits on this branch
             # First, get the base branch from git config or use 'main' as fallback
@@ -847,8 +1106,18 @@ The {claude_agent} sub agent should handle this task according to its specialize
             else:
                 base_branch = 'main'  # fallback
             
+            # Get commits with more detail
             git_log = subprocess.run(['git', 'log', f'{base_branch}..HEAD', '--oneline', '-n', '20'], cwd=workspace_path, capture_output=True, text=True)
             commits = [line.strip() for line in git_log.stdout.strip().split('\n') if line.strip()] if git_log.returncode == 0 else []
+            
+            if commits:
+                task.add_progress_message(f"💾 Commits created: {len(commits)}", 89)
+                for i, commit in enumerate(commits[:3]):  # Show first 3 commits
+                    task.add_progress_message(f"  📝 {commit}", 89)
+                if len(commits) > 3:
+                    task.add_progress_message(f"  ... and {len(commits) - 3} more commits", 89)
+            else:
+                task.add_progress_message("⚠️ No commits found on feature branch", 89)
 
             full_text = '\n'.join(response_buffer)
 
@@ -878,6 +1147,118 @@ The {claude_agent} sub agent should handle this task according to its specialize
                 'agent_used': agent_name
             }
     
+    def _enhance_command_output(self, raw_line: str, agent_name: str) -> Optional[str]:
+        """
+        Enhance raw command output for better user experience in live logs
+        
+        Args:
+            raw_line: Raw output line from Claude Code CLI
+            agent_name: Name of the agent being executed
+        
+        Returns:
+            Enhanced output line or None if should be filtered out
+        """
+        if not raw_line.strip():
+            return None
+        
+        line = raw_line.strip()
+        
+        # Git operations
+        if "git checkout" in line.lower():
+            return f"🌿 Creating new branch: {line.split()[-1] if line.split() else 'unknown'}"
+        elif "git add" in line.lower():
+            return f"📝 Staging changes for commit"
+        elif "git commit" in line.lower():
+            return f"💾 Creating commit: {line.split('-m')[-1].strip('"') if '-m' in line else 'changes'}"
+        elif "git push" in line.lower():
+            return f"📤 Pushing changes to remote repository"
+        elif "git clone" in line.lower():
+            return f"📦 Cloning repository"
+        elif "git branch" in line.lower():
+            return f"🌿 Branch operation: {line}"
+        
+        # File operations
+        elif line.startswith("Creating") or line.startswith("Writing"):
+            return f"📄 {line}"
+        elif line.startswith("Reading") or line.startswith("Loading"):
+            return f"📖 {line}"
+        elif "mkdir" in line.lower():
+            return f"📁 Creating directory: {line.split()[-1] if line.split() else 'unknown'}"
+        
+        # Test operations
+        elif "test" in line.lower() and ("run" in line.lower() or "pass" in line.lower() or "fail" in line.lower()):
+            return f"🧪 {line}"
+        elif "npm test" in line.lower() or "pytest" in line.lower() or "jest" in line.lower():
+            return f"🧪 Running tests: {line}"
+        
+        # Build operations
+        elif "npm run" in line.lower() or "yarn" in line.lower() or "build" in line.lower():
+            return f"🏗️ Build: {line}"
+        
+        # Installation operations
+        elif "npm install" in line.lower() or "pip install" in line.lower() or "yarn add" in line.lower():
+            return f"📦 Installing dependencies: {line}"
+        
+        # API/Network operations
+        elif "curl" in line.lower() or "http" in line.lower() or "api" in line.lower():
+            return f"🌐 API call: {line}"
+        
+        # Claude specific operations
+        elif "claude" in line.lower() and not line.startswith("claude"):  # Avoid showing the command itself
+            return f"🤖 Claude: {line}"
+        
+        # Error messages
+        elif "error" in line.lower() or "failed" in line.lower() or "exception" in line.lower():
+            return f"❌ Error: {line}"
+        
+        # Success messages
+        elif "success" in line.lower() or "completed" in line.lower() or "done" in line.lower():
+            return f"✅ {line}"
+        
+        # Important status updates
+        elif line.startswith("[INFO]") or line.startswith("INFO:"):
+            return f"ℹ️ {line.replace('[INFO]', '').replace('INFO:', '').strip()}"
+        elif line.startswith("[WARN]") or line.startswith("WARN:") or line.startswith("WARNING:"):
+            return f"⚠️ {line.replace('[WARN]', '').replace('WARN:', '').replace('WARNING:', '').strip()}"
+        
+        # File paths and important operations
+        elif "/" in line and (".py" in line or ".js" in line or ".ts" in line or ".jsx" in line or ".tsx" in line or ".md" in line):
+            return f"📄 Working with: {line}"
+        
+        # Show lines that seem to indicate progress or important operations
+        elif len(line) > 10 and any(keyword in line.lower() for keyword in [
+            "processing", "analyzing", "implementing", "generating", "updating", "modifying",
+            "creating", "building", "testing", "deploying", "installing", "configuring"
+        ]):
+            return f"⚙️ {line}"
+        
+        # Filter out very verbose/debug lines but keep meaningful ones
+        elif len(line) < 200 and not any(noise in line.lower() for noise in [
+            "debug:", "trace:", "verbose:", "[debug]", "[trace]", "\x1b", "\033"
+        ]):
+            return f"🔧 {line}"
+        
+        return None
+    
+    def _is_important_output(self, line: str) -> bool:
+        """
+        Determine if output line is important enough to always show (bypass throttling)
+        """
+        if not line:
+            return False
+        
+        line_lower = line.lower()
+        
+        # Always show these important operations
+        important_keywords = [
+            "git commit", "git push", "git checkout", "git clone", "git branch",
+            "creating branch", "pushing to", "pull request", "pr created",
+            "error", "failed", "exception", "success", "completed", "done",
+            "test", "build", "deploy", "install"
+        ]
+        
+        return any(keyword in line_lower for keyword in important_keywords)
+
     def cleanup_task_workspace(self, task_id: str) -> bool:
         """
         Clean up workspace for a completed task
