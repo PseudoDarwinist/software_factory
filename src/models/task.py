@@ -11,9 +11,8 @@ from .base import db
 class TaskStatus(Enum):
     """Status of tasks in the workflow.
 
-    NOTE: Values are lowercase to match the Postgres enum defined in the Alembic
-    migration (see 008_add_task_execution_fields). Using different values than
-    the underlying DB enum causes commit failures such as
+    NOTE: Values are lowercase to match the Postgres enum defined in the database.
+    Using different values than the underlying DB enum causes commit failures such as
     `invalid input value for enum taskstatus`. Keeping them aligned here
     prevents runtime 500 errors when the API attempts to transition task
     status during the start endpoint.
@@ -300,6 +299,11 @@ class Task(db.Model):
             progress_entry['percent'] = percent
             
         self.progress_messages.append(progress_entry)
+        
+        # Mark the JSON field as modified so SQLAlchemy detects the change
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(self, 'progress_messages')
+        
         self.updated_at = datetime.utcnow()
         db.session.commit()
         

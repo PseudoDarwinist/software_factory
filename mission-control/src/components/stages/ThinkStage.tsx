@@ -24,6 +24,7 @@ import { LiquidCard } from '@/components/core/LiquidCard'
 
 import { SpecWorkflowEditor } from './SpecWorkflowEditor'
 import { SourcesTrayCard } from './SourcesTrayCard'
+
 import type { FeedItem, SDLCStage } from '@/types'
 
 interface ThinkStageProps {
@@ -37,7 +38,7 @@ interface ThinkStageProps {
   error: string | null
 }
 
-type FilterType = 'all' | 'unread' | 'high' | 'medium' | 'low' | 'ideas' | 'alerts'
+type FilterType = 'refine' | 'all' | 'unread' | 'high' | 'medium' | 'low' | 'ideas' | 'alerts'
 type SortType = 'priority' | 'recent' | 'alphabetical'
 
 interface CategoryStats {
@@ -62,6 +63,7 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
 }) => {
   const [filter, setFilter] = useState<FilterType>('all')
   const [sortBy, setSortBy] = useState<SortType>('priority')
+
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
   const [showContextPanel, setShowContextPanel] = useState(false)
   const [contextData, setContextData] = useState<any>(null)
@@ -84,6 +86,10 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
 
     // Apply category filters
     switch (filter) {
+      case 'refine':
+        // Refine tab shows no feed items, only the sources tray
+        filtered = []
+        break
       case 'unread':
         filtered = filtered.filter(item => item.unread)
         break
@@ -240,6 +246,7 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
             {/* Category filters */}
             <div className="flex items-center space-x-2">
               {([
+                { type: 'refine', label: 'Refine', count: 0 },
                 { type: 'all', label: 'All', count: categoryStats.total },
                 { type: 'unread', label: 'Unread', count: categoryStats.unread },
                 { type: 'ideas', label: 'Ideas', count: categoryStats.ideas },
@@ -313,65 +320,91 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
 
           {!loading && !error && (
             <>
-              {/* Ideas Section */}
-              {ideas.length > 0 && (
-                <FeedSection
-                  title="Untriaged Ideas"
-                  subtitle="Ideas ready to be promoted to Define"
-                  items={ideas}
-                  selectedItem={selectedFeedItem}
-                  hoveredItem={hoveredItem}
-                  onItemSelect={handleItemSelect}
-                  onItemHover={setHoveredItem}
-                  onItemAction={handleItemAction}
-                  isDraggable={true}
-                />
-              )}
-
-              {/* Upload Sources Tray - Always visible in the center */}
-              <div className="my-8">
-                <SourcesTrayCard
-                  status="idle"
-                  files={[]}
-                  onFileAdd={(files) => console.log('Files added:', files)}
-                  onLinkAdd={(url) => console.log('Link added:', url)}
-                  onFileRemove={(index) => console.log('File removed:', index)}
-                  onAnalyze={() => console.log('Analyze clicked')}
-                  onFreezePRD={() => console.log('Freeze PRD clicked')}
-                />
-              </div>
-
-              {/* Alerts Section */}
-              {alerts.length > 0 && (
-                <FeedSection
-                  title="Needs Attention"
-                  subtitle="Issues and updates requiring decisions"
-                  items={alerts}
-                  selectedItem={selectedFeedItem}
-                  hoveredItem={hoveredItem}
-                  onItemSelect={handleItemSelect}
-                  onItemHover={setHoveredItem}
-                  onItemAction={handleItemAction}
-                  isDraggable={false}
-                />
-              )}
-
-              {/* Empty state - only show if no ideas, alerts, or upload activity */}
-              {processedItems.length === 0 && (
-                <div className="text-center py-12">
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
-                    <svg className="w-8 h-8 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+              {/* Refine Tab - Sources Tray Only */}
+              {filter === 'refine' && (
+                <div className="space-y-8">
+                  {/* Upload Sources Tray */}
+                  <div className="my-8">
+                    <SourcesTrayCard
+                      projectId={selectedProject || 'default-project'}
+                      onUploadComplete={(sessionId) => {
+                        console.log('Upload completed for session:', sessionId)
+                      }}
+                      onAnalyze={() => {
+                        console.log('PRD analysis started')
+                      }}
+                    />
                   </div>
-                  <h3 className="text-lg font-medium text-yellow-400 mb-2">All caught up!</h3>
-                  <p className="text-sm text-white/60">
-                    {selectedProject ? 'No items need attention for this project' : 'No items need attention right now'}
-                  </p>
-                  <p className="text-sm text-white/40 mt-2">
-                    Use the Sources tray above to upload materials for PRD generation
-                  </p>
+
+                  {/* Empty state for Refine tab */}
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
+                      <svg className="w-8 h-8 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-medium text-yellow-400 mb-2">Ready to Refine</h3>
+                    <p className="text-sm text-white/60">
+                      Upload sources to generate PRD drafts
+                    </p>
+                    <p className="text-sm text-white/40 mt-2">
+                      Drop PDFs, decks, Zoom links, webpages, Figma, screenshots above
+                    </p>
+                  </div>
                 </div>
+              )}
+
+              {/* Other Tabs - Ideas and Alerts Feed */}
+              {filter !== 'refine' && (
+                <>
+                  {/* Ideas Section */}
+                  {ideas.length > 0 && (
+                    <FeedSection
+                      title="Untriaged Ideas"
+                      subtitle="Ideas ready to be promoted to Define"
+                      items={ideas}
+                      selectedItem={selectedFeedItem}
+                      hoveredItem={hoveredItem}
+                      onItemSelect={handleItemSelect}
+                      onItemHover={setHoveredItem}
+                      onItemAction={handleItemAction}
+                      isDraggable={true}
+                    />
+                  )}
+
+                  {/* Alerts Section */}
+                  {alerts.length > 0 && (
+                    <FeedSection
+                      title="Needs Attention"
+                      subtitle="Issues and updates requiring decisions"
+                      items={alerts}
+                      selectedItem={selectedFeedItem}
+                      hoveredItem={hoveredItem}
+                      onItemSelect={handleItemSelect}
+                      onItemHover={setHoveredItem}
+                      onItemAction={handleItemAction}
+                      isDraggable={false}
+                    />
+                  )}
+
+                  {/* Empty state - only show if no ideas, alerts */}
+                  {processedItems.length === 0 && (
+                    <div className="text-center py-12">
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
+                        <svg className="w-8 h-8 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-medium text-yellow-400 mb-2">All caught up!</h3>
+                      <p className="text-sm text-white/60">
+                        {selectedProject ? 'No items need attention for this project' : 'No items need attention right now'}
+                      </p>
+                      <p className="text-sm text-white/40 mt-2">
+                        Switch to the Refine tab to upload materials for PRD generation
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -428,6 +461,7 @@ interface FilterButtonProps {
 const FilterButton: React.FC<FilterButtonProps> = ({ type, label, count, isActive, onClick }) => {
   const getFilterColor = () => {
     switch (type) {
+      case 'refine': return 'text-green-400 border-green-500/50'
       case 'high': return 'text-red-400 border-red-500/50'
       case 'medium': return 'text-amber-400 border-amber-500/50'
       case 'low': return 'text-gray-400 border-gray-500/50'
@@ -450,7 +484,7 @@ const FilterButton: React.FC<FilterButtonProps> = ({ type, label, count, isActiv
       )}
     >
       <span>{label}</span>
-      {count > 0 && (
+      {count > 0 && type !== 'refine' && (
         <div className="bg-white/30 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
           {count > 99 ? '99+' : count}
         </div>

@@ -238,7 +238,7 @@ class MissionControlApi {
   async getStageData(projectId: string): Promise<Record<SDLCStage, string[]>> {
     try {
       const response = await this.client.get<ApiResponse<Record<SDLCStage, string[]>>>(`/project/${projectId}/stages`)
-      return response.data.data || { think: [], define: [], plan: [], build: [], validate: [] }
+      return response.data.data || { think: [], define: [], plan: [], build: [], validate: [], operator: [] }
     } catch (error) {
       console.error('Failed to fetch stage data:', error)
       throw new Error('Failed to fetch stage data')
@@ -719,6 +719,17 @@ class MissionControlApi {
     }
   }
 
+  async approveTask(taskId: string, approvedBy?: string): Promise<void> {
+    try {
+      await this.client.post(`/tasks/${taskId}/approve`, { 
+        approvedBy: approvedBy || 'user' 
+      })
+    } catch (error) {
+      console.error('Failed to approve task:', error)
+      throw new Error('Failed to approve task')
+    }
+  }
+
   async cancelTask(taskId: string): Promise<void> {
     try {
       await this.client.post(`/tasks/${taskId}/cancel`)
@@ -853,6 +864,201 @@ class MissionControlApi {
     } catch (error) {
       console.error('Failed to convert PR to ready:', error)
       throw new Error('Failed to convert PR to ready')
+    }
+  }
+
+  // Upload session endpoints
+  async createUploadSession(projectId: string, description?: string): Promise<{
+    session_id: string
+    project_id: string
+    description: string
+    status: string
+    created_at: string
+    progress: number
+    completeness_score: any
+  }> {
+    try {
+      const response = await this.client.post<ApiResponse<{
+        session_id: string
+        project_id: string
+        description: string
+        status: string
+        created_at: string
+        progress: number
+        completeness_score: any
+      }>>('/upload/session', {
+        project_id: projectId,
+        description: description || ''
+      })
+      // Some backend endpoints respond directly without a wrapper, others wrap in { data, success }
+      const payload: any = (response.data as any)
+      return payload.data ?? payload
+    } catch (error) {
+      console.error('Failed to create upload session:', error)
+      throw new Error('Failed to create upload session')
+    }
+  }
+
+  async uploadFiles(sessionId: string, files: File[]): Promise<{
+    session_id: string
+    uploaded_files: any[]
+    total_uploaded: number
+    errors?: string[]
+  }> {
+    try {
+      const formData = new FormData()
+      files.forEach(file => {
+        formData.append('files', file)
+      })
+
+      const response = await this.client.post<ApiResponse<{
+        session_id: string
+        uploaded_files: any[]
+        total_uploaded: number
+        errors?: string[]
+      }>>(`/upload/files/${sessionId}`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to upload files:', error)
+      throw new Error('Failed to upload files')
+    }
+  }
+
+  async uploadLinks(sessionId: string, urls: string[]): Promise<{
+    session_id: string
+    uploaded_links: any[]
+    total_uploaded: number
+    errors?: string[]
+  }> {
+    try {
+      const response = await this.client.post<ApiResponse<{
+        session_id: string
+        uploaded_links: any[]
+        total_uploaded: number
+        errors?: string[]
+      }>>(`/upload/links/${sessionId}`, {
+        urls
+      })
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to upload links:', error)
+      throw new Error('Failed to upload links')
+    }
+  }
+
+  async getUploadStatus(sessionId: string): Promise<{
+    session_id: string
+    overall_status: string
+    progress_percentage: number
+    total_files: number
+    completed_files: number
+    error_files: number
+    processing_files: number
+    pending_files: number
+    files: any[]
+    last_updated: string
+  }> {
+    try {
+      const response = await this.client.get<ApiResponse<{
+        session_id: string
+        overall_status: string
+        progress_percentage: number
+        total_files: number
+        completed_files: number
+        error_files: number
+        processing_files: number
+        pending_files: number
+        files: any[]
+        last_updated: string
+      }>>(`/upload/status/${sessionId}`)
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to get upload status:', error)
+      throw new Error('Failed to get upload status')
+    }
+  }
+
+  async analyzeSessionFiles(sessionId: string, preferredModel?: string): Promise<{
+    session_id: string
+    status: string
+    model_used?: string
+    processing_time?: number
+    tokens_used?: number
+    analysis_preview?: string
+    completeness_score?: any
+    session_status?: string
+    error?: string
+  }> {
+    try {
+      const response = await this.client.post<ApiResponse<{
+        session_id: string
+        status: string
+        model_used?: string
+        processing_time?: number
+        tokens_used?: number
+        analysis_preview?: string
+        completeness_score?: any
+        session_status?: string
+        error?: string
+      }>>(`/upload/session/${sessionId}/analyze`, {
+        preferred_model: preferredModel || 'claude-opus-4'
+      })
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to analyze session files:', error)
+      throw new Error('Failed to analyze session files')
+    }
+  }
+
+  async getSessionContext(sessionId: string): Promise<{
+    session_id: string
+    project_id: string
+    description: string
+    status: string
+    ai_model_used?: string
+    ai_analysis?: string
+    prd_preview?: string
+    combined_content?: string
+    completeness_score?: any
+    created_at: string
+    updated_at: string
+    processing_stats: {
+      total_files: number
+      completed_files: number
+      error_files: number
+      success_rate: number
+    }
+    files: any[]
+  }> {
+    try {
+      const response = await this.client.get<ApiResponse<{
+        session_id: string
+        project_id: string
+        description: string
+        status: string
+        ai_model_used?: string
+        ai_analysis?: string
+        prd_preview?: string
+        combined_content?: string
+        completeness_score?: any
+        created_at: string
+        updated_at: string
+        processing_stats: {
+          total_files: number
+          completed_files: number
+          error_files: number
+          success_rate: number
+        }
+        files: any[]
+      }>>(`/upload/session/context/${sessionId}`)
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to get session context:', error)
+      throw new Error('Failed to get session context')
     }
   }
 }

@@ -5,6 +5,10 @@ Single-process application consolidating all functionality
 """
 
 import os
+# Load environment variables from a .env file so every process (including isolated MCP servers)
+# picks up the same DATABASE_URL and related settings.
+from dotenv import load_dotenv
+load_dotenv()
 import logging
 import signal
 import sys
@@ -13,6 +17,7 @@ import time
 from flask import Flask, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_cors import CORS
 import atexit
 import redis
 
@@ -107,6 +112,9 @@ def create_app(config_class=Config):
     """Flask application factory pattern"""
     app = Flask(__name__, static_folder='../frontend', static_url_path='')
     app.config.from_object(config_class)
+    
+    # Enable CORS for frontend communication
+    CORS(app, origins=['http://localhost:3000', 'http://localhost:5173', 'http://localhost:4173'])
 
     setup_logging(app)
 
@@ -118,6 +126,17 @@ def create_app(config_class=Config):
             db.engine.pool._pre_ping = app.config['SQLALCHEMY_ENGINE_OPTIONS']['pool_pre_ping']
 
     database.init_database_system(app, db, migrate)
+
+    # Automatically apply any pending database migrations to keep the schema in sync with the models
+    with app.app_context():
+        try:
+            migration_result = database.run_database_migration()
+            if migration_result.get('success'):
+                app.logger.info("Database migrations applied successfully")
+            else:
+                app.logger.warning(f"Database migration issue: {migration_result.get('message')}")
+        except Exception as migration_error:
+            app.logger.warning(f"Automatic database migration failed: {migration_error}")
 
     cache_redis_url = f"redis://localhost:6379/{app.config['REDIS_CACHE_DB']}"
     distributed_cache.init_distributed_cache(redis_url=cache_redis_url, default_ttl=app.config['CACHE_DEFAULT_TTL'])

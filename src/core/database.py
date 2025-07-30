@@ -386,20 +386,27 @@ def migrate_json_data_to_database(json_file_path):
 
 
 def run_database_migration():
-    """Run database schema migrations"""
+    """Apply any pending Alembic migrations to bring the database schema to HEAD."""
     try:
-        # Generate migration if there are model changes
-        migrate_migrate(message='Auto-generated migration')
-        
-        # Apply migrations
+        # First, upgrade the database to the latest revision (HEAD). This will apply
+        # any migrations that have been generated previously but not yet executed.
         migrate_upgrade()
-        
+
+        # If you want to autogenerate a new migration when models change, you can
+        # optionally run migrate_migrate afterwards. Skip errors that indicate no
+        # changes so the application can continue to start.
+        try:
+            migrate_migrate(message='Auto-generated migration', autogenerate=True)
+        except Exception as gen_err:
+            # Common benign case: "No changes in schema detected." or if HEAD is dirty.
+            logger.debug(f"Migration autogeneration skipped: {gen_err}")
+
         logger.info("Database migration completed successfully")
         return {
             'success': True,
             'message': 'Database migration completed successfully'
         }
-        
+
     except Exception as e:
         logger.error(f"Database migration failed: {e}")
         return {

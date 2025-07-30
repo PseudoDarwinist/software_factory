@@ -13,13 +13,14 @@
  * - Requirement 4.1-4.2: Progress Tracking and PRD Preview
  */
 
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import { LiquidCard } from '@/components/core/LiquidCard'
 import { FileChip } from './FileChip'
 import { ProgressLine } from './ProgressLine'
 import { PRDPreview } from './PRDPreview'
+import { missionControlApi } from '@/services/api/missionControlApi'
 
 interface UploadedFile {
   id: string
@@ -51,8 +52,35 @@ export const UploadSourcesTray: React.FC<UploadSourcesTrayProps> = ({
   const [processingStage, setProcessingStage] = useState<ProcessingStage>('idle')
   const [prdContent, setPrdContent] = useState<string>('')
   const [showPRDPreview, setShowPRDPreview] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
+  const statusPollingRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Create upload session when component mounts
+  useEffect(() => {
+    const createSession = async () => {
+      try {
+        const session = await missionControlApi.createUploadSession(projectId, 'Upload sources for PRD generation')
+        setSessionId(session.session_id)
+        console.log('Created upload session:', session.session_id)
+      } catch (error) {
+        console.error('Failed to create upload session:', error)
+        setError('Failed to initialize upload session')
+      }
+    }
+
+    createSession()
+
+    // Cleanup polling on unmount
+    return () => {
+      if (statusPollingRef.current) {
+        clearInterval(statusPollingRef.current)
+      }
+    }
+  }, [projectId])
 
   // Handle file drop
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -64,29 +92,83 @@ export const UploadSourcesTray: React.FC<UploadSourcesTrayProps> = ({
   }, [])
 
   // Handle file selection
-  const handleFiles = useCallback((fileList: File[]) => {
-    const newFiles: UploadedFile[] = fileList.map((file, index) => {
-      const fileType = getFileType(file.name, file.type)
-      if (!fileType) return null
-      
-      return {
-        id: `file-${Date.now()}-${index}`,
-        name: file.name,
-        type: fileType,
-        size: file.size,
-        status: 'uploading',
-        progress: 0,
-        sourceId: `S${files.length + index + 1}`,
-      }
-    }).filter(Boolean) as UploadedFile[]
+  const handleFiles = useCallback(async (fileList: File[]) => {
+    if (!sessionId) {
+      setError('Upload session not ready')
+      return
+    }
 
-    setFiles(prev => [...prev, ...newFiles])
-    
-    // Simulate file upload progress
-    newFiles.forEach(file => {
-      simulateFileUpload(file.id)
-    })
-  }, [files.length])
+    setIsUploading(true)
+    setError(null)
+
+    try {
+      // Filter supported files
+      const supportedFiles = fileList.filter(file => {
+        const fileType = getFileType(file.name, file.type)
+        return fileType !== null
+      })
+
+      if (supportedFiles.length === 0) {
+        setError('No supported files found. Please upload PDF, JPG, PNG, or GIF files.')
+        setIsUploading(false)
+        return
+      }
+
+      // Add files to UI immediately with uploading status
+      const newFiles: UploadedFile[] = supportedFiles.map((file, index) => {
+        const fileType = getFileType(file.name, file.type)!
+        return {
+          id: `file-${Date.now()}-${index}`,
+          name: file.name,
+          type: fileType,
+          size: file.size,
+          status: 'uploading',
+          progress: 0,
+          sourceId: `S${files.length + index + 1}`,
+        }
+      })
+
+      setFiles(prev => [...prev, ...newFiles])
+
+      // Upload files to backend
+      const uploadResult = await missionControlApi.uploadFiles(sessionId, supportedFiles)
+      
+      console.log('Upload result:', uploadResult)
+
+      // Update file status based on upload result
+      setFiles(prev => prev.map(file => {
+        const uploadedFile = uploadResult.uploaded_files.find(uf => uf.filename === file.name)
+        if (uploadedFile) {
+          return {
+            ...file,
+            id: uploadedFile.id,
+            status: 'processing',
+            progress: 100,
+            sourceId: uploadedFile.source_id
+          }
+        }
+        return file
+      }))
+
+      // Start polling for file processing status
+      startStatusPolling()
+
+      if (uploadResult.errors && uploadResult.errors.length > 0) {
+        setError(`Some files failed to upload: ${uploadResult.errors.join(', ')}`)
+      }
+
+    } catch (error) {
+      console.error('File upload failed:', error)
+      setError('Failed to upload files. Please try again.')
+      
+      // Mark files as error
+      setFiles(prev => prev.map(file => 
+        file.status === 'uploading' ? { ...file, status: 'error' } : file
+      ))
+    } finally {
+      setIsUploading(false)
+    }
+  }, [sessionId, files.length])
 
   // Get file type from name and mime type
   const getFileType = (name: string, mimeType: string): UploadedFile['type'] | null => {
@@ -100,30 +182,42 @@ export const UploadSourcesTray: React.FC<UploadSourcesTrayProps> = ({
     return null
   }
 
-  // Simulate file upload progress
-  const simulateFileUpload = (fileId: string) => {
-    let progress = 0
-    const interval = setInterval(() => {
-      progress += Math.random() * 20
-      
-      if (progress >= 100) {
-        progress = 100
-        clearInterval(interval)
+  // Start polling for file processing status
+  const startStatusPolling = useCallback(() => {
+    if (!sessionId || statusPollingRef.current) return
+
+    statusPollingRef.current = setInterval(async () => {
+      try {
+        const status = await missionControlApi.getUploadStatus(sessionId)
         
-        setFiles(prev => prev.map(file => 
-          file.id === fileId 
-            ? { ...file, status: 'complete', progress: 100 }
-            : file
-        ))
-      } else {
-        setFiles(prev => prev.map(file => 
-          file.id === fileId 
-            ? { ...file, progress }
-            : file
-        ))
+        // Update file statuses
+        setFiles(prev => prev.map(file => {
+          const statusFile = status.files.find(sf => sf.id === file.id)
+          if (statusFile) {
+            return {
+              ...file,
+              status: statusFile.processing_status as UploadedFile['status'],
+              progress: statusFile.processing_status === 'complete' ? 100 : 
+                       statusFile.processing_status === 'processing' ? 75 : 
+                       statusFile.processing_status === 'error' ? 0 : file.progress
+            }
+          }
+          return file
+        }))
+
+        // Stop polling if all files are processed
+        if (status.overall_status === 'complete' || status.overall_status === 'error') {
+          if (statusPollingRef.current) {
+            clearInterval(statusPollingRef.current)
+            statusPollingRef.current = null
+          }
+        }
+
+      } catch (error) {
+        console.error('Status polling failed:', error)
       }
-    }, 200)
-  }
+    }, 2000) // Poll every 2 seconds
+  }, [sessionId])
 
   // Handle drag events
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -151,21 +245,66 @@ export const UploadSourcesTray: React.FC<UploadSourcesTrayProps> = ({
   }
 
   // Handle link paste
-  const handleLinkPaste = (url: string) => {
-    const newFile: UploadedFile = {
-      id: `url-${Date.now()}`,
-      name: new URL(url).hostname,
-      type: 'url',
-      url,
-      status: 'uploading',
-      progress: 0,
-      sourceId: `S${files.length + 1}`,
+  const handleLinkPaste = useCallback(async (url: string) => {
+    if (!sessionId) {
+      setError('Upload session not ready')
+      return
     }
-    
-    setFiles(prev => [...prev, newFile])
+
+    setIsUploading(true)
+    setError(null)
     setShowLinkModal(false)
-    simulateFileUpload(newFile.id)
-  }
+
+    try {
+      // Add URL to UI immediately
+      const newFile: UploadedFile = {
+        id: `url-${Date.now()}`,
+        name: new URL(url).hostname,
+        type: 'url',
+        url,
+        status: 'uploading',
+        progress: 0,
+        sourceId: `S${files.length + 1}`,
+      }
+      
+      setFiles(prev => [...prev, newFile])
+
+      // Upload URL to backend
+      const uploadResult = await missionControlApi.uploadLinks(sessionId, [url])
+      
+      console.log('Link upload result:', uploadResult)
+
+      // Update file status
+      setFiles(prev => prev.map(file => {
+        if (file.id === newFile.id) {
+          const uploadedLink = uploadResult.uploaded_links[0]
+          return {
+            ...file,
+            id: uploadedLink.id,
+            status: 'complete', // URLs are processed immediately
+            progress: 100,
+            sourceId: uploadedLink.source_id
+          }
+        }
+        return file
+      }))
+
+      if (uploadResult.errors && uploadResult.errors.length > 0) {
+        setError(`Link upload failed: ${uploadResult.errors.join(', ')}`)
+      }
+
+    } catch (error) {
+      console.error('Link upload failed:', error)
+      setError('Failed to upload link. Please try again.')
+      
+      // Mark link as error
+      setFiles(prev => prev.map(file => 
+        file.status === 'uploading' ? { ...file, status: 'error' } : file
+      ))
+    } finally {
+      setIsUploading(false)
+    }
+  }, [sessionId, files.length])
 
   // Remove file
   const handleRemoveFile = (fileId: string) => {
@@ -173,41 +312,69 @@ export const UploadSourcesTray: React.FC<UploadSourcesTrayProps> = ({
   }
 
   // Start PRD generation
-  const handleMakePRDDraft = () => {
-    if (files.length === 0) return
+  const handleMakePRDDraft = useCallback(async () => {
+    if (!sessionId || files.length === 0) return
     
     setProcessingStage('reading')
-    
-    // Simulate processing stages
-    const stages: ProcessingStage[] = ['reading', 'extracting', 'drafting', 'ready']
-    let currentStageIndex = 0
-    
-    const interval = setInterval(() => {
-      currentStageIndex++
-      if (currentStageIndex < stages.length) {
-        setProcessingStage(stages[currentStageIndex])
+    setError(null)
+
+    try {
+      // Start AI analysis
+      const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId, 'claude-opus-4')
+      
+      console.log('Analysis result:', analysisResult)
+
+      if (analysisResult.status === 'success') {
+        // Simulate processing stages for better UX
+        const stages: ProcessingStage[] = ['reading', 'extracting', 'drafting', 'ready']
+        let currentStageIndex = 0
+        
+        const interval = setInterval(() => {
+          currentStageIndex++
+          if (currentStageIndex < stages.length) {
+            setProcessingStage(stages[currentStageIndex])
+          } else {
+            clearInterval(interval)
+            
+            // Get the full session context with AI analysis
+            getSessionContext()
+          }
+        }, 1500) // Faster progression since real processing is happening
+
       } else {
-        clearInterval(interval)
-        // Generate mock PRD content
-        setPrdContent(generateMockPRD())
-        setShowPRDPreview(true)
+        setError(analysisResult.error || 'AI analysis failed')
+        setProcessingStage('idle')
       }
-    }, 2000)
-  }
 
-  // Generate mock PRD content
-  const generateMockPRD = (): string => {
-    return `# PRD draft (live doc)
+    } catch (error) {
+      console.error('PRD generation failed:', error)
+      setError('Failed to generate PRD. Please try again.')
+      setProcessingStage('idle')
+    }
+  }, [sessionId, files.length])
 
-## Problem
-Nimiritmce qartessad toue tsct re-linqui scre [S1]
+  // Get session context with AI analysis
+  const getSessionContext = useCallback(async () => {
+    if (!sessionId) return
 
-## Goals
-Rislis Tvice hrstern protscru [S5] [S1]
+    try {
+      const context = await missionControlApi.getSessionContext(sessionId)
+      
+      if (context.ai_analysis) {
+        setPrdContent(context.ai_analysis)
+        setShowPRDPreview(true)
+        console.log('PRD generated successfully')
+      } else {
+        setError('No AI analysis available')
+        setProcessingStage('idle')
+      }
 
-## Risks
-Competitive scan [S3]`
-  }
+    } catch (error) {
+      console.error('Failed to get session context:', error)
+      setError('Failed to retrieve generated PRD')
+      setProcessingStage('idle')
+    }
+  }, [sessionId])
 
   // Check if ready to process
   const canProcess = files.length > 0 && files.every(file => file.status === 'complete')
@@ -217,12 +384,41 @@ Competitive scan [S3]`
       {/* Sources Tray Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-white">Sources tray</h2>
-        <button className="text-green-400 hover:text-green-300 transition-colors">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-        </button>
+        <div className="flex items-center space-x-2">
+          {sessionId && (
+            <span className="text-xs text-green-400">Session: {sessionId.slice(0, 8)}...</span>
+          )}
+          <button className="text-green-400 hover:text-green-300 transition-colors">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {/* Error Display */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-900/50 border border-red-500 rounded-lg p-3"
+        >
+          <div className="flex items-center space-x-2">
+            <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-red-300 text-sm">{error}</span>
+            <button 
+              onClick={() => setError(null)}
+              className="ml-auto text-red-400 hover:text-red-300"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       {/* Upload Zone */}
       <LiquidCard
@@ -255,16 +451,18 @@ Competitive scan [S3]`
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handleUploadClick}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              disabled={isUploading || !sessionId}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
             >
-              Upload
+              {isUploading ? 'Uploading...' : 'Upload'}
             </motion.button>
             
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => setShowLinkModal(true)}
-              className="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              disabled={isUploading || !sessionId}
+              className="px-6 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
             >
               Paste link
             </motion.button>
@@ -327,7 +525,8 @@ Competitive scan [S3]`
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={handleMakePRDDraft}
-            className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
+            disabled={!sessionId}
+            className="px-8 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
           >
             Make PRD draft
           </motion.button>
@@ -346,7 +545,9 @@ Competitive scan [S3]`
             files={files}
             onFreezePRD={() => {
               // Handle freeze PRD action
-              onUploadComplete?.('mock-session-id')
+              if (sessionId) {
+                onUploadComplete?.(sessionId)
+              }
             }}
           />
         </motion.div>

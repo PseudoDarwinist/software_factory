@@ -17,7 +17,7 @@ class UploadSession(db.Model):
     # Session status constants for 4-stage progress tracking
     STATUS_ACTIVE = 'active'
     STATUS_READING = 'reading'
-    STATUS_ANALYZING = 'analyzing'
+    STATUS_EXTRACTING = 'extracting'  # Changed from 'analyzing' to match frontend
     STATUS_DRAFTING = 'drafting'
     STATUS_READY = 'ready'
     STATUS_COMPLETE = 'complete'
@@ -148,7 +148,7 @@ class UploadSession(db.Model):
         stage_progress = {
             self.STATUS_ACTIVE: 0.0,
             self.STATUS_READING: 0.25,
-            self.STATUS_ANALYZING: 0.50,
+            self.STATUS_EXTRACTING: 0.50,  # Changed from ANALYZING
             self.STATUS_DRAFTING: 0.75,
             self.STATUS_READY: 1.0,
             self.STATUS_COMPLETE: 1.0,

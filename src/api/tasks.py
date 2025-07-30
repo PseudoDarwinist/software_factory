@@ -305,6 +305,49 @@ def start_task(task_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@tasks_bp.route('/<task_id>/approve', methods=['POST'])
+def approve_task(task_id):
+    """
+    Approve a task in review status
+    POST /api/tasks/:id/approve
+    Body: { approvedBy: string }
+    """
+    try:
+        data = request.get_json()
+        approved_by = data.get('approvedBy', 'api_user') if data else 'api_user'
+        
+        # Look up task
+        task = Task.query.get(task_id)
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+        
+        # Check if task can be approved
+        if task.status != TaskStatus.REVIEW:
+            return jsonify({'error': f'Task cannot be approved. Current status: {task.status.value}'}), 400
+        
+        # Mark task as completed
+        task.complete_task(completed_by=approved_by, pr_url=task.pr_url)
+        
+        # Add completion message
+        task.add_progress_message("✅ Task approved and marked as complete!", 100)
+        
+        logger.info(f"Task {task_id} approved by {approved_by}")
+        
+        return jsonify({
+            'message': 'Task approved successfully',
+            'status': 'done',
+            'approvedBy': approved_by
+        }), 200
+        
+    except SQLAlchemyError as e:
+        logger.error(f"Database error approving task {task_id}: {e}")
+        db.session.rollback()
+        return jsonify({'error': 'Database error'}), 500
+    except Exception as e:
+        logger.error(f"Error approving task {task_id}: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 @tasks_bp.route('/<task_id>/retry', methods=['POST'])
 def retry_task(task_id):
     """
@@ -471,7 +514,7 @@ def get_task_detail(task_id):
         # Add debug info
         task_dict = task.to_dict()
         task_dict['debug_info'] = {
-            'status_raw': task.status,
+            'status_raw': str(task.status),
             'status_value': task.status.value if task.status else None,
             'can_start': task.can_start(),
             'depends_on': task.depends_on if hasattr(task, 'depends_on') else None

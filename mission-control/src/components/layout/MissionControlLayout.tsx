@@ -228,6 +228,18 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
                   </div>
                 </div>
               )}
+              
+              {activeStage === 'operator' && (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center text-white/60">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
+                      <span className="text-white/40 text-2xl">🤖</span>
+                    </div>
+                    <h3 className="text-lg font-medium mb-2">Operator Stage</h3>
+                    <p className="text-sm">Coming soon - Simulated user behavior and feedback</p>
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

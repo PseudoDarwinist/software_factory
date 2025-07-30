@@ -13,7 +13,7 @@
  * - Requirement 19: Build stage monitoring with agent chain visualization
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import { io, Socket } from 'socket.io-client'
@@ -37,6 +37,9 @@ export const BuildStage: React.FC<BuildStageProps> = ({
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [socket, setSocket] = useState<Socket | null>(null)
   const [prDiff, setPrDiff] = useState<string | null>(null)
+  
+  // Ref for auto-scrolling live log
+  const logContainerRef = useRef<HTMLDivElement>(null)
 
   // Fetch tasks from API
   const fetchTasks = useCallback(async () => {
@@ -120,6 +123,14 @@ export const BuildStage: React.FC<BuildStageProps> = ({
     }
   }, [socket, selectedTask])
 
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (logContainerRef.current && selectedTask?.progressMessages) {
+      const container = logContainerRef.current
+      container.scrollTop = container.scrollHeight
+    }
+  }, [selectedTask?.progressMessages])
+
   // Group tasks by status
   const tasksByStatus = useMemo(() => {
     const grouped = {
@@ -165,8 +176,8 @@ export const BuildStage: React.FC<BuildStageProps> = ({
   // Handle task approval
   const handleApproveTask = useCallback(async (taskId: string) => {
     try {
-      // In real implementation, this would call the PR approval API
       console.log('Approving task:', taskId)
+      await missionControlApi.approveTask(taskId, 'user')
       await fetchTasks() // Refresh tasks
     } catch (err) {
       console.error('Error approving task:', err)
@@ -325,20 +336,23 @@ export const BuildStage: React.FC<BuildStageProps> = ({
                 </div>
 
                 {/* Live Log */}
-                <div className="flex-1 p-6">
+                <div className="flex-1 p-6 flex flex-col min-h-0">
                   <div className="mb-4">
                     <h3 className="text-lg font-medium text-yellow-400 mb-2">Live log</h3>
                   </div>
                   
-                  <div className="bg-black/50 rounded-lg p-4 h-full overflow-y-auto font-mono text-sm">
+                  <div 
+                    ref={logContainerRef}
+                    className="bg-black/50 rounded-lg p-4 flex-1 overflow-y-auto font-mono text-sm min-h-0"
+                  >
                     {selectedTask.progressMessages && selectedTask.progressMessages.length > 0 ? (
-                      <div className="space-y-2">
+                      <div className="space-y-1">
                         {selectedTask.progressMessages.map((msg, index) => (
-                          <div key={index} className="text-green-400">
-                            <span className="text-white/40 mr-2">
+                          <div key={index} className="text-green-400 flex-shrink-0">
+                            <span className="text-white/40 mr-2 text-xs">
                               {new Date(msg.timestamp).toLocaleTimeString()}
                             </span>
-                            {msg.message}
+                            <span className="break-words">{msg.message}</span>
                           </div>
                         ))}
                       </div>

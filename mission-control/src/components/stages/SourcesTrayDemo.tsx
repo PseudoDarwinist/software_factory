@@ -14,10 +14,11 @@ interface FileItem {
 }
 
 export const SourcesTrayDemo: React.FC = () => {
-  const [status, setStatus] = useState<'idle' | 'uploading' | 'analyzing' | 'drafting' | 'ready'>('drafting')
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'analyzing' | 'drafting' | 'ready'>('ready')
   const [files, setFiles] = useState<FileItem[]>([
-    { name: 'Support.pdf', type: 'pdf', progress: 1 },
-    { name: 'demo.mp4', type: 'video', progress: 1 }
+    { name: 'user_research.pdf', type: 'pdf', progress: 1 },
+    { name: 'market_analysis.pdf', type: 'pdf', progress: 1 },
+    { name: 'competitor_research.pdf', type: 'pdf', progress: 1 }
   ])
 
   const handleFileAdd = (newFiles: File[]) => {
@@ -116,10 +117,12 @@ export const SourcesTrayDemo: React.FC = () => {
         />
         
         <div className="mt-8 text-gray-400 text-sm">
-          <p>• Try dragging files onto the drop zone</p>
-          <p>• Click the + buttons to add files or links</p>
-          <p>• Use the status buttons above to see different states</p>
-          <p>• The component matches the exact specification with glass effects, gradients, and neon glows</p>
+          <p><strong>✨ NEW: 6-Section PRD Summary</strong></p>
+          <p>• Set status to "ready" to see the structured PRD summary with source attribution</p>
+          <p>• Hover over [S1], [S2], [S3] tags to see source tooltips</p>
+          <p>• Try different statuses to see the improved 6-section placeholder</p>
+          <p>• The component shows: Problem, Audience, Goals, Risks, Competitive scan, Open questions</p>
+          <p>• Try dragging files onto the drop zone or clicking + buttons</p>
         </div>
       </div>
     </div>

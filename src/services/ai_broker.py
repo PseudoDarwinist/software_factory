@@ -5,6 +5,7 @@ Manages multiple AI model connections with smart selection, queuing, and context
 
 import asyncio
 import logging
+import os
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
@@ -1001,6 +1002,609 @@ class AIBroker:
             priority=priority,
             **kwargs
         )
+    
+    def analyze_uploaded_files(self, session_id: str, files: List[Dict[str, Any]], 
+                              preferred_model: str = None) -> Dict[str, Any]:
+        """
+        Analyze uploaded files using AI models for PRD generation
+        
+        Args:
+            session_id: Upload session ID
+            files: List of file dictionaries with file_path, file_type, filename
+            preferred_model: Preferred AI model (claude-opus-4, gemini-2.5-flash, gpt-4o)
+            
+        Returns:
+            Dictionary with analysis results and metadata
+        """
+        try:
+            import base64
+            import os
+            from pathlib import Path
+            
+            logger.info(f"Starting file analysis for session {session_id} with {len(files)} files")
+            
+            # Prepare files for AI processing
+            processed_files = []
+            for file_info in files:
+                try:
+                    file_data = self._prepare_file_for_ai(file_info)
+                    if file_data:
+                        processed_files.append(file_data)
+                except Exception as e:
+                    logger.error(f"Failed to prepare file {file_info.get('filename', 'unknown')}: {e}")
+                    continue
+            
+            if not processed_files:
+                return {
+                    'success': False,
+                    'error': 'No files could be processed for AI analysis',
+                    'model_used': None,
+                    'analysis': None
+                }
+            
+            # Select AI model with fallback chain
+            model_chain = self._get_model_fallback_chain(preferred_model)
+            
+            # Try each model in the fallback chain
+            for model_id in model_chain:
+                try:
+                    logger.info(f"Attempting analysis with model: {model_id}")
+                    result = self._execute_file_analysis(model_id, processed_files, session_id)
+                    
+                    if result['success']:
+                        logger.info(f"Successfully analyzed files with {model_id}")
+                        return result
+                    else:
+                        logger.warning(f"Model {model_id} failed: {result.get('error')}")
+                        continue
+                        
+                except Exception as e:
+                    logger.error(f"Error with model {model_id}: {e}")
+                    continue
+            
+            # All models failed
+            return {
+                'success': False,
+                'error': 'All AI models failed to process the files',
+                'model_used': None,
+                'analysis': None
+            }
+            
+        except Exception as e:
+            logger.error(f"File analysis failed for session {session_id}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'model_used': None,
+                'analysis': None
+            }
+    
+    def _prepare_file_for_ai(self, file_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Prepare a single file for AI processing
+        
+        Args:
+            file_info: File information dictionary
+            
+        Returns:
+            Prepared file data or None if preparation failed
+        """
+        try:
+            import base64
+            import os
+            from pathlib import Path
+            
+            file_path = file_info['file_path']
+            file_type = file_info['file_type'].lower()
+            filename = file_info['filename']
+            
+            # Check if file exists
+            if not os.path.exists(file_path):
+                logger.error(f"File not found: {file_path}")
+                return None
+            
+            # Handle different file types
+            if file_type == 'pdf':
+                return self._prepare_pdf_file(file_path, filename)
+            elif file_type in ['jpg', 'jpeg', 'png', 'gif']:
+                return self._prepare_image_file(file_path, filename, file_type)
+            elif file_type == 'url':
+                return self._prepare_url_content(file_path, filename)
+            else:
+                logger.warning(f"Unsupported file type: {file_type}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to prepare file {file_info.get('filename', 'unknown')}: {e}")
+            return None
+    
+    def _prepare_pdf_file(self, file_path: str, filename: str) -> Dict[str, Any]:
+        """Prepare PDF file for AI processing using base64 encoding"""
+        try:
+            import base64
+            
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+            
+            # Encode to base64 for API transmission
+            base64_content = base64.b64encode(file_content).decode('utf-8')
+            
+            return {
+                'filename': filename,
+                'file_type': 'pdf',
+                'content': base64_content,
+                'media_type': 'application/pdf',
+                'size': len(file_content)
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to prepare PDF {filename}: {e}")
+            return None
+    
+    def _prepare_image_file(self, file_path: str, filename: str, file_type: str) -> Dict[str, Any]:
+        """Prepare image file for AI processing using base64 encoding"""
+        try:
+            import base64
+            
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+            
+            # Encode to base64 for API transmission
+            base64_content = base64.b64encode(file_content).decode('utf-8')
+            
+            # Map file type to media type
+            media_type_map = {
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'png': 'image/png',
+                'gif': 'image/gif'
+            }
+            
+            return {
+                'filename': filename,
+                'file_type': file_type,
+                'content': base64_content,
+                'media_type': media_type_map.get(file_type, 'image/jpeg'),
+                'size': len(file_content)
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to prepare image {filename}: {e}")
+            return None
+    
+    def _prepare_url_content(self, file_path: str, filename: str) -> Dict[str, Any]:
+        """Prepare URL content for AI processing"""
+        try:
+            # For URLs, the file_path contains the URL content as text
+            with open(file_path, 'r', encoding='utf-8') as f:
+                url_content = f.read()
+            
+            return {
+                'filename': filename,
+                'file_type': 'url',
+                'content': url_content,
+                'media_type': 'text/plain',
+                'size': len(url_content.encode('utf-8'))
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to prepare URL content {filename}: {e}")
+            return None
+    
+    def _get_model_fallback_chain(self, preferred_model: str = None) -> List[str]:
+        """
+        Get model fallback chain for file analysis
+        
+        Args:
+            preferred_model: Preferred model to try first
+            
+        Returns:
+            List of model IDs in fallback order
+        """
+        # Default fallback chain optimized for document analysis
+        default_chain = ['claude-opus-4', 'gemini-2.5-flash', 'gpt-4o', 'claude-sonnet-3.5']
+        
+        if preferred_model and preferred_model in self.model_selector.model_configs:
+            # Put preferred model first, then add others
+            chain = [preferred_model]
+            chain.extend([m for m in default_chain if m != preferred_model])
+            return chain
+        
+        return default_chain
+    
+    def _execute_file_analysis(self, model_id: str, files: List[Dict[str, Any]], 
+                              session_id: str) -> Dict[str, Any]:
+        """
+        Execute file analysis with a specific AI model
+        
+        Args:
+            model_id: AI model to use
+            files: Prepared file data
+            session_id: Upload session ID
+            
+        Returns:
+            Analysis result dictionary
+        """
+        try:
+            model_config = self.model_selector.model_configs.get(model_id)
+            if not model_config:
+                return {
+                    'success': False,
+                    'error': f'Model {model_id} not found',
+                    'model_used': model_id
+                }
+            
+            # Create PRD generation prompt
+            prompt = self._create_prd_generation_prompt(files)
+            
+            # Execute based on provider
+            if model_config.provider == 'model_garden':
+                result = self._execute_model_garden_analysis(model_id, prompt, files)
+            else:
+                return {
+                    'success': False,
+                    'error': f'Provider {model_config.provider} not supported for file analysis',
+                    'model_used': model_id
+                }
+            
+            if result['success']:
+                return {
+                    'success': True,
+                    'analysis': result['content'],
+                    'model_used': model_id,
+                    'provider': model_config.provider,
+                    'processing_time': result.get('processing_time', 0),
+                    'tokens_used': result.get('tokens_used', 0)
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': result.get('error', 'Unknown error'),
+                    'model_used': model_id
+                }
+                
+        except Exception as e:
+            logger.error(f"File analysis execution failed with {model_id}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'model_used': model_id
+            }
+    
+    def _create_prd_generation_prompt(self, files: List[Dict[str, Any]]) -> str:
+        """
+        Create optimized prompt for PRD generation from uploaded files
+        
+        Args:
+            files: List of prepared file data
+            
+        Returns:
+            PRD generation prompt
+        """
+        file_descriptions = []
+        for i, file_data in enumerate(files, 1):
+            file_descriptions.append(f"File {i} ({file_data['filename']}): {file_data['file_type'].upper()}")
+        
+        files_summary = "\n".join(file_descriptions)
+        
+        prompt = f"""You are a senior product manager analyzing uploaded files to create a comprehensive Product Requirements Document (PRD).
+
+UPLOADED FILES TO ANALYZE:
+{files_summary}
+
+TASK: Analyze all uploaded files and generate a structured PRD with the following sections:
+
+1. **Executive Summary**
+   - Brief overview of the product/feature
+   - Key value proposition
+   - Target audience
+
+2. **Problem Statement**
+   - What problem does this solve?
+   - Current pain points
+   - Market opportunity
+
+3. **Solution Overview**
+   - High-level solution description
+   - Key features and capabilities
+   - Unique differentiators
+
+4. **User Stories & Requirements**
+   - Primary user personas
+   - Core user journeys
+   - Functional requirements
+   - Non-functional requirements
+
+5. **Technical Considerations**
+   - Architecture overview
+   - Integration requirements
+   - Performance requirements
+   - Security considerations
+
+6. **Success Metrics**
+   - Key performance indicators
+   - Success criteria
+   - Measurement approach
+
+7. **Implementation Roadmap**
+   - Development phases
+   - Timeline estimates
+   - Dependencies and risks
+
+IMPORTANT GUIDELINES:
+- Extract and synthesize information from ALL uploaded files
+- Use specific details and data from the files when available
+- Include source attribution using [S1], [S2], [S3] tags for file references
+- Focus on actionable, specific requirements rather than generic statements
+- Ensure the PRD is comprehensive yet concise
+- Highlight any gaps or areas needing clarification
+
+Generate a professional, well-structured PRD that a development team can use to build the product."""
+
+        return prompt
+    
+    def _execute_model_garden_analysis(self, model_id: str, prompt: str, 
+                                     files: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Execute file analysis using Model Garden API
+        
+        Args:
+            model_id: Model to use
+            prompt: Analysis prompt
+            files: Prepared file data
+            
+        Returns:
+            Analysis result
+        """
+        try:
+            import requests
+            import time
+            
+            start_time = time.time()
+            
+            # Prepare API request based on model type
+            if model_id == 'claude-opus-4':
+                return self._execute_claude_analysis(prompt, files)
+            elif model_id == 'gemini-2.5-flash':
+                return self._execute_gemini_analysis(prompt, files)
+            elif model_id == 'gpt-4o':
+                return self._execute_gpt4o_analysis(prompt, files)
+            else:
+                # Fallback to text-only analysis
+                return self._execute_text_only_analysis(model_id, prompt, files)
+                
+        except Exception as e:
+            logger.error(f"Model Garden analysis failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'content': None
+            }
+    
+    def _execute_claude_analysis(self, prompt: str, files: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Execute analysis using Claude Opus 4 with Files API support"""
+        try:
+            import requests
+            import time
+            
+            start_time = time.time()
+            
+            # Use Model Garden API URL for Claude
+            api_url = os.environ.get('MODEL_GARDEN_API_URL', 
+                                   'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions')
+            api_key = os.environ.get('MODEL_GARDEN_API_KEY', 
+                                   'b3540f69-5289-483e-91fe-942c4bfa458c')
+            
+            headers = {
+                "Content-Type": "application/json",
+                "X-API-KEY": api_key
+            }
+            
+            # Prepare messages with file content
+            messages = [{"role": "user", "content": prompt}]
+            
+            # Add file content to the message
+            for file_data in files:
+                if file_data['file_type'] in ['pdf', 'jpg', 'jpeg', 'png', 'gif']:
+                    # For binary files, include base64 content
+                    file_content = f"\n\nFile: {file_data['filename']} ({file_data['file_type'].upper()})\n"
+                    file_content += f"[Base64 encoded {file_data['file_type'].upper()} content - {file_data['size']} bytes]"
+                    messages[0]["content"] += file_content
+                else:
+                    # For text content, include directly
+                    file_content = f"\n\nFile: {file_data['filename']}\nContent:\n{file_data['content']}"
+                    messages[0]["content"] += file_content
+            
+            payload = {
+                "model": "claude-opus-4",
+                "messages": messages,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "max_tokens": 4000
+            }
+            
+            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+            response.raise_for_status()
+            
+            result = response.json()
+            content = result['choices'][0]['message']['content']
+            
+            processing_time = time.time() - start_time
+            tokens_used = result.get('usage', {}).get('total_tokens', 0)
+            
+            return {
+                'success': True,
+                'content': content,
+                'processing_time': processing_time,
+                'tokens_used': tokens_used
+            }
+            
+        except Exception as e:
+            logger.error(f"Claude analysis failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'content': None
+            }
+    
+    def _execute_gemini_analysis(self, prompt: str, files: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Execute analysis using Gemini 2.5 Flash"""
+        try:
+            import requests
+            import time
+            
+            start_time = time.time()
+            
+            # Use Model Garden API for Gemini
+            api_url = os.environ.get('MODEL_GARDEN_API_URL', 
+                                   'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions')
+            api_key = os.environ.get('MODEL_GARDEN_API_KEY', 
+                                   'b3540f69-5289-483e-91fe-942c4bfa458c')
+            
+            headers = {
+                "Content-Type": "application/json",
+                "X-API-KEY": api_key
+            }
+            
+            # Prepare content with files
+            content = prompt
+            for file_data in files:
+                if file_data['file_type'] == 'url':
+                    content += f"\n\nFile: {file_data['filename']}\nContent:\n{file_data['content']}"
+                else:
+                    content += f"\n\nFile: {file_data['filename']} ({file_data['file_type'].upper()}) - {file_data['size']} bytes"
+            
+            payload = {
+                "model": "gemini-2.5-flash",
+                "messages": [{"role": "user", "content": content}],
+                "temperature": 0.7,
+                "max_tokens": 4000
+            }
+            
+            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+            response.raise_for_status()
+            
+            result = response.json()
+            content = result['choices'][0]['message']['content']
+            
+            processing_time = time.time() - start_time
+            tokens_used = result.get('usage', {}).get('total_tokens', 0)
+            
+            return {
+                'success': True,
+                'content': content,
+                'processing_time': processing_time,
+                'tokens_used': tokens_used
+            }
+            
+        except Exception as e:
+            logger.error(f"Gemini analysis failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'content': None
+            }
+    
+    def _execute_gpt4o_analysis(self, prompt: str, files: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Execute analysis using GPT-4o"""
+        try:
+            import requests
+            import time
+            
+            start_time = time.time()
+            
+            # Use Model Garden API for GPT-4o
+            api_url = os.environ.get('MODEL_GARDEN_API_URL', 
+                                   'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions')
+            api_key = os.environ.get('MODEL_GARDEN_API_KEY', 
+                                   'b3540f69-5289-483e-91fe-942c4bfa458c')
+            
+            headers = {
+                "Content-Type": "application/json",
+                "X-API-KEY": api_key
+            }
+            
+            # Prepare content with files
+            content = prompt
+            for file_data in files:
+                if file_data['file_type'] == 'url':
+                    content += f"\n\nFile: {file_data['filename']}\nContent:\n{file_data['content']}"
+                else:
+                    content += f"\n\nFile: {file_data['filename']} ({file_data['file_type'].upper()}) - {file_data['size']} bytes"
+            
+            payload = {
+                "model": "gpt-4o",
+                "messages": [{"role": "user", "content": content}],
+                "temperature": 0.7,
+                "max_tokens": 4000
+            }
+            
+            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+            response.raise_for_status()
+            
+            result = response.json()
+            content = result['choices'][0]['message']['content']
+            
+            processing_time = time.time() - start_time
+            tokens_used = result.get('usage', {}).get('total_tokens', 0)
+            
+            return {
+                'success': True,
+                'content': content,
+                'processing_time': processing_time,
+                'tokens_used': tokens_used
+            }
+            
+        except Exception as e:
+            logger.error(f"GPT-4o analysis failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'content': None
+            }
+    
+    def _execute_text_only_analysis(self, model_id: str, prompt: str, 
+                                   files: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Fallback text-only analysis for models that don't support files"""
+        try:
+            # Extract text content from files
+            text_content = prompt + "\n\nFILE CONTENTS:\n"
+            
+            for file_data in files:
+                if file_data['file_type'] == 'url':
+                    text_content += f"\n\nFile: {file_data['filename']}\n{file_data['content']}\n"
+                else:
+                    text_content += f"\n\nFile: {file_data['filename']} ({file_data['file_type'].upper()}) - Binary file, {file_data['size']} bytes\n"
+            
+            # Use existing model garden integration
+            model_garden = ModelGardenIntegration()
+            result = model_garden.execute_task(
+                instruction=text_content,
+                model=model_id,
+                role='po'
+            )
+            
+            if result['success']:
+                return {
+                    'success': True,
+                    'content': result['output'],
+                    'processing_time': 0,
+                    'tokens_used': 0
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': result.get('error', 'Unknown error'),
+                    'content': None
+                }
+                
+        except Exception as e:
+            logger.error(f"Text-only analysis failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'content': None
+            }
 
 
 # Global broker instance

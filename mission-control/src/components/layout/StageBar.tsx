@@ -68,6 +68,12 @@ const stages: { id: SDLCStage; label: string; icon: string; description: string 
     icon: '✅',
     description: 'Test and validate implementation',
   },
+  {
+    id: 'operator',
+    label: 'Operator',
+    icon: '🤖',
+    description: 'Simulated user behavior and feedback',
+  },
 ]
 
 export const StageBar: React.FC<StageBarProps> = ({
@@ -247,6 +253,14 @@ const StageTab: React.FC<StageTabProps> = ({
         !isAccessible && 'opacity-50 cursor-not-allowed',
         className
       )}
+      style={{
+        boxShadow: isActive
+          ? tokens.glow.green
+          : isHovered
+          ? tokens.glow.accent
+          : 'none',
+        transition: `box-shadow ${tokens.transitions.normal}`,
+      }}
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       onMouseEnter={() => onHover(stage.id)}

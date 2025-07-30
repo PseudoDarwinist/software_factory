@@ -140,7 +140,7 @@ export interface ConversationPayload {
 // SDLC Stage Types
 // ========================================
 
-export type SDLCStage = 'think' | 'define' | 'plan' | 'build' | 'validate'
+export type SDLCStage = 'think' | 'define' | 'plan' | 'build' | 'validate' | 'operator'
 
 export interface StageTransition {
   from: SDLCStage

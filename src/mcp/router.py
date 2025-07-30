@@ -18,7 +18,7 @@ try:
     from ..models.specification_artifact import SpecificationArtifact, ArtifactType, ArtifactStatus
     from ..models.base import db
     from ..events.domain_events import SpecDraftedEvent
-    from ..events.event_router import get_event_bus
+    from ..services.event_bus import get_event_bus
     from ..services.ai_broker import AIBroker, AIRequest, TaskType, Priority
 except ImportError:
     # For local testing or when imports need to be adjusted
@@ -29,7 +29,7 @@ except ImportError:
     from models.specification_artifact import SpecificationArtifact, ArtifactType, ArtifactStatus
     from models.base import db
     from events.domain_events import SpecDraftedEvent
-    from events.event_router import get_event_bus
+    from services.event_bus import get_event_bus
     from services.ai_broker import AIBroker, AIRequest, TaskType, Priority
 
 logger = logging.getLogger(__name__)

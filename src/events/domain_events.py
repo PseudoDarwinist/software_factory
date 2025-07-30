@@ -588,6 +588,38 @@ class IdeaPromotedEvent(DomainEvent):
         return payload
 
 
+class SpecDraftedEvent(DomainEvent):
+    """Event fired when a specification is drafted via MCP."""
+    
+    def __init__(
+        self,
+        spec_id: str,
+        project_id: str,
+        drafted_by: str,
+        artifact_ids: List[str] = None,
+        **kwargs
+    ):
+        super().__init__(spec_id, "spec", **kwargs)
+        self.project_id = project_id
+        self.drafted_by = drafted_by
+        self.artifact_ids = artifact_ids or []
+    
+    def get_event_type(self) -> str:
+        return "spec.drafted"
+    
+    def get_version(self) -> str:
+        return EventVersion.V1.value
+    
+    def get_payload(self) -> Dict[str, Any]:
+        payload = super().get_payload()
+        payload.update({
+            'project_id': self.project_id,
+            'drafted_by': self.drafted_by,
+            'artifact_ids': self.artifact_ids
+        })
+        return payload
+
+
 class SpecFrozenEvent(DomainEvent):
     """Event fired when a specification is frozen/finalized."""
     

@@ -26,14 +26,19 @@ upload_bp = Blueprint('upload', __name__, url_prefix='/api/upload')
 # Constants for progress tracking
 PROGRESS_STAGES = {
     'reading': 0.25,
-    'analyzing': 0.50,
+    'extracting': 0.50,  # Changed from 'analyzing' to match frontend
     'drafting': 0.75,
     'ready': 1.0
 }
 
 # File upload configuration
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png', 'gif'}
+ALLOWED_EXTENSIONS = {
+    'pdf', 'jpg', 'jpeg', 'png', 'gif',  # Original formats
+    'md', 'txt', 'doc', 'docx',          # Document formats
+    'csv', 'xlsx', 'xls',                # Spreadsheet formats
+    'json', 'xml', 'yaml', 'yml'         # Data formats
+}
 UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', 'uploads')
 
 
@@ -139,7 +144,7 @@ def update_session_status(session_id):
             return jsonify({'error': 'status is required'}), 400
         
         new_status = data['status']
-        valid_statuses = ['active', 'reading', 'analyzing', 'drafting', 'ready', 'complete', 'error']
+        valid_statuses = ['active', 'reading', 'extracting', 'drafting', 'ready', 'complete', 'error']
         
         if new_status not in valid_statuses:
             return jsonify({'error': f'Invalid status. Must be one of: {valid_statuses}'}), 400
@@ -384,12 +389,14 @@ def upload_files(session_id):
         if errors:
             response_data['errors'] = errors
         
-        return jsonify(response_data), 201
+        return jsonify({'data': response_data}), 201
         
     except Exception as e:
+        import traceback
         current_app.logger.error(f"Error uploading files: {str(e)}")
+        current_app.logger.error(f"Traceback: {traceback.format_exc()}")
         db.session.rollback()
-        return jsonify({'error': 'Failed to upload files'}), 500
+        return jsonify({'error': f'Failed to upload files: {str(e)}'}), 500
 
 
 @upload_bp.route('/links/<session_id>', methods=['POST'])
@@ -479,6 +486,499 @@ def upload_links(session_id):
         current_app.logger.error(f"Error uploading links: {str(e)}")
         db.session.rollback()
         return jsonify({'error': 'Failed to upload links'}), 500
+
+
+@upload_bp.route('/status/<session_id>', methods=['GET'])
+def get_processing_status(session_id):
+    """Get processing status for all files in a session"""
+    try:
+        session = UploadSession.query.get(session_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Get all files in the session
+        files = UploadedFile.get_by_session(session_id)
+        
+        # Calculate simple progress
+        total_files = len(files)
+        if total_files == 0:
+            progress = 0.0
+            status = 'no_files'
+        else:
+            completed_files = sum(1 for f in files if f.processing_status == 'complete')
+            error_files = sum(1 for f in files if f.processing_status == 'error')
+            processing_files = sum(1 for f in files if f.processing_status == 'processing')
+            pending_files = sum(1 for f in files if f.processing_status == 'pending')
+            
+            progress = (completed_files / total_files) * 100.0
+            
+            # Determine overall status
+            if error_files > 0 and completed_files == 0:
+                status = 'error'
+            elif error_files > 0:
+                status = 'partial_error'
+            elif processing_files > 0:
+                status = 'processing'
+            elif pending_files > 0:
+                status = 'pending'
+            elif completed_files == total_files:
+                status = 'complete'
+            else:
+                status = 'unknown'
+        
+        # Get file details with retry logic for errors
+        file_details = []
+        for file in files:
+            file_info = {
+                'id': str(file.id),
+                'filename': file.filename,
+                'file_type': file.file_type,
+                'source_id': file.source_id,
+                'processing_status': file.processing_status,
+                'file_size': file.file_size,
+                'can_retry': file.processing_status == 'error'
+            }
+            
+            # Add validation errors if any
+            if file.processing_status == 'error':
+                validation_errors = file.validate_for_ai_processing()
+                if validation_errors:
+                    file_info['validation_errors'] = validation_errors
+            
+            file_details.append(file_info)
+        
+        response_data = {
+            'session_id': session_id,
+            'overall_status': status,
+            'progress_percentage': round(progress, 1),
+            'total_files': total_files,
+            'completed_files': sum(1 for f in files if f.processing_status == 'complete'),
+            'error_files': sum(1 for f in files if f.processing_status == 'error'),
+            'processing_files': sum(1 for f in files if f.processing_status == 'processing'),
+            'pending_files': sum(1 for f in files if f.processing_status == 'pending'),
+            'files': file_details,
+            'last_updated': session.updated_at.isoformat()
+        }
+        
+        return jsonify({'data': response_data})
+        
+    except Exception as e:
+        current_app.logger.error(f"Error getting processing status: {str(e)}")
+        return jsonify({'error': 'Failed to get processing status'}), 500
+
+
+@upload_bp.route('/retry/<file_id>', methods=['POST'])
+def retry_file_processing(file_id):
+    """Retry processing for a failed file"""
+    try:
+        file_record = UploadedFile.query.get(file_id)
+        if not file_record:
+            return jsonify({'error': 'File not found'}), 404
+        
+        if file_record.processing_status != 'error':
+            return jsonify({'error': 'File is not in error state'}), 400
+        
+        # Reset file to pending status for retry
+        file_record.update_processing_status('pending')
+        
+        current_app.logger.info(f"Retrying processing for file {file_id}")
+        
+        return jsonify({
+            'file_id': str(file_record.id),
+            'filename': file_record.filename,
+            'processing_status': file_record.processing_status,
+            'message': 'File queued for retry'
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"Error retrying file processing: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': 'Failed to retry file processing'}), 500
+
+
+@upload_bp.route('/session/context/<session_id>', methods=['GET'])
+def get_session_context(session_id):
+    """Get AI-generated analysis and file metadata for a session"""
+    try:
+        # Basic access control - verify session exists and belongs to a valid project
+        session = UploadSession.query.get(session_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Verify project exists (basic access control)
+        project = MissionControlProject.query.get(session.project_id)
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # Get all files in the session
+        files = UploadedFile.get_by_session(session_id)
+        
+        # Create file metadata with download URLs
+        file_metadata = []
+        for file in files:
+            file_info = {
+                'id': str(file.id),
+                'filename': file.filename,
+                'file_type': file.file_type,
+                'file_size': file.file_size,
+                'source_id': file.source_id,
+                'processing_status': file.processing_status,
+                'created_at': file.created_at.isoformat(),
+                'download_url': f"/api/upload/files/download/{file.id}",
+                'has_extracted_text': bool(file.extracted_text)
+            }
+            
+            # Add page count for PDFs
+            if file.page_count:
+                file_info['page_count'] = file.page_count
+            
+            # Add validation errors if any
+            validation_errors = file.validate_for_ai_processing()
+            if validation_errors:
+                file_info['validation_errors'] = validation_errors
+            
+            file_metadata.append(file_info)
+        
+        # Calculate processing statistics
+        total_files = len(files)
+        completed_files = sum(1 for f in files if f.processing_status == 'complete')
+        error_files = sum(1 for f in files if f.processing_status == 'error')
+        
+        # Get PRD information for this session
+        prd_info = None
+        try:
+            from ..models.prd import PRD
+        except ImportError:
+            from models.prd import PRD
+        
+        try:
+            latest_prd = PRD.get_latest_for_session(str(session.id))
+            if latest_prd:
+                prd_info = {
+                    'id': str(latest_prd.id),
+                    'version': latest_prd.version,
+                    'status': latest_prd.status,
+                    'created_at': latest_prd.created_at.isoformat(),
+                    'created_by': latest_prd.created_by,
+                    'has_markdown': bool(latest_prd.md_uri),
+                    'has_json_summary': bool(latest_prd.json_uri),
+                    'sources': latest_prd.sources or []
+                }
+        except Exception as prd_error:
+            current_app.logger.error(f"Error retrieving PRD for session {session_id}: {str(prd_error)}")
+        
+        # Prepare response data
+        context_data = {
+            'session_id': str(session.id),
+            'project_id': session.project_id,
+            'description': session.description,
+            'status': session.status,
+            'ai_model_used': session.ai_model_used,
+            'ai_analysis': session.ai_analysis,
+            'prd_preview': session.prd_preview,
+            'combined_content': session.combined_content,
+            'completeness_score': session.completeness_score or calculate_completeness_score(session),
+            'created_at': session.created_at.isoformat(),
+            'updated_at': session.updated_at.isoformat(),
+            'processing_stats': {
+                'total_files': total_files,
+                'completed_files': completed_files,
+                'error_files': error_files,
+                'success_rate': (completed_files / total_files * 100) if total_files > 0 else 0
+            },
+            'files': file_metadata,
+            'prd_info': prd_info
+        }
+        
+        current_app.logger.info(f"Retrieved session context for {session_id}")
+        
+        return jsonify({'data': context_data})
+        
+    except Exception as e:
+        current_app.logger.error(f"Error getting session context: {str(e)}")
+        return jsonify({'error': 'Failed to get session context'}), 500
+
+
+@upload_bp.route('/files/download/<file_id>', methods=['GET'])
+def download_file(file_id):
+    """Download a source file by ID"""
+    try:
+        # Get file record
+        file_record = UploadedFile.query.get(file_id)
+        if not file_record:
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Basic access control - verify session and project exist
+        session = UploadSession.query.get(file_record.session_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        project = MissionControlProject.query.get(session.project_id)
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # Check if file exists on disk
+        if not os.path.exists(file_record.file_path):
+            return jsonify({'error': 'File not found on disk'}), 404
+        
+        # For URL files, return the extracted content as text
+        if file_record.file_type == 'url':
+            return jsonify({
+                'file_id': str(file_record.id),
+                'filename': file_record.filename,
+                'file_type': 'url',
+                'content': file_record.extracted_text or 'No content available',
+                'source_id': file_record.source_id
+            })
+        
+        # For binary files, return file info and base64 content for API access
+        try:
+            with open(file_record.file_path, 'rb') as f:
+                file_content = f.read()
+            
+            import base64
+            base64_content = base64.b64encode(file_content).decode('utf-8')
+            
+            return jsonify({
+                'file_id': str(file_record.id),
+                'filename': file_record.filename,
+                'file_type': file_record.file_type,
+                'file_size': file_record.file_size,
+                'content': base64_content,
+                'encoding': 'base64',
+                'source_id': file_record.source_id
+            })
+            
+        except Exception as e:
+            current_app.logger.error(f"Error reading file {file_id}: {str(e)}")
+            return jsonify({'error': 'Failed to read file'}), 500
+        
+    except Exception as e:
+        current_app.logger.error(f"Error downloading file: {str(e)}")
+        return jsonify({'error': 'Failed to download file'}), 500
+
+
+@upload_bp.route('/test-logging', methods=['GET'])
+def test_logging():
+    """Test endpoint to verify logging is working"""
+    current_app.logger.info("🧪 TEST LOG MESSAGE - INFO level")
+    current_app.logger.warning("🧪 TEST LOG MESSAGE - WARNING level")
+    current_app.logger.error("🧪 TEST LOG MESSAGE - ERROR level")
+    return jsonify({'message': 'Logging test complete - check server logs'})
+
+
+@upload_bp.route('/session/<session_id>/analyze', methods=['POST'])
+def analyze_session_files(session_id):
+    """Trigger AI analysis of all files in a session"""
+    try:
+        print(f"🔍 DEBUG: Starting analysis for session {session_id}")
+        current_app.logger.info(f"🔍 Starting analysis for session {session_id}")
+        
+        # Verify session exists
+        print(f"🔍 DEBUG: Looking up session {session_id}")
+        session = UploadSession.query.get(session_id)
+        if not session:
+            print(f"❌ DEBUG: Session {session_id} not found")
+            current_app.logger.error(f"❌ Session {session_id} not found")
+            return jsonify({'error': 'Session not found'}), 404
+        
+        print(f"✅ DEBUG: Found session {session_id}, project_id: {session.project_id}")
+        
+        # Get all files in the session (pending or complete)
+        print(f"🔍 DEBUG: Getting files for session {session_id}")
+        files = [f for f in session.files if f.processing_status in ['pending', 'complete']]
+        print(f"✅ DEBUG: Found {len(files)} files to analyze")
+        
+        if not files:
+            print(f"❌ DEBUG: No files to analyze")
+            return jsonify({'error': 'No files to analyze'}), 400
+        
+        # Update session status to indicate analysis is starting
+        print(f"🔍 DEBUG: Updating session status to 'extracting'")
+        session.update_status('extracting')
+        
+        # Prepare file data for AI analysis
+        file_data = []
+        for file in files:
+            file_data.append({
+                'file_path': file.file_path,
+                'file_type': file.file_type,
+                'filename': file.filename,
+                'source_id': file.source_id
+            })
+        
+        # Get AI broker and analyze files
+        print(f"🔍 DEBUG: Importing AI broker")
+        try:
+            from ..services.ai_broker import get_ai_broker
+        except ImportError:
+            from services.ai_broker import get_ai_broker
+        
+        print(f"🔍 DEBUG: Getting AI broker instance")
+        ai_broker = get_ai_broker()
+        
+        # Get preferred model from request data
+        print(f"🔍 DEBUG: Getting request data")
+        data = request.get_json() or {}
+        preferred_model = data.get('preferred_model', 'claude-opus-4')
+        print(f"✅ DEBUG: Using model: {preferred_model}")
+        
+        # Analyze files
+        print(f"🔍 DEBUG: Starting AI analysis with {len(file_data)} files")
+        analysis_result = ai_broker.analyze_uploaded_files(
+            session_id=session_id,
+            files=file_data,
+            preferred_model=preferred_model
+        )
+        print(f"✅ DEBUG: AI analysis completed, success: {analysis_result.get('success', False)}")
+        
+        if analysis_result['success']:
+            print(f"✅ DEBUG: AI analysis successful for session {session_id}")
+            current_app.logger.info(f"✅ AI analysis successful for session {session_id}")
+            
+            # Update session with analysis results
+            print(f"🔍 DEBUG: Updating session with analysis results")
+            session.update_ai_analysis(analysis_result['analysis'])
+            session.update_ai_model_used(analysis_result['model_used'])
+            session.update_status('ready')
+            print(f"✅ DEBUG: Session updated successfully")
+            
+            # Generate structured PRD summary using the PRD model
+            print(f"🔍 DEBUG: Importing PRD models")
+            try:
+                from ..models.prd import extract_prd_summary, PRD
+            except ImportError:
+                from models.prd import extract_prd_summary, PRD
+            print(f"✅ DEBUG: PRD models imported successfully")
+            
+            # Extract source IDs from files for attribution
+            print(f"🔍 DEBUG: Extracting source IDs from {len(files)} files")
+            source_ids = [f.source_id for f in files if f.source_id]
+            print(f"✅ DEBUG: Found {len(source_ids)} source IDs: {source_ids}")
+            
+            # Generate structured summary
+            print(f"🔍 DEBUG: Generating PRD summary from analysis")
+            prd_summary = extract_prd_summary(analysis_result['analysis'], source_ids)
+            print(f"✅ DEBUG: PRD summary generated successfully")
+            
+            # Create PRD record in database
+            try:
+                print(f"🔄 Creating PRD record for session {session_id}, project {session.project_id}")
+                current_app.logger.info(f"Creating PRD record for session {session_id}, project {session.project_id}")
+                prd_record = PRD.create_draft(
+                    project_id=str(session.project_id),  # Ensure string conversion
+                    draft_id=str(session.id),
+                    md_content=analysis_result['analysis'],  # Store full markdown content
+                    json_summary=prd_summary,  # Store structured JSON summary
+                    sources=source_ids,  # Link to source files for traceability
+                    created_by=data.get('created_by', 'system')  # Track who created it
+                )
+                
+                print(f"✅ Created PRD record {prd_record.id} for session {session_id}")
+                current_app.logger.info(f"Created PRD record {prd_record.id} for session {session_id}")
+                
+            except Exception as prd_error:
+                import traceback
+                print(f"❌ Failed to create PRD record for session {session_id}: {str(prd_error)}")
+                print(f"PRD creation traceback: {traceback.format_exc()}")
+                current_app.logger.error(f"Failed to create PRD record for session {session_id}: {str(prd_error)}")
+                current_app.logger.error(f"PRD creation traceback: {traceback.format_exc()}")
+                # Continue processing even if PRD creation fails
+                prd_record = None
+            
+            # Convert summary to formatted text for preview
+            prd_preview_lines = []
+            
+            if prd_summary['problem']['text']:
+                sources_str = ' '.join(prd_summary['problem']['sources']) if prd_summary['problem']['sources'] else ''
+                prd_preview_lines.append(f"• Problem. {prd_summary['problem']['text']} {sources_str}".strip())
+            
+            if prd_summary['audience']['text']:
+                sources_str = ' '.join(prd_summary['audience']['sources']) if prd_summary['audience']['sources'] else ''
+                prd_preview_lines.append(f"• Audience. {prd_summary['audience']['text']} {sources_str}".strip())
+            
+            if prd_summary['goals']['items']:
+                prd_preview_lines.append("• Goals.")
+                for i, goal in enumerate(prd_summary['goals']['items'][:3]):  # Limit to 3 goals
+                    source = prd_summary['goals']['sources'][i] if i < len(prd_summary['goals']['sources']) else ''
+                    prd_preview_lines.append(f"  – {goal} {source}".strip())
+            
+            if prd_summary['risks']['items']:
+                risk = prd_summary['risks']['items'][0]  # Show first risk
+                source = prd_summary['risks']['sources'][0] if prd_summary['risks']['sources'] else ''
+                prd_preview_lines.append(f"• Risks. {risk} {source}".strip())
+            
+            if prd_summary['competitive_scan']['items']:
+                prd_preview_lines.append("• Competitive scan.")
+                for i, comp in enumerate(prd_summary['competitive_scan']['items'][:2]):  # Limit to 2 competitors
+                    source = prd_summary['competitive_scan']['sources'][i] if i < len(prd_summary['competitive_scan']['sources']) else ''
+                    prd_preview_lines.append(f"  – {comp} {source}".strip())
+            
+            if prd_summary['open_questions']['items']:
+                prd_preview_lines.append("• Open questions.")
+                for i, question in enumerate(prd_summary['open_questions']['items'][:3]):  # Limit to 3 questions
+                    source = prd_summary['open_questions']['sources'][i] if i < len(prd_summary['open_questions']['sources']) else ''
+                    prd_preview_lines.append(f"  – {question} {source}".strip())
+            
+            prd_preview = '\n'.join(prd_preview_lines)
+            session.update_prd_preview(prd_preview)
+            
+            # Calculate and update completeness score
+            completeness_score = calculate_completeness_score(session)
+            session.update_completeness_score(completeness_score)
+            
+            current_app.logger.info(f"Successfully analyzed files for session {session_id} using {analysis_result['model_used']}")
+            
+            response_data = {
+                'session_id': str(session.id),
+                'status': 'success',
+                'model_used': analysis_result['model_used'],
+                'processing_time': analysis_result.get('processing_time', 0),
+                'tokens_used': analysis_result.get('tokens_used', 0),
+                'analysis_preview': prd_preview,
+                'completeness_score': completeness_score,
+                'session_status': session.status,
+                'prd_info': {
+                    'id': str(prd_record.id) if prd_record else None,
+                    'version': prd_record.version if prd_record else None,
+                    'status': prd_record.status if prd_record else None,
+                    'created_at': prd_record.created_at.isoformat() if prd_record else None
+                } if prd_record else None
+            }
+            
+            return jsonify({'data': response_data})
+        else:
+            # Analysis failed
+            session.update_status('error')
+            
+            current_app.logger.error(f"AI analysis failed for session {session_id}: {analysis_result['error']}")
+            
+            response_data = {
+                'session_id': str(session.id),
+                'status': 'error',
+                'error': analysis_result['error'],
+                'session_status': session.status
+            }
+            
+            return jsonify({'data': response_data}), 200
+        
+    except Exception as e:
+        import traceback
+        print(f"❌ DEBUG: Exception in analyze_session_files: {str(e)}")
+        print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+        current_app.logger.error(f"Error analyzing session files: {str(e)}")
+        current_app.logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Update session status to error
+        try:
+            session = UploadSession.query.get(session_id)
+            if session:
+                session.update_status('error')
+        except:
+            pass
+        
+        # Return 500 error to match what the UI is seeing
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
 # Error handlers

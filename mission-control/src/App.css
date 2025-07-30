@@ -694,7 +694,7 @@ html {
   display: flex;
   position: relative;
   height: 60px;
-  width: 640px;
+  width: 760px;
   max-width: 100%;
   overflow: hidden;
   margin: 0 auto;
@@ -804,15 +804,15 @@ html {
 }
 
 .stage-toggles[data-active="plan"] {
-  --accent-light: #fff4c8;
-  --accent-mid: #ffcc00;
-  --accent-dark: #cc9900;
+  --accent-light: #7FC8D1;
+  --accent-mid: #052e32;
+  --accent-dark: #166C76;
   --segment-bg: #f3f85d;
 }
 
 .stage-toggles[data-active="build"] {
   --accent-light: #ffe4b5;
-  --accent-mid: #ff8c00;
+  --accent-mid: #ff00ff;
   --accent-dark: #e6720a;
   --segment-bg: #f3f85d;
 }
@@ -821,6 +821,13 @@ html {
   --accent-light: #ffd6db;
   --accent-mid: #ff6f7a;
   --accent-dark: #c92b30;
+  --segment-bg: #f3f85d;
+}
+
+.stage-toggles[data-active="operator"] {
+  --accent-light: #e9d5ff;
+  --accent-mid: #630db3;
+  --accent-dark: #7e22ce;
   --segment-bg: #f3f85d;
 }
 

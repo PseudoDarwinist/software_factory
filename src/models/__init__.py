@@ -24,6 +24,7 @@ from .monitoring_metrics import (
 )
 from .upload_session import UploadSession
 from .uploaded_file import UploadedFile
+from .prd import PRD, extract_prd_summary
 
 __all__ = [
     'db', 
@@ -51,5 +52,7 @@ __all__ = [
     'IntegrationStatus',
     'DashboardConfig',
     'UploadSession',
-    'UploadedFile'
+    'UploadedFile',
+    'PRD',
+    'extract_prd_summary'
 ]
