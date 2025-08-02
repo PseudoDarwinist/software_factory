@@ -104,6 +104,8 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
   }, [isMobile, selectedFeedItem])
 
   // Handle feed item selection
+  const [thinkFilter, setThinkFilter] = useState<'refine' | string>('all')
+
   const handleFeedItemSelect = (feedItemId: string | null) => {
     onFeedItemSelect(feedItemId)
     if (isMobile && feedItemId) {
@@ -188,6 +190,7 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
                   onStageChange={onStageChange}
                   loading={loading.feed}
                   error={errors.feed}
+                  onFilterChange={setThinkFilter}
                 />
               )}
               
@@ -246,7 +249,7 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
 
         {/* Right Column - Conversation (only for Think stage) */}
         <AnimatePresence>
-          {(!isMobile || showConversation) && selectedFeedItem && activeStage === 'think' && (
+        {(!isMobile || showConversation) && selectedFeedItem && activeStage === 'think' && thinkFilter !== 'refine' && (
             <motion.div
               initial={{ x: 400, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
@@ -271,7 +274,7 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
         </AnimatePresence>
 
         {/* Empty state when no item selected (only for Think stage) */}
-        {!selectedFeedItem && (!isMobile || !showConversation) && activeStage === 'think' && (
+        {!selectedFeedItem && (!isMobile || !showConversation) && activeStage === 'think' && thinkFilter !== 'refine' && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

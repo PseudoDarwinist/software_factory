@@ -442,6 +442,24 @@ html {
   }
 }
 
+/* Flowing right animation for progress line */
+@keyframes flowRight {
+  0% {
+    transform: translateX(-100%) translateY(-50%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(400%) translateY(-50%);
+    opacity: 0;
+  }
+}
+
 /* Utility classes */
 .text-gradient {
   background: linear-gradient(

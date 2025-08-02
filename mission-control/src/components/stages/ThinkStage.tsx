@@ -16,7 +16,7 @@
  * users quickly identify and act on the most important ideas and issues.
  */
 
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDrag } from 'react-dnd'
 import { clsx } from 'clsx'
@@ -36,6 +36,7 @@ interface ThinkStageProps {
   onStageChange: (stage: SDLCStage) => void
   loading: boolean
   error: string | null
+  onFilterChange?: (filter: FilterType) => void // <-- notify parent of active filter
 }
 
 type FilterType = 'refine' | 'all' | 'unread' | 'high' | 'medium' | 'low' | 'ideas' | 'alerts'
@@ -60,8 +61,14 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
   onStageChange,
   loading,
   error,
+  onFilterChange,
 }) => {
   const [filter, setFilter] = useState<FilterType>('all')
+
+  // Notify parent when filter changes
+  useEffect(() => {
+    onFilterChange?.(filter)
+  }, [filter, onFilterChange])
   const [sortBy, setSortBy] = useState<SortType>('priority')
 
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)

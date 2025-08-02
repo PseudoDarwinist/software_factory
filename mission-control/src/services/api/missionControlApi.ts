@@ -25,7 +25,8 @@ import type {
   Command,
   KiroStatusResponse,
   KiroGenerationResponse,
-  KiroGenerationRequest
+  KiroGenerationRequest,
+  SessionContext
 } from '@/types'
 
 class MissionControlApi {
@@ -41,7 +42,7 @@ class MissionControlApi {
     this.baseURL = baseURL
     this.client = axios.create({
       baseURL,
-      timeout: 120000, // 2 minutes for AI-powered specification generation
+      timeout: 300000, // 5 minutes for AI-powered document analysis
       headers: {
         'Content-Type': 'application/json',
       },
@@ -867,6 +868,109 @@ class MissionControlApi {
     }
   }
 
+  // PRD Deep Link endpoints
+  async generatePRDDeepLink(sessionId: string): Promise<{
+    deep_link_url: string
+    token: string
+    expires_at: string
+    prd_info: {
+      id: string
+      version: string
+      status: string
+      created_at: string
+    }
+  }> {
+    try {
+      console.log('🔗 API: Requesting deep link for session:', sessionId)
+      const response = await this.client.post<ApiResponse<{
+        deep_link_url: string
+        token: string
+        expires_at: string
+        prd_info: {
+          id: string
+          version: string
+          status: string
+          created_at: string
+        }
+      }>>(`/upload/prd/deep-link/${sessionId}`)
+      
+      console.log('🔗 API: Deep link response status:', response.status)
+      console.log('🔗 API: Deep link response data:', response.data)
+      
+      if (!response.data.data) {
+        throw new Error('No data in response')
+      }
+      
+      return response.data.data
+    } catch (error: any) {
+      console.error('❌ API: Failed to generate PRD deep link:', error)
+      console.error('❌ API: Error details:', error.response?.data)
+      
+      // More detailed error message
+      if (error.response?.status === 404) {
+        throw new Error('Session or PRD not found')
+      } else if (error.response?.status >= 500) {
+        throw new Error('Server error generating deep link')
+      } else {
+        throw new Error(`Failed to generate PRD deep link: ${error.message}`)
+      }
+    }
+  }
+
+  async validatePRDToken(token: string): Promise<{
+    valid: boolean
+    payload?: any
+    session_info?: any
+    prd_info?: any
+    error?: string
+  }> {
+    try {
+      const response = await this.client.post<ApiResponse<{
+        valid: boolean
+        payload?: any
+        session_info?: any
+        prd_info?: any
+        error?: string
+      }>>('/upload/prd/validate-token', { token })
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to validate PRD token:', error)
+      return { valid: false, error: 'Failed to validate token' }
+    }
+  }
+
+  async freezePRD(prdId: string, createdBy?: string): Promise<{
+    success: boolean
+    frozen_prd: {
+      id: string
+      version: string
+      status: string
+      created_by: string
+      created_at: string
+    }
+    audit_entry: any
+    webhook_sent: boolean
+  }> {
+    try {
+      const response = await this.client.post<ApiResponse<{
+        success: boolean
+        frozen_prd: {
+          id: string
+          version: string
+          status: string
+          created_by: string
+          created_at: string
+        }
+        audit_entry: any
+        webhook_sent: boolean
+      }>>(`/upload/prd/${prdId}/freeze`, { created_by: createdBy })
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to freeze PRD:', error)
+      throw new Error('Failed to freeze PRD')
+    }
+  }
+
   // Upload session endpoints
   async createUploadSession(projectId: string, description?: string): Promise<{
     session_id: string
@@ -982,6 +1086,30 @@ class MissionControlApi {
     }
   }
 
+  async deleteUploadedFile(fileId: string): Promise<{
+    message: string
+    deleted_file: {
+      id: string
+      filename: string
+      session_id: string
+    }
+  }> {
+    try {
+      const response = await this.client.delete<ApiResponse<{
+        message: string
+        deleted_file: {
+          id: string
+          filename: string
+          session_id: string
+        }
+      }>>(`/upload/files/${fileId}`)
+      return response.data.data!
+    } catch (error) {
+      console.error('Failed to delete uploaded file:', error)
+      throw new Error('Failed to delete uploaded file')
+    }
+  }
+
   async analyzeSessionFiles(sessionId: string, preferredModel?: string): Promise<{
     session_id: string
     status: string
@@ -1014,26 +1142,7 @@ class MissionControlApi {
     }
   }
 
-  async getSessionContext(sessionId: string): Promise<{
-    session_id: string
-    project_id: string
-    description: string
-    status: string
-    ai_model_used?: string
-    ai_analysis?: string
-    prd_preview?: string
-    combined_content?: string
-    completeness_score?: any
-    created_at: string
-    updated_at: string
-    processing_stats: {
-      total_files: number
-      completed_files: number
-      error_files: number
-      success_rate: number
-    }
-    files: any[]
-  }> {
+  async getSessionContext(sessionId: string): Promise<SessionContext> {
     try {
       const response = await this.client.get<ApiResponse<{
         session_id: string
@@ -1059,6 +1168,32 @@ class MissionControlApi {
     } catch (error) {
       console.error('Failed to get session context:', error)
       throw new Error('Failed to get session context')
+    }
+  }
+
+  async getProjectSessions(projectId: string): Promise<{
+    session_id: string
+    project_id: string
+    description: string
+    status: string
+    file_count: number
+    created_at: string
+    updated_at: string
+  }[]> {
+    try {
+      const response = await this.client.get<ApiResponse<{
+        session_id: string
+        project_id: string
+        description: string
+        status: string
+        file_count: number
+        created_at: string
+        updated_at: string
+      }[]>>(`/upload/project/${projectId}/sessions`)
+      return response.data.data || []
+    } catch (error) {
+      console.error('Failed to get project sessions:', error)
+      throw new Error('Failed to get project sessions')
     }
   }
 }

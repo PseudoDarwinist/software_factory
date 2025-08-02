@@ -14,12 +14,25 @@ import signal
 import sys
 import traceback
 import time
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
 import atexit
 import redis
+
+# Configure comprehensive logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('software_factory.log', mode='a')
+    ]
+)
+
+# Set up logger for this module
+logger = logging.getLogger(__name__)
 
 # Grouped imports for better structure
 try:
@@ -44,6 +57,7 @@ try:
         ai,
         ai_broker as ai_broker_api,
         mission_control,
+        mcp_external,
         conversations,
         stages,
         events,
@@ -75,7 +89,7 @@ except ImportError as e:
     import services.context_aware_ai as context_aware_ai
     import services.ai_agents as ai_agents
     import services.auth_service as auth_service
-    from api import system, ai, mission_control, conversations, stages, events, graph, vector, webhooks, cache, intelligence, monitoring, github, kiro_endpoints, tasks, upload
+    from api import system, ai, mission_control, mcp_external, conversations, stages, events, graph, vector, webhooks, cache, intelligence, monitoring, github, kiro_endpoints, tasks, upload
     from api import ai_broker as ai_broker_api
 
 migrate = Migrate()
@@ -114,9 +128,34 @@ def create_app(config_class=Config):
     app.config.from_object(config_class)
     
     # Enable CORS for frontend communication
-    CORS(app, origins=['http://localhost:3000', 'http://localhost:5173', 'http://localhost:4173'])
+    # For unified app, allow same-origin requests and development servers
+    flask_port = app.config.get('PORT', 8000)
+    cors_origins = [
+        'http://localhost:3000', 
+        'http://localhost:5173', 
+        'http://localhost:4173',
+        f'http://localhost:{flask_port}',  # Same origin for unified app
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173', 
+        'http://127.0.0.1:4173',
+        f'http://127.0.0.1:{flask_port}'   # Same origin with 127.0.0.1
+    ]
+    print(f"🔧 CORS Origins configured: {cors_origins}")
+    CORS(app, origins=cors_origins, supports_credentials=True)
 
     setup_logging(app)
+
+    # Add minimal request logging for important endpoints
+    @app.before_request
+    def log_important_requests():
+        if '/analyze' in request.url or '/upload' in request.url:
+            logger.info(f"{request.method} {request.url}")
+
+    @app.after_request
+    def log_important_responses(response):
+        if '/analyze' in request.url or '/upload' in request.url:
+            logger.info(f"Response: {response.status_code}")
+        return response
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -277,6 +316,7 @@ def register_blueprints(app):
     app.register_blueprint(ai.ai_bp)
     app.register_blueprint(ai_broker_api.ai_broker_bp)
     app.register_blueprint(mission_control.mission_control_bp)
+    app.register_blueprint(mcp_external.mcp_external_bp)
     app.register_blueprint(conversations.conversations_bp)
     app.register_blueprint(stages.stages_bp)
     app.register_blueprint(events.events_bp)
@@ -302,6 +342,11 @@ def register_frontend_routes(app):
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
     def serve(path):
+        # Don't intercept API routes - let them go to the blueprints
+        if path.startswith('api/'):
+            from flask import abort
+            abort(404)  # Let Flask continue to check other routes
+            
         if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
             return send_from_directory(app.static_folder, path)
         else:

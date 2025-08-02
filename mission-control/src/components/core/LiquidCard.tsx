@@ -74,20 +74,35 @@ export const LiquidCard: React.FC<LiquidCardProps> = ({
     red: 0.5,
   }
 
-  // Spring animation for liquid morphing
+  // Spring animation for liquid morphing with dreamy blueish background
   const liquidSpring = useSpring({
     transform: isHovered 
       ? `perspective(1000px) rotateX(${(mousePosition.y - 0.5) * 10}deg) rotateY(${(mousePosition.x - 0.5) * 10}deg) scale(1.02)`
       : 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale(1)',
     backdropFilter: isHovered 
-      ? `blur(16px) saturate(1.4) brightness(1.1)`
-      : `blur(12px) saturate(1.2) brightness(1.05)`,
+      ? `blur(40px) saturate(200%) brightness(1.15)`
+      : `blur(30px) saturate(180%) brightness(1.05)`,
     background: isHovered
-      ? `rgba(150, 179, 150, ${0.15 + glowIntensity[severity] * 0.1})`
-      : `rgba(150, 179, 150, 0.08)`,
+      ? `radial-gradient(ellipse at center, 
+          rgba(18, 56, 101, 0.45) 0%, 
+          rgba(10, 29, 58, 0.35) 35%,
+          rgba(7, 20, 38, 0.25) 65%,
+          rgba(3, 7, 18, 0.15) 100%)`
+      : `radial-gradient(ellipse at center, 
+          rgba(18, 56, 101, 0.35) 0%, 
+          rgba(10, 29, 58, 0.28) 35%,
+          rgba(7, 20, 38, 0.20) 65%,
+          rgba(3, 7, 18, 0.12) 100%)`,
     boxShadow: isHovered
-      ? `0 20px 40px rgba(0, 0, 0, 0.15), 0 0 30px rgba(150, 179, 150, ${glowIntensity[severity]})`
-      : `0 8px 32px rgba(0, 0, 0, 0.1), 0 0 20px rgba(150, 179, 150, ${glowIntensity[severity] * 0.5})`,
+      ? `0 32px 120px rgba(18, 56, 101, 0.25),
+         0 16px 64px rgba(18, 56, 101, 0.15),
+         0 8px 32px rgba(0, 0, 0, 0.3),
+         inset 0 2px 4px rgba(255, 255, 255, 0.15),
+         inset 0 -2px 4px rgba(18, 56, 101, 0.1)`
+      : `0 8px 32px rgba(18, 56, 101, 0.15),
+         0 2px 8px rgba(18, 56, 101, 0.1),
+         inset 0 1px 0 rgba(255, 255, 255, 0.2),
+         inset 0 -1px 0 rgba(18, 56, 101, 0.1)`,
     config: { tension: 280, friction: 60 },
   })
 
@@ -181,13 +196,15 @@ export const LiquidCard: React.FC<LiquidCardProps> = ({
       whileTap={interactive ? { scale: 0.98 } : {}}
       className={clsx(
         'relative overflow-hidden',
-        'border border-white/8',
-        'transition-all duration-300',
+        'border border-white/10',
+        'transition-all duration-500',
         interactive && 'cursor-pointer',
         className
       )}
       style={{
         ...getVariantStyles(),
+        borderRadius: '16px',
+        backgroundColor: 'rgba(18, 56, 101, 0.15)', // Fallback background color
         ...style,
       }}
       onMouseMove={handleMouseMove}
@@ -199,13 +216,16 @@ export const LiquidCard: React.FC<LiquidCardProps> = ({
       {/* Liquid glass background */}
       <animated.div
         className="absolute inset-0 -z-10"
-        style={liquidSpring}
+        style={{
+          ...liquidSpring,
+          borderRadius: '16px',
+        }}
       />
       
-      {/* Gradient overlay for depth */}
-      <div className="absolute inset-0 -z-10 bg-gradient-to-br from-white/5 via-transparent to-black/20" />
+      {/* Subtle gradient overlay for dreamy depth */}
+      <div className="absolute inset-0 -z-10 bg-gradient-to-br from-white/3 via-transparent to-black/10" />
       
-      {/* Shimmer effect on hover */}
+      {/* Enhanced shimmer effect on hover with blueish tint */}
       {isHovered && (
         <motion.div
           className="absolute inset-0 -z-10"
@@ -213,7 +233,7 @@ export const LiquidCard: React.FC<LiquidCardProps> = ({
           animate={{ opacity: 1, x: '100%' }}
           transition={{ duration: 0.8, ease: 'easeInOut' }}
           style={{
-            background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent)',
+            background: 'linear-gradient(90deg, transparent, rgba(18, 56, 101, 0.2), rgba(255, 255, 255, 0.1), rgba(18, 56, 101, 0.2), transparent)',
           }}
         />
       )}

@@ -1,0 +1,448 @@
+/* Rich-Text PRD Editor - Matching PO Interface Theme */
+
+@import url("https://fonts.googleapis.com/css2?family=Pangolin&display=swap");
+
+@font-face {
+  font-family: "Pangolin";
+  src: url("../mission-control/public/fonts/Pangolin-Regular.ttf")
+    format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+.prd-editor {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(
+    ellipse at top center,
+    #123865 0%,
+    #0a1d3a 35%,
+    #071426 65%,
+    #030712 100%
+  );
+  font-family: "Pangolin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+  color: #ffffff;
+  position: relative;
+}
+
+/* Header removed - no longer needed */
+
+/* Main Layout - simplified */
+
+/* Document Outline - REMOVED */
+
+/* Document Content */
+.prd-content {
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px;
+  background: transparent;
+}
+
+/* Main PRD Title */
+.prd-main-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 24px 0;
+  padding-bottom: 12px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  font-family: "Pangolin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+}
+
+/* Sections */
+.prd-section {
+  margin-bottom: 16px; /* ADJUST THIS: Space between sections */
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px; /* ADJUST THIS: Section corner radius */
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+}
+
+.prd-section:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.prd-section.highlight {
+  border-color: #4a9eff;
+  box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
+}
+
+/* 🎯 HEADER SIZE CONTROLS - ADJUST THESE VALUES: */
+.prd-section-header {
+  display: flex;
+  align-items: center;
+  gap: 4px; /* ADJUST THIS: Space between header elements */
+  padding: 6px 12px; /* ADJUST THIS: Header padding (vertical horizontal) */
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 50px; /* ADJUST THIS: Minimum header height */
+  max-height: 50px; /* ADJUST THIS: Maximum header height */
+}
+
+.prd-section-header:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* 🎯 TOGGLE ARROW CONTROLS - ADJUST THESE: */
+.section-toggle {
+  width: 10px; /* ADJUST THIS: Toggle button width */
+  height: 10px; /* ADJUST THIS: Toggle button height */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  transition: all 0.2s ease;
+}
+
+.section-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.toggle-arrow {
+  font-size: 0.5rem; /* ADJUST THIS: Arrow size */
+  color: rgba(255, 255, 255, 0.7);
+  transition: transform 0.2s ease;
+}
+
+.section-toggle.collapsed .toggle-arrow {
+  transform: rotate(-90deg);
+}
+
+/* 🎯 SECTION TITLE CONTROLS - ADJUST THESE: */
+.section-title {
+  flex: 1;
+  margin: 0;
+  font-size: 0.8rem; /* ADJUST THIS: Title font size */
+  font-weight: 600;
+  color: #ffffff;
+  border: none;
+  background: transparent;
+  outline: none;
+  cursor: text;
+  padding: 0px 2px; /* ADJUST THIS: Title padding */
+  border-radius: 4px;
+  font-family: "Pangolin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+  line-height: 1; /* ADJUST THIS: Title line height */
+}
+
+.section-title:focus {
+  background: rgba(255, 255, 255, 0.1);
+  outline: 2px solid #4a9eff;
+  outline-offset: 2px;
+}
+
+/* 🎯 ACTION BUTTONS CONTROLS - ADJUST THESE: */
+.section-actions {
+  display: flex;
+  gap: 2px; /* ADJUST THIS: Space between action buttons */
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.prd-section-header:hover .section-actions {
+  opacity: 1;
+}
+
+.section-action-btn {
+  width: 12px; /* ADJUST THIS: Action button width */
+  height: 12px; /* ADJUST THIS: Action button height */
+  border: none;
+  background: transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.6rem; /* ADJUST THIS: Action button icon size */
+}
+
+.section-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Section Content */
+.prd-section-content {
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.prd-section-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+.prd-section-content.expanded {
+  max-height: none;
+  opacity: 1;
+}
+
+/* Content Items */
+.content-paragraph {
+  padding: 16px 20px;
+  line-height: 1.6;
+  color: #cccccc;
+  border: none;
+  outline: none;
+  cursor: text;
+  border-radius: 4px;
+  margin: 4px 0;
+  transition: all 0.2s ease;
+  font-family: "Pangolin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+}
+
+.content-paragraph:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.content-paragraph:focus {
+  background: rgba(255, 255, 255, 0.05);
+  outline: 2px solid #4a9eff;
+  outline-offset: 2px;
+}
+
+.content-paragraph:empty::before {
+  content: "Click to add content...";
+  color: #888888;
+  font-style: italic;
+}
+
+/* TODO Items */
+.content-todo {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 20px;
+  margin: 4px 0;
+  background: #fffbeb;
+  border-left: 4px solid #f59e0b;
+  transition: all 0.2s ease;
+  border-radius: 0 4px 4px 0;
+}
+
+.content-todo:hover {
+  background: #fef3c7;
+}
+
+.content-todo.highlight {
+  background: #fde68a;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3);
+}
+
+.content-todo.completed {
+  background: #f0fdf4;
+  border-left-color: #22c55e;
+  opacity: 0.7;
+}
+
+.todo-checkbox {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.todo-checkbox:hover {
+  border-color: #f59e0b;
+}
+
+.todo-checkbox.checked {
+  background: #22c55e;
+  border-color: #22c55e;
+  color: white;
+}
+
+.todo-checkbox.checked::after {
+  content: "✓";
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.todo-text {
+  flex: 1;
+  color: #92400e;
+  font-weight: 500;
+  border: none;
+  outline: none;
+  cursor: text;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+
+.todo-text:focus {
+  background: white;
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+.content-todo.completed .todo-text {
+  text-decoration: line-through;
+  color: #6b7280;
+}
+
+.todo-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.content-todo:hover .todo-actions {
+  opacity: 1;
+}
+
+.todo-action-btn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.todo-action-btn:hover {
+  background: #f3f4f6;
+  color: #ef4444;
+}
+
+/* Content Lists */
+.content-list {
+  padding: 8px 20px;
+  margin: 8px 0;
+  font-family: "Pangolin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+}
+
+.content-list li {
+  margin: 4px 0;
+  color: #cccccc;
+  line-height: 1.5;
+  border: none;
+  outline: none;
+  cursor: text;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.content-list li:focus {
+  background: rgba(255, 255, 255, 0.05);
+  outline: 2px solid #4a9eff;
+  outline-offset: 2px;
+}
+
+/* Content Headings */
+.content-heading {
+  padding: 12px 20px;
+  margin: 8px 0;
+  font-weight: 600;
+  color: #1f2937;
+  border: none;
+  outline: none;
+  cursor: text;
+  border-radius: 4px;
+}
+
+.content-heading:focus {
+  background: #f9fafb;
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Hide Scrollbar but keep scrolling */
+.prd-content::-webkit-scrollbar {
+  display: none;
+}
+
+.prd-content {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+/* Also hide scrollbar on the main editor */
+.prd-editor::-webkit-scrollbar {
+  display: none;
+}
+
+.prd-editor {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .prd-content {
+    padding: 16px;
+  }
+}
+
+/* Animation for smooth transitions */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.prd-section {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Selection styling */
+::selection {
+  background: rgba(59, 130, 246, 0.2);
+}
+
+/* Focus states for accessibility */
+.prd-editor *:focus {
+  outline-offset: 2px;
+}
+
+/* Print styles */
+@media print {
+  .section-actions,
+  .todo-actions {
+    display: none;
+  }
+
+  .prd-content {
+    padding: 0;
+  }
+
+  .prd-section {
+    break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+}

@@ -391,6 +391,43 @@ export interface Agent {
 }
 
 // ========================================
+// Upload Session Types
+// ========================================
+
+export interface PRDInfo {
+  id: string
+  version: string
+  status: 'draft' | 'frozen'
+  created_at: string
+  created_by?: string
+  has_markdown: boolean
+  has_json_summary: boolean
+  sources: string[]
+}
+
+export interface SessionContext {
+  session_id: string
+  project_id: string
+  description: string
+  status: string
+  ai_model_used?: string
+  ai_analysis?: string
+  prd_preview?: string
+  combined_content?: string
+  completeness_score?: any
+  created_at: string
+  updated_at: string
+  processing_stats: {
+    total_files: number
+    completed_files: number
+    error_files: number
+    success_rate: number
+  }
+  files: any[]
+  prd_info?: PRDInfo
+}
+
+// ========================================
 // Integration Types (for existing systems)
 // ========================================
 

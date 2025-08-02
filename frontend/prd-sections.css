@@ -1,0 +1,646 @@
+/* Production-Grade PRD Sections - Jony Ive Level Design */
+
+.prd-sections-container {
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+}
+
+/* PRD Header Controls */
+.prd-header-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 32px;
+    padding: 24px;
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    gap: 24px;
+}
+
+.prd-title-section {
+    flex: 1;
+}
+
+.prd-main-title {
+    font-size: 2.2rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    margin: 0 0 8px 0;
+    background: linear-gradient(135deg, 
+        rgba(255, 255, 255, 1) 0%, 
+        rgba(74, 158, 255, 0.9) 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    border: none;
+    outline: none;
+    cursor: text;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+.prd-main-title:focus {
+    outline: 2px solid rgba(74, 158, 255, 0.5);
+    outline-offset: 4px;
+    border-radius: 4px;
+}
+
+.prd-meta-controls {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+}
+
+.prd-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+
+.prd-meta-label {
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 500;
+}
+
+.prd-meta-value {
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    outline: none;
+    cursor: text;
+}
+
+.prd-meta-value:focus {
+    background: rgba(255, 255, 255, 0.05);
+    outline: 1px solid rgba(74, 158, 255, 0.5);
+}
+
+.prd-status-select {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.9);
+    padding: 4px 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.prd-status-select:focus {
+    outline: 2px solid rgba(74, 158, 255, 0.5);
+    border-color: rgba(74, 158, 255, 0.3);
+}
+
+.prd-header-actions {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.prd-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.prd-action-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.95);
+    transform: translateY(-1px);
+}
+
+.prd-action-btn.primary {
+    background: linear-gradient(135deg, #4a9eff 0%, #9f6eff 100%);
+    border-color: rgba(74, 158, 255, 0.3);
+    color: white;
+}
+
+.prd-action-btn.primary:hover {
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+    box-shadow: 0 4px 20px rgba(74, 158, 255, 0.3);
+}
+
+.prd-btn-icon {
+    font-size: 1rem;
+}
+
+/* Individual Sections */
+.prd-section {
+    margin-bottom: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.prd-section:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.1);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Section Headers */
+.prd-section-header {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    gap: 12px;
+    position: relative;
+}
+
+.prd-section-header:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.prd-section-indicator {
+    width: 4px;
+    height: 24px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.prd-section-icon {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+    width: 24px;
+    text-align: center;
+}
+
+.prd-section-title {
+    flex: 1;
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.95);
+    border: none;
+    background: transparent;
+    outline: none;
+    cursor: text;
+    letter-spacing: -0.01em;
+}
+
+.prd-section-title:focus {
+    outline: 2px solid rgba(74, 158, 255, 0.5);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+.prd-section-controls {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.prd-section-header:hover .prd-section-controls {
+    opacity: 1;
+}
+
+.prd-section-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    font-size: 0.8rem;
+}
+
+.prd-section-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: scale(1.05);
+}
+
+.prd-section-toggle {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.prd-toggle-icon {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    transition: transform 0.2s ease;
+}
+
+.prd-section-toggle.expanded .prd-toggle-icon {
+    transform: rotate(180deg);
+}
+
+/* Section Content */
+.prd-section-content {
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.prd-section-content.collapsed {
+    max-height: 0;
+    opacity: 0;
+}
+
+.prd-section-content.expanded {
+    max-height: 2000px;
+    opacity: 1;
+}
+
+.prd-section-body {
+    padding: 0 20px 20px 20px;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.6;
+    border: none;
+    background: transparent;
+    outline: none;
+    width: 100%;
+    min-height: 60px;
+    cursor: text;
+}
+
+.prd-section-body:focus {
+    outline: 2px solid rgba(74, 158, 255, 0.3);
+    outline-offset: 4px;
+    border-radius: 4px;
+}
+
+.prd-section-body p {
+    margin: 0 0 12px 0;
+}
+
+.prd-section-body p:last-child {
+    margin-bottom: 0;
+}
+
+/* Todo Items */
+.prd-todo-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 8px 0;
+    padding: 12px;
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid rgba(251, 191, 36, 0.2);
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.prd-todo-item:hover {
+    background: rgba(251, 191, 36, 0.15);
+    border-color: rgba(251, 191, 36, 0.3);
+}
+
+.prd-todo-item.completed {
+    background: rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.2);
+}
+
+.prd-todo-item.completed .prd-todo-text {
+    text-decoration: line-through;
+    opacity: 0.7;
+}
+
+.prd-todo-checkbox {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(251, 191, 36, 0.5);
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.prd-todo-checkbox:checked {
+    background: #22c55e;
+    border-color: #22c55e;
+}
+
+.prd-todo-text {
+    flex: 1;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.95rem;
+}
+
+/* Requirement Items */
+.prd-requirement-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 8px 0;
+    padding: 12px;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.prd-requirement-item.high {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.prd-requirement-item.high .prd-priority-indicator {
+    background: #ef4444;
+}
+
+.prd-requirement-item.medium {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.prd-requirement-item.medium .prd-priority-indicator {
+    background: #f59e0b;
+}
+
+.prd-requirement-item.low {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.prd-requirement-item.low .prd-priority-indicator {
+    background: #22c55e;
+}
+
+.prd-priority-indicator {
+    width: 4px;
+    height: 20px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.prd-requirement-text {
+    flex: 1;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.95rem;
+}
+
+/* Feature Items */
+.prd-feature-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 8px 0;
+    padding: 12px;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.prd-feature-item:hover {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.3);
+}
+
+.prd-feature-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.prd-feature-text {
+    flex: 1;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.95rem;
+}
+
+/* Generic List Items */
+.prd-list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 8px 0;
+    padding: 8px 0;
+}
+
+.prd-bullet {
+    color: #4a9eff;
+    font-weight: bold;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.prd-list-text {
+    flex: 1;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.95rem;
+}
+
+/* Add Section Button */
+.prd-add-section {
+    margin-top: 24px;
+    text-align: center;
+}
+
+.prd-add-section-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 2px dashed rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.prd-add-section-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(74, 158, 255, 0.4);
+    color: rgba(255, 255, 255, 0.9);
+    transform: translateY(-1px);
+}
+
+.prd-add-icon {
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+/* Dialog Styles */
+.prd-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.prd-dialog {
+    background: rgba(5, 7, 15, 0.95);
+    backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 24px;
+    min-width: 400px;
+    max-width: 500px;
+}
+
+.prd-dialog h3 {
+    margin: 0 0 20px 0;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.prd-dialog-input,
+.prd-dialog-select {
+    width: 100%;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 1rem;
+    margin-bottom: 16px;
+}
+
+.prd-dialog-input:focus,
+.prd-dialog-select:focus {
+    outline: 2px solid rgba(74, 158, 255, 0.5);
+    border-color: rgba(74, 158, 255, 0.3);
+}
+
+.prd-dialog-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 24px;
+}
+
+.prd-dialog-btn {
+    padding: 8px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.prd-dialog-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.prd-dialog-btn.primary {
+    background: linear-gradient(135deg, #4a9eff 0%, #9f6eff 100%);
+    border-color: rgba(74, 158, 255, 0.3);
+    color: white;
+}
+
+.prd-dialog-btn.primary:hover {
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+}
+
+/* Section Type Specific Styling */
+.prd-section-overview .prd-section-indicator {
+    background: #4a9eff;
+}
+
+.prd-section-features .prd-section-indicator {
+    background: #22c55e;
+}
+
+.prd-section-requirements .prd-section-indicator {
+    background: #f59e0b;
+}
+
+.prd-section-todos .prd-section-indicator {
+    background: #fbbf24;
+}
+
+.prd-section-technical .prd-section-indicator {
+    background: #8b5cf6;
+}
+
+.prd-section-timeline .prd-section-indicator {
+    background: #ef4444;
+}
+
+.prd-section-risks .prd-section-indicator {
+    background: #f97316;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .prd-header-controls {
+        flex-direction: column;
+        gap: 16px;
+    }
+    
+    .prd-meta-controls {
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .prd-header-actions {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .prd-section-header {
+        padding: 12px 16px;
+    }
+    
+    .prd-section-body {
+        padding: 0 16px 16px 16px;
+    }
+}
+
+/* Animation for smooth section transitions */
+@keyframes sectionSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.prd-section {
+    animation: sectionSlideIn 0.3s ease-out;
+}

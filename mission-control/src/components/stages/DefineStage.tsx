@@ -109,29 +109,44 @@ export const DefineStage: React.FC<DefineStageProps> = ({
 
   // Load specification when an item is selected
   useEffect(() => {
+    console.log('🔍 DEBUG: useEffect triggered with:', { 
+      selectedFeedItem, 
+      selectedProject, 
+      ideasInDefinitionCount: ideasInDefinition.length 
+    })
+    
     if (selectedFeedItem && selectedProject) {
+      console.log('🔍 DEBUG: Condition 1 met - loading spec for selected item')
       loadSpecification(selectedFeedItem, selectedProject)
     } else if (!selectedFeedItem && ideasInDefinition.length > 0 && selectedProject) {
       // Auto-select the first item in definition if none is selected
+      console.log('🔍 DEBUG: Condition 2 met - auto-selecting first item')
       const firstItem = ideasInDefinition[0]
       loadSpecification(firstItem.id, selectedProject)
       onFeedItemSelect(firstItem.id)
     } else if (!selectedFeedItem) {
       // Only clear spec if there are no items in definition
+      console.log('🔍 DEBUG: Condition 3 met - clearing spec')
       setCurrentSpec(null)
+    } else {
+      console.log('🔍 DEBUG: No condition met')
     }
   }, [selectedFeedItem, selectedProject, ideasInDefinition, onFeedItemSelect])
 
   const loadSpecification = async (itemId: string, projectId: string) => {
+    console.log('🔍 DEBUG: loadSpecification called with:', { itemId, projectId })
     try {
       setSpecLoading(true)
       setSpecError(null)
       
+      console.log('🔍 DEBUG: Calling missionControlApi.getSpecification...')
       const spec = await missionControlApi.getSpecification(itemId, projectId)
+      console.log('🔍 DEBUG: Got spec response:', spec)
       setCurrentSpec(spec)
+      console.log('🔍 DEBUG: Set currentSpec to:', spec)
     } catch (error) {
       setSpecError('Failed to load specification')
-      console.error('Error loading specification:', error)
+      console.error('❌ Error loading specification:', error)
     } finally {
       setSpecLoading(false)
     }

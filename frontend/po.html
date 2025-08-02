@@ -6,6 +6,9 @@
     <title>Software Factory - Product Owner</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="po.css">
+    <link rel="stylesheet" href="prd-document.css">
+    <link rel="stylesheet" href="prd-sections.css">
+    <link rel="stylesheet" href="prd-editor.css">
 </head>
 <body>
     <header>
@@ -22,8 +25,9 @@
         <!-- Floating Pill Controls -->
         <div class="floating-controls">
             <div class="pill-group">
-                <button class="pill-btn active" id="codeViewBtn">CODE</button>
-                <button class="pill-btn" id="previewViewBtn">PREVIEW</button>
+                <button class="pill-btn" id="codeViewBtn">CODE</button>
+                <button class="pill-btn active" id="previewViewBtn">PREVIEW</button>
+                <button class="pill-btn" id="closePanel">×</button>
             </div>
         </div>
 
@@ -47,6 +51,16 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- Minimal AI Provider Selector - Fixed to Chat Area -->
+                <div class="ai-provider-floating">
+                    <div class="provider-logo" id="gooseProvider" data-provider="goose">
+                        <img src="images/goose.png" alt="Goose AI" />
+                    </div>
+                    <div class="provider-logo" id="aiStudioProvider" data-provider="ai-studio">
+                        <img src="images/coforge.png" alt="AI Studio" />
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -55,12 +69,6 @@
         
         <!-- Document Panel -->
         <section class="document-panel hidden" id="documentPanel">
-            <div class="document-header">
-                <div class="document-title">
-                    <span id="documentTitle">Document</span>
-                </div>
-                <button class="close-panel" id="closePanel">×</button>
-            </div>
             
             <!-- Stage Progression Controls -->
             <div class="stage-controls" id="stageControls">
@@ -70,25 +78,16 @@
             </div>
             
             <div class="document-content" id="documentContent">
-                <div class="code-view" id="codeView">
+                <div class="code-view hidden" id="codeView">
                     <textarea id="markdownEditor" placeholder="Your markdown content will appear here..."></textarea>
                 </div>
-                <div class="preview-view hidden" id="previewView">
+                <div class="preview-view" id="previewView">
                     <div class="rendered-content" id="renderedContent"></div>
                 </div>
             </div>
         </section>
     </main>
 
-    <!-- Minimal AI Provider Selector -->
-    <div class="ai-provider-floating">
-        <div class="provider-logo" id="gooseProvider" data-provider="goose">
-            <img src="images/goose.png" alt="Goose AI" />
-        </div>
-        <div class="provider-logo" id="aiStudioProvider" data-provider="ai-studio">
-            <img src="images/coforge.png" alt="AI Studio" />
-        </div>
-    </div>
 
     <!-- Model Selection Popup -->
     <div class="model-popup hidden" id="modelPopup">
@@ -138,6 +137,9 @@
         </div>
     </div>
 
+    <script src="prd-renderer.js"></script>
+    <script src="prd-sections.js"></script>
+    <script src="prd-editor.js"></script>
     <script src="po.js"></script>
 </body>
 </html>

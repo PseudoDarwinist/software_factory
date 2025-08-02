@@ -47,6 +47,140 @@ class ProductOwnerAssistant {
         this.setupSplitDivider();
         this.setupViewModes();
         this.updateStageUI();
+        this.handleDeepLink();
+    }
+
+    // Handle deep link from Mission Control with JWT validation
+    async handleDeepLink() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const projectId = urlParams.get('projectId');
+        const prdId = urlParams.get('prdId');
+        const version = urlParams.get('version');
+        const from = urlParams.get('from');
+
+        if (token && projectId && prdId && from === 'mission') {
+            console.log('🔗 Deep link detected, validating JWT token...');
+            
+            try {
+                // Validate JWT token
+                const response = await fetch('/api/upload/prd/validate-token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ token })
+                });
+
+                const result = await response.json();
+                const data = result.data || result; // Handle both wrapped and unwrapped responses
+
+                if (data.valid && data.session_info && data.prd_info) {
+                    console.log('✅ JWT token validated successfully');
+                    
+                    // Load PRD context from the validated session
+                    await this.loadPRDFromSession(data.session_info.id, data.prd_info);
+                    
+                    // Update UI to show PRD is loaded
+                    this.showPRDLoadedMessage(data.prd_info.version);
+                    
+                    // Clear URL parameters for security
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    
+                } else {
+                    console.error('❌ JWT token validation failed:', data.error || result.error);
+                    this.showTokenError(data.error || result.error || 'Invalid or expired link');
+                }
+            } catch (error) {
+                console.error('❌ Error validating JWT token:', error);
+                this.showTokenError('Failed to validate access token');
+            }
+        }
+    }
+
+    // Load PRD content from validated session
+    async loadPRDFromSession(sessionId, prdInfo) {
+        try {
+            console.log('📄 Loading PRD from session:', sessionId);
+            
+            // Get session context with PRD content
+            const response = await fetch(`/api/upload/session/context/${sessionId}`);
+            const contextResult = await response.json();
+            
+            if (contextResult.data && contextResult.data.ai_analysis) {
+                // Load the PRD content into the current state
+                this.evolutionState.currentStage = 2; // PRD stage
+                this.evolutionState.prd = contextResult.data.ai_analysis;
+                this.evolutionState.completedStages = [1, 2]; // Mark BRD and PRD as complete
+                
+                // Save state
+                this.saveEvolutionState();
+                
+                // Update UI to show loaded PRD
+                this.updateStageUI();
+                this.showSplitScreen(); // Auto-show document panel
+                this.updateContentPanel(this.evolutionState.prd);
+                this.switchToPreviewView(); // Show rendered content by default
+                
+                console.log('✅ PRD loaded successfully from session');
+            } else {
+                throw new Error('No PRD content found in session');
+            }
+        } catch (error) {
+            console.error('❌ Error loading PRD from session:', error);
+            this.showTokenError('Failed to load PRD content');
+        }
+    }
+
+    // Show PRD loaded message
+    showPRDLoadedMessage(version) {
+        const chatMessages = document.getElementById('chatMessages');
+        if (chatMessages) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant-message';
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <div class="message-header">
+                        <span class="message-sender">AI Assistant</span>
+                        <span class="message-time">${new Date().toLocaleTimeString()}</span>
+                    </div>
+                    <div class="message-text">
+                        ✅ PRD ${version} loaded successfully from Mission Control! I can help you:
+                        
+                        • Review and analyze the current PRD content
+                        • Answer questions about the requirements  
+                        • Suggest improvements or modifications
+                        • Move to the next stage (User Stories) when ready
+                        
+                        The PRD is now displayed in the document panel. What would you like to do with it?
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    }
+
+    // Show token validation error
+    showTokenError(errorMessage) {
+        const chatMessages = document.getElementById('chatMessages');
+        if (chatMessages) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant-message error';
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    <div class="message-header">
+                        <span class="message-sender">System</span>
+                        <span class="message-time">${new Date().toLocaleTimeString()}</span>
+                    </div>
+                    <div class="message-text">
+                        ❌ Access denied: ${errorMessage}
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
     }
 
     // Ensure completedStages list only contains stages with existing documents
@@ -204,9 +338,14 @@ class ProductOwnerAssistant {
             return userMessage;
         }
 
-        // Always start with natural conversation - never force document generation
-        // The AI will decide when to create documents based on conversation completeness
-        return this.getNaturalConversationPrompt(userMessage);
+        // Check if PRD is already loaded from deep link
+        if (this.evolutionState.prd && this.evolutionState.currentStage >= 2) {
+            // PRD is loaded - switch to review/modification mode
+            return this.getPRDReviewPrompt(userMessage);
+        } else {
+            // No PRD loaded - continue with creation flow
+            return this.getNaturalConversationPrompt(userMessage);
+        }
     }
     
     getStagePrompt(userMessage) {
@@ -275,6 +414,35 @@ ${userMessage}`;
 Create a comprehensive ${currentStage.title} based on this information. Start with: "Based on your detailed description, I can create a comprehensive ${currentStage.name}. Here it is:" followed by the actual document with proper markdown formatting.`;
     }
     
+    getPRDReviewPrompt(userMessage) {
+        const prdContent = this.evolutionState.prd;
+        const conversationHistory = this.chatHistory.slice(-3).map(msg => `${msg.type}: ${msg.content}`).join('\n');
+        
+        return `You are a Product Owner expert. A PRD has been loaded from Mission Control and is available for review and modification.
+
+CURRENT PRD CONTENT:
+${prdContent}
+
+User request: "${userMessage}"
+
+Recent conversation context:
+${conversationHistory}
+
+Instructions:
+1. **CONTEXT AWARE**: You have access to the complete PRD content above
+2. **HELPFUL RESPONSES**: 
+   - If user asks to see/show/display the PRD, present the current content clearly
+   - If user asks questions about the PRD, analyze the content and provide specific answers
+   - If user requests changes, suggest specific modifications
+   - If user asks about features, requirements, or details, reference the actual PRD content
+
+3. **CONVERSATIONAL**: Be natural and helpful with the existing content
+4. **EVOLUTION READY**: You can help evolve this PRD to the next stage (User Stories) when the user is ready
+5. **MODIFICATION SUPPORT**: Help refine, expand, or restructure the PRD based on user feedback
+
+How can I help you work with this loaded PRD?`;
+    }
+
     getNaturalConversationPrompt(userMessage) {
         const currentStage = this.stages[this.evolutionState.currentStage];
         const conversationHistory = this.chatHistory.slice(-3).map(msg => `${msg.type}: ${msg.content}`).join('\n');
@@ -507,11 +675,59 @@ Format as markdown with checkboxes for each task.`;
                 content = docData;
             }
             
-            // Update code view
-            markdownEditor.value = content;
+            // Clean the content for code view (remove JSON wrapper)
+            const cleanContent = this.cleanContentForDisplay(content);
+            
+            // Update code view with clean content
+            markdownEditor.value = cleanContent;
             
             // Update preview view
-            this.updatePreview(content);
+            this.updatePreview(cleanContent);
+        }
+    }
+
+    // Clean content for display (remove JSON wrappers)
+    cleanContentForDisplay(content) {
+        // Remove JSON wrapper if present
+        if (content.includes('"full_prd":') || content.includes('```json')) {
+            try {
+                // Extract from JSON if wrapped
+                const jsonMatch = content.match(/\{[\s\S]*?"full_prd":\s*"([\s\S]*?)"\s*\}/);
+                if (jsonMatch) {
+                    content = jsonMatch[1];
+                }
+                
+                // Remove markdown code blocks
+                content = content.replace(/```(?:json|markdown)?\n?/g, '').replace(/```\n?$/g, '');
+            } catch (e) {
+                console.warn('Failed to parse JSON wrapper, using raw content');
+            }
+        }
+
+        // Clean up escaped characters
+        content = content
+            .replace(/\\n/g, '\n')
+            .replace(/\\"/g, '"')
+            .replace(/\\'/g, "'")
+            .replace(/\\\\/g, '\\')
+            .trim();
+        
+        return content;
+    }
+
+    showDocument(title, content) {
+        // Update document title
+        const documentTitle = document.getElementById('documentTitle');
+        if (documentTitle) {
+            documentTitle.textContent = title;
+        }
+        
+        // Update content panel with the document
+        this.updateContentPanel(content);
+        
+        // Show split screen if not already visible
+        if (!this.isSplitScreen) {
+            this.showSplitScreen();
         }
     }
 
@@ -788,7 +1004,11 @@ While waiting, you can still use the context panel to organize your product info
     addMessage(message) {
         this.chatHistory.push(message);
         this.renderMessage(message);
-        this.scrollToBottom();
+        
+        // Scroll after a short delay to ensure content is rendered
+        setTimeout(() => {
+            this.scrollToBottom();
+        }, 100);
     }
 
     renderMessage(message) {
@@ -930,7 +1150,17 @@ While waiting, you can still use the context panel to organize your product info
 
     scrollToBottom() {
         const messagesContainer = document.getElementById('chatMessages');
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        if (messagesContainer) {
+            // Use requestAnimationFrame to ensure DOM is updated
+            requestAnimationFrame(() => {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                
+                // Double-check after a short delay in case content is still loading
+                setTimeout(() => {
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }, 50);
+            });
+        }
     }
 
     autoResizeTextarea(textarea) {
@@ -1237,32 +1467,176 @@ While waiting, you can still use the context panel to organize your product info
         const renderedContent = document.getElementById('renderedContent');
         if (!renderedContent) return;
         
-        // Simple markdown to HTML conversion
-        const html = this.markdownToHTML(markdownContent);
-        renderedContent.innerHTML = html;
+        // Use the sophisticated PRD editor for preview
+        if (window.PRDEditor && markdownContent.length > 100) {
+            // Initialize the rich-text PRD editor
+            const prdEditor = new PRDEditor(renderedContent);
+            
+            // Parse markdown content into structured document
+            prdEditor.document = this.parseMarkdownToPRDDocument(markdownContent);
+            prdEditor.renderSections();
+            prdEditor.updateOutline();
+            
+            // Store reference for global access
+            window.prdEditorInstance = prdEditor;
+        } else {
+            // Fallback to simple markdown conversion for short content
+            const html = this.markdownToHTML(markdownContent);
+            renderedContent.innerHTML = html;
+        }
+    }
+
+    // Parse markdown content into structured PRD document
+    parseMarkdownToPRDDocument(markdownContent) {
+        const lines = markdownContent.split('\n');
+        const document = {
+            title: 'Product Requirements Document',
+            sections: [],
+            todos: []
+        };
+
+        let currentSection = null;
+        let currentContent = [];
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            // Skip empty lines
+            if (!line) continue;
+            
+            // Extract title from first header
+            if (i === 0 && line.startsWith('# ')) {
+                document.title = line.substring(2).trim();
+                continue;
+            }
+            
+            // Detect section headers
+            if (line.match(/^#{2,3}\s+/)) {
+                // Save previous section
+                if (currentSection && currentContent.length > 0) {
+                    currentSection.content = this.parseContentItems(currentContent);
+                    document.sections.push(currentSection);
+                }
+
+                // Start new section
+                const level = (line.match(/^#+/) || [''])[0].length - 2; // Adjust for h2, h3
+                const title = line.replace(/^#+\s*/, '').trim();
+                
+                currentSection = {
+                    id: this.generateSectionId(title),
+                    title,
+                    level: Math.max(1, level),
+                    collapsed: false,
+                    content: []
+                };
+                currentContent = [];
+            } else if (currentSection) {
+                currentContent.push(line);
+            }
+        }
+
+        // Save last section
+        if (currentSection && currentContent.length > 0) {
+            currentSection.content = this.parseContentItems(currentContent);
+            document.sections.push(currentSection);
+        }
+
+        return document;
+    }
+
+    // Parse content items from text lines
+    parseContentItems(lines) {
+        const items = [];
+        let currentParagraph = [];
+
+        for (const line of lines) {
+            // Check for TODO items
+            if (line.match(/^[-*]\s*\[\s*\]/)) {
+                // Save current paragraph
+                if (currentParagraph.length > 0) {
+                    items.push({
+                        type: 'paragraph',
+                        content: currentParagraph.join(' ')
+                    });
+                    currentParagraph = [];
+                }
+                
+                const todoText = line.replace(/^[-*]\s*\[\s*\]\s*/, '');
+                items.push({
+                    type: 'todo',
+                    content: todoText,
+                    completed: false,
+                    id: this.generateId()
+                });
+            } else if (line.match(/^[-*]\s*\[x\]/i)) {
+                // Save current paragraph
+                if (currentParagraph.length > 0) {
+                    items.push({
+                        type: 'paragraph',
+                        content: currentParagraph.join(' ')
+                    });
+                    currentParagraph = [];
+                }
+                
+                const todoText = line.replace(/^[-*]\s*\[x\]\s*/i, '');
+                items.push({
+                    type: 'todo',
+                    content: todoText,
+                    completed: true,
+                    id: this.generateId()
+                });
+            } else if (line.match(/^[-*]\s+/)) {
+                // Regular list item - add to paragraph for now
+                currentParagraph.push(line.replace(/^[-*]\s+/, '• '));
+            } else if (line.trim()) {
+                currentParagraph.push(line);
+            }
+        }
+
+        // Save final paragraph
+        if (currentParagraph.length > 0) {
+            items.push({
+                type: 'paragraph',
+                content: currentParagraph.join(' ')
+            });
+        }
+
+        return items;
+    }
+
+    generateSectionId(title) {
+        return title.toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+            .trim();
+    }
+
+    generateId() {
+        return 'item-' + Math.random().toString(36).substr(2, 9);
     }
     
     markdownToHTML(markdown) {
         return markdown
             // Headers
-            .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-            .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-            .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+            .replace(/^### (.*$)/gm, '<h3 class="prd-h3">$1</h3>')
+            .replace(/^## (.*$)/gm, '<h2 class="prd-h2">$1</h2>')
+            .replace(/^# (.*$)/gm, '<h1 class="prd-h1">$1</h1>')
             // Bold and italic
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
             // Lists
-            .replace(/^\s*\* (.+)$/gm, '<li>$1</li>')
-            .replace(/^\s*- (.+)$/gm, '<li>$1</li>')
-            .replace(/^\s*\d+\. (.+)$/gm, '<li>$1</li>')
+            .replace(/^\s*\* (.+)$/gm, '<li class="prd-list-item">$1</li>')
+            .replace(/^\s*- (.+)$/gm, '<li class="prd-list-item">$1</li>')
+            .replace(/^\s*\d+\. (.+)$/gm, '<li class="prd-list-item">$1</li>')
             // Code blocks
             .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
             .replace(/`([^`]+)`/g, '<code>$1</code>')
             // Line breaks
-            .replace(/\n\n/g, '</p><p>')
+            .replace(/\n\n/g, '</p><p class="prd-paragraph">')
             .replace(/\n/g, '<br>')
             // Wrap in paragraphs
-            .replace(/^(?!<[hul]|<\/[hul]|<pre>|<\/pre>)(.+)$/gm, '<p>$1</p>')
+            .replace(/^(?!<[hul]|<\/[hul]|<pre>|<\/pre>)(.+)$/gm, '<p class="prd-paragraph">$1</p>')
             // Clean up lists
             .replace(/(<li>.*<\/li>)/s, (match) => {
                 if (match.includes('<li>') && !match.startsWith('<ul>') && !match.startsWith('<ol>')) {

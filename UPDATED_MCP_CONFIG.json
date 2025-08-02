@@ -1,0 +1,92 @@
+{
+  "mcpServers": {
+    "fetch": {
+      "command": "/Users/chetansingh/.local/bin/uvx",
+      "args": [
+        "mcp-server-fetch"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "playwright": {
+      "command": "/Users/chetansingh/.volta/bin/npx",
+      "args": [
+        "@playwright/mcp@latest"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "browser_snapshot",
+        "browser_drag",
+        "browser_click",
+        "browser_evaluate",
+        "browser_navigate",
+        "browser_network_requests",
+        "browser_console_messages",
+        "browser_wait_for",
+        "browser_handle_dialog",
+        "browser_close",
+        "browser_close"
+      ]
+    },
+    "software-factory": {
+      "command": "python3",
+      "args": [
+        "-m",
+        "src.mcp.server"
+      ],
+      "cwd": "/Users/chetansingh/Documents/AI_Project/Software_Factory",
+      "env": {
+        "PYTHONPATH": "/Users/chetansingh/Documents/AI_Project/Software_Factory",
+        "DATABASE_URL": "postgresql://sf_user:sf_password@localhost/software_factory",
+        "FLASK_ENV": "development"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "list_projects",
+        "get_project_context",
+        "create_requirements",
+        "create_design",
+        "create_tasks",
+        "get_idea_details",
+        "get_project_tasks",
+        "get_task_context",
+        "get_task_repository_info",
+        "mark_task_complete",
+        "update_task_status",
+        "get_ideas_without_specs",
+        "get_ideas_with_incomplete_specs",
+        "update_specification_artifact",
+        "generate_missing_specs_for_idea",
+        "get_spec_generation_status"
+      ]
+    },
+    "sf-external-tasks": {
+      "command": "python3",
+      "args": ["/Users/chetansingh/Documents/AI_Project/Software_Factory/standalone_mcp_server.py"],
+      "env": {
+        "SF_BASE_URL": "http://localhost:8000",
+        "PYTHONPATH": "/Users/chetansingh/Documents/AI_Project/Software_Factory"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "get_current_directory",
+        "list_software_factory_projects",
+        "get_project_tasks_for_current_work",
+        "get_task_implementation_context",
+        "update_software_factory_task",
+        "mark_task_complete_with_local_work",
+        "get_ideas_without_specs_external",
+        "generate_specs_for_external_project",
+        "update_spec_from_external_project",
+        "get_spec_status_for_implementation",
+        "get_mcp_server_info"
+      ]
+    }
+  }
+}

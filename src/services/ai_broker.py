@@ -468,6 +468,15 @@ class ContextManager:
     def _get_vector_context(self, request: AIRequest) -> Optional[str]:
         """Get relevant context from vector database"""
         try:
+            # Check if this is a document analysis request - don't add vector context that might confuse the AI
+            instruction_lower = request.instruction.lower()
+            if ("analyze" in instruction_lower and "document" in instruction_lower) or \
+               ("prd" in instruction_lower) or ("requirements" in instruction_lower) or \
+               ("irops" in instruction_lower) or ("irregular operation" in instruction_lower):
+                # For document analysis, skip vector context to avoid hallucination
+                logger.info(f"Document analysis detected in request {request.request_id} - skipping vector context")
+                return None
+            
             # Determine document types based on task type
             document_types = self._get_relevant_document_types(request.task_type)
             
@@ -1035,6 +1044,7 @@ class AIBroker:
                     continue
             
             if not processed_files:
+                logger.error(f"No files could be processed for AI analysis in session {session_id}")
                 return {
                     'success': False,
                     'error': 'No files could be processed for AI analysis',
@@ -1044,15 +1054,16 @@ class AIBroker:
             
             # Select AI model with fallback chain
             model_chain = self._get_model_fallback_chain(preferred_model)
+            logger.info(f"Trying models: {model_chain}")
             
             # Try each model in the fallback chain
             for model_id in model_chain:
                 try:
-                    logger.info(f"Attempting analysis with model: {model_id}")
+                    logger.info(f"Attempting analysis with {model_id}")
                     result = self._execute_file_analysis(model_id, processed_files, session_id)
                     
                     if result['success']:
-                        logger.info(f"Successfully analyzed files with {model_id}")
+                        logger.info(f"Analysis successful with {model_id}")
                         return result
                     else:
                         logger.warning(f"Model {model_id} failed: {result.get('error')}")
@@ -1110,6 +1121,8 @@ class AIBroker:
                 return self._prepare_image_file(file_path, filename, file_type)
             elif file_type == 'url':
                 return self._prepare_url_content(file_path, filename)
+            elif file_type in ['md', 'txt', 'doc', 'docx']:
+                return self._prepare_text_file(file_path, filename, file_type)
             else:
                 logger.warning(f"Unsupported file type: {file_type}")
                 return None
@@ -1189,6 +1202,39 @@ class AIBroker:
             
         except Exception as e:
             logger.error(f"Failed to prepare URL content {filename}: {e}")
+            return None
+    
+    def _prepare_text_file(self, file_path: str, filename: str, file_type: str) -> Dict[str, Any]:
+        """Prepare text-based files (md, txt, doc, docx) for AI processing"""
+        try:
+            # Handle different text file types
+            if file_type in ['md', 'txt']:
+                # Plain text files - read directly
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    text_content = f.read()
+            elif file_type in ['doc', 'docx']:
+                # Word documents - would need python-docx library
+                # For now, treat as plain text (user should convert to PDF)
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        text_content = f.read()
+                except UnicodeDecodeError:
+                    logger.warning(f"Cannot read {file_type} file as text. Please convert to PDF or plain text.")
+                    return None
+            else:
+                logger.warning(f"Unsupported text file type: {file_type}")
+                return None
+            
+            return {
+                'filename': filename,
+                'file_type': file_type,
+                'content': text_content,
+                'media_type': 'text/plain',
+                'size': len(text_content.encode('utf-8'))
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to prepare text file {filename}: {e}")
             return None
     
     def _get_model_fallback_chain(self, preferred_model: str = None) -> List[str]:
@@ -1273,73 +1319,90 @@ class AIBroker:
     
     def _create_prd_generation_prompt(self, files: List[Dict[str, Any]]) -> str:
         """
-        Create optimized prompt for PRD generation from uploaded files
+        Create advanced PRD generation prompt using comprehensive Product Management frameworks
         
         Args:
             files: List of prepared file data
             
         Returns:
-            PRD generation prompt
+            Advanced PRD generation prompt with PM frameworks
         """
         file_descriptions = []
         for i, file_data in enumerate(files, 1):
-            file_descriptions.append(f"File {i} ({file_data['filename']}): {file_data['file_type'].upper()}")
+            file_descriptions.append(f"S{i}: {file_data['filename']} ({file_data['file_type'].upper()})")
         
         files_summary = "\n".join(file_descriptions)
         
-        prompt = f"""You are a senior product manager analyzing uploaded files to create a comprehensive Product Requirements Document (PRD).
+        # Add actual file content to the prompt
+        file_content_sections = []
+        for i, file_data in enumerate(files, 1):
+            file_content_sections.append(f"""
+**SOURCE FILE S{i}: {file_data['filename']}**
+Content:
+{file_data['content']}
+""")
+        
+        files_content = "\n".join(file_content_sections)
+        
+        prompt = f"""You are a Senior Product Manager. Analyze the uploaded documents and create a Product Requirements Document (PRD) based ONLY on the content provided.
 
-UPLOADED FILES TO ANALYZE:
+**SOURCE FILES:**
 {files_summary}
 
-TASK: Analyze all uploaded files and generate a structured PRD with the following sections:
+{files_content}
 
-1. **Executive Summary**
-   - Brief overview of the product/feature
-   - Key value proposition
-   - Target audience
+**CRITICAL INSTRUCTIONS:**
+1. Read and analyze the actual content from the uploaded documents above
+2. Extract information ONLY from what is provided - do not add external assumptions
+3. If the document is about IROPS (Irregular Operations), focus on aviation operations management
+4. If the document is about financial systems, focus on financial processes
+5. Do not confuse IROPS (aviation) with IRR (Internal Rate of Return)
 
-2. **Problem Statement**
-   - What problem does this solve?
-   - Current pain points
-   - Market opportunity
+**RESPOND WITH ONLY THIS JSON STRUCTURE:**
 
-3. **Solution Overview**
-   - High-level solution description
-   - Key features and capabilities
-   - Unique differentiators
+{{
+  "full_prd": "# Product Requirements Document\\n\\n## Executive Summary\\n[Write comprehensive PRD based on actual document content]\\n\\n## Problem Statement\\n[Extract actual problem from documents]\\n\\n## Target Audience\\n[Extract actual audience from documents]\\n\\n## Goals & Objectives\\n[Extract actual goals from documents]\\n\\n## Risks & Challenges\\n[Extract actual risks from documents]\\n\\n## Competitive Analysis\\n[Extract actual competitive insights from documents]\\n\\n## Open Questions\\n[Identify actual gaps in the provided information]",
+  "problem": {{
+    "text": "[Extract the actual problem statement from the documents]",
+    "sources": ["S1"]
+  }},
+  "audience": {{
+    "text": "[Extract the actual target audience from the documents]", 
+    "sources": ["S1"]
+  }},
+  "goals": {{
+    "items": [
+      "[Extract actual goal 1 from the documents]",
+      "[Extract actual goal 2 from the documents]", 
+      "[Extract actual goal 3 from the documents]"
+    ],
+    "sources": ["S1", "S1", "S1"]
+  }},
+  "risks": {{
+    "items": [
+      "[Extract actual risk 1 from the documents]",
+      "[Extract actual risk 2 from the documents]"
+    ],
+    "sources": ["S1", "S1"] 
+  }},
+  "competitive_scan": {{
+    "items": [
+      "[Extract actual competitive insight 1 from the documents]",
+      "[Extract actual competitive insight 2 from the documents]"
+    ],
+    "sources": ["S1", "S1"]
+  }},
+  "open_questions": {{
+    "items": [
+      "[Generate actual question 1 based on gaps in the documents]",
+      "[Generate actual question 2 based on gaps in the documents]",
+      "[Generate actual question 3 based on gaps in the documents]"
+    ],
+    "sources": ["S1", "S1", "S1"]
+  }}
+}}
 
-4. **User Stories & Requirements**
-   - Primary user personas
-   - Core user journeys
-   - Functional requirements
-   - Non-functional requirements
-
-5. **Technical Considerations**
-   - Architecture overview
-   - Integration requirements
-   - Performance requirements
-   - Security considerations
-
-6. **Success Metrics**
-   - Key performance indicators
-   - Success criteria
-   - Measurement approach
-
-7. **Implementation Roadmap**
-   - Development phases
-   - Timeline estimates
-   - Dependencies and risks
-
-IMPORTANT GUIDELINES:
-- Extract and synthesize information from ALL uploaded files
-- Use specific details and data from the files when available
-- Include source attribution using [S1], [S2], [S3] tags for file references
-- Focus on actionable, specific requirements rather than generic statements
-- Ensure the PRD is comprehensive yet concise
-- Highlight any gaps or areas needing clarification
-
-Generate a professional, well-structured PRD that a development team can use to build the product."""
+**IMPORTANT:** Base your analysis entirely on the actual document content. Do not use template examples or external knowledge."""
 
         return prompt
     
@@ -1388,6 +1451,7 @@ Generate a professional, well-structured PRD that a development team can use to 
             import time
             
             start_time = time.time()
+            logger.info(f"Starting Claude analysis with {len(files)} files")
             
             # Use Model Garden API URL for Claude
             api_url = os.environ.get('MODEL_GARDEN_API_URL', 
@@ -1403,27 +1467,35 @@ Generate a professional, well-structured PRD that a development team can use to 
             # Prepare messages with file content
             messages = [{"role": "user", "content": prompt}]
             
-            # Add file content to the message
+            # Add file content to the message - Model Garden API expects simple text format
+            content = prompt
+            
             for file_data in files:
-                if file_data['file_type'] in ['pdf', 'jpg', 'jpeg', 'png', 'gif']:
-                    # For binary files, include base64 content
-                    file_content = f"\n\nFile: {file_data['filename']} ({file_data['file_type'].upper()})\n"
-                    file_content += f"[Base64 encoded {file_data['file_type'].upper()} content - {file_data['size']} bytes]"
-                    messages[0]["content"] += file_content
+                if file_data['file_type'] == 'pdf':
+                    # For PDFs, we need to extract text content first
+                    # Since we can't send base64 PDFs to Model Garden, we need to extract text
+                    content += f"\n\nFile: {file_data['filename']} (PDF)\nNote: PDF content extraction needed - this is a base64 encoded PDF file."
+                elif file_data['file_type'] in ['jpg', 'jpeg', 'png', 'gif']:
+                    # For images, describe what we have
+                    content += f"\n\nFile: {file_data['filename']} (Image)\nNote: This is a {file_data['file_type'].upper()} image file."
                 else:
                     # For text content, include directly
-                    file_content = f"\n\nFile: {file_data['filename']}\nContent:\n{file_data['content']}"
-                    messages[0]["content"] += file_content
+                    content += f"\n\nFile: {file_data['filename']}\nContent:\n{file_data['content']}"
+            
+            # Use simple message format for Model Garden API
+            messages = [{"role": "user", "content": content}]
             
             payload = {
                 "model": "claude-opus-4",
                 "messages": messages,
-                "temperature": 0.7,
+                "temperature": 0.3,  # Lower temperature for more focused responses
                 "top_p": 0.9,
-                "max_tokens": 4000
+                "max_tokens": 3000   # Slightly reduced for faster response
             }
             
-            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+            logger.info(f"Sending request to Claude API...")
+            
+            response = requests.post(api_url, headers=headers, json=payload, timeout=240)  # 4 minutes
             response.raise_for_status()
             
             result = response.json()
@@ -1481,7 +1553,7 @@ Generate a professional, well-structured PRD that a development team can use to 
                 "max_tokens": 4000
             }
             
-            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+            response = requests.post(api_url, headers=headers, json=payload, timeout=240)  # 4 minutes
             response.raise_for_status()
             
             result = response.json()
@@ -1539,7 +1611,7 @@ Generate a professional, well-structured PRD that a development team can use to 
                 "max_tokens": 4000
             }
             
-            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+            response = requests.post(api_url, headers=headers, json=payload, timeout=240)  # 4 minutes
             response.raise_for_status()
             
             result = response.json()

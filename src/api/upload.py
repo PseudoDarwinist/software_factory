@@ -5,10 +5,17 @@ Upload API endpoints for file upload session management
 import os
 import uuid
 import requests
-from datetime import datetime
+import jwt
+import json
+import logging
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
+
+# Set up logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 try:
     from ..models import db
@@ -596,6 +603,151 @@ def retry_file_processing(file_id):
         return jsonify({'error': 'Failed to retry file processing'}), 500
 
 
+@upload_bp.route('/files/<file_id>', methods=['DELETE'])
+def delete_uploaded_file(file_id):
+    """Delete an uploaded file from session"""
+    try:
+        file_record = UploadedFile.query.get(file_id)
+        if not file_record:
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Verify session exists (basic access control)
+        session = UploadSession.query.get(file_record.session_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Store file info for response
+        file_info = {
+            'id': str(file_record.id),
+            'filename': file_record.filename,
+            'session_id': str(file_record.session_id)
+        }
+        
+        # Delete physical file if it exists
+        if file_record.file_path and os.path.exists(file_record.file_path):
+            try:
+                os.remove(file_record.file_path)
+                current_app.logger.info(f"Deleted physical file: {file_record.file_path}")
+            except OSError as e:
+                current_app.logger.warning(f"Failed to delete physical file {file_record.file_path}: {str(e)}")
+        
+        # Delete database record
+        db.session.delete(file_record)
+        db.session.commit()
+        
+        current_app.logger.info(f"Deleted uploaded file {file_id} ({file_record.filename})")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'message': 'File deleted successfully',
+                'deleted_file': file_info
+            },
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0'
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"Error deleting uploaded file: {str(e)}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to delete file',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0'
+        }), 500
+
+
+@upload_bp.route('/project/<project_id>/sessions', methods=['GET'])
+def get_project_sessions(project_id):
+    """Get all upload sessions for a project"""
+    try:
+        # Basic access control - verify project exists
+        project = MissionControlProject.query.get(project_id)
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # Get all sessions for this project, ordered by most recent first
+        sessions = UploadSession.query.filter_by(project_id=project_id)\
+                                     .order_by(UploadSession.updated_at.desc())\
+                                     .all()
+        
+        session_list = []
+        for session in sessions:
+            session_info = {
+                'session_id': str(session.id),
+                'project_id': session.project_id,
+                'description': session.description,
+                'status': session.status,
+                'file_count': session.get_file_count(),
+                'created_at': session.created_at.isoformat(),
+                'updated_at': session.updated_at.isoformat()
+            }
+            session_list.append(session_info)
+        
+        current_app.logger.info(f"Retrieved {len(session_list)} sessions for project {project_id}")
+        
+        return jsonify({'data': session_list})
+        
+    except Exception as e:
+        current_app.logger.error(f"Error getting project sessions: {str(e)}")
+        return jsonify({'error': 'Failed to get project sessions'}), 500
+
+
+@upload_bp.route('/events/prd.updated', methods=['POST'])
+def handle_prd_updated_webhook():
+    """Webhook endpoint for PRD updates to notify Po.html"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Validate required fields
+        required_fields = ['event', 'prd_id', 'session_id', 'version', 'status']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        # Log the webhook event
+        current_app.logger.info(f"PRD update webhook received: {data['event']} for PRD {data['prd_id']}")
+        
+        # Store webhook event for potential replay or debugging
+        webhook_event = {
+            'event_type': data['event'],
+            'prd_id': data['prd_id'],
+            'session_id': data['session_id'],
+            'version': data['version'],
+            'status': data['status'],
+            'timestamp': data.get('timestamp', datetime.utcnow().isoformat()),
+            'received_at': datetime.utcnow().isoformat()
+        }
+        
+        # TODO: In a real implementation, you might want to:
+        # 1. Store this event in a database for audit trail
+        # 2. Forward to WebSocket connections for real-time updates
+        # 3. Send notifications to connected Po.html clients
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'message': 'Webhook processed successfully',
+                'event_id': f"evt_{uuid.uuid4().hex[:8]}",
+                'processed_at': datetime.utcnow().isoformat()
+            },
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0'
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"Error processing PRD update webhook: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to process webhook',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0'
+        }), 500
+
+
 @upload_bp.route('/session/context/<session_id>', methods=['GET'])
 def get_session_context(session_id):
     """Get AI-generated analysis and file metadata for a session"""
@@ -652,17 +804,18 @@ def get_session_context(session_id):
             from models.prd import PRD
         
         try:
-            latest_prd = PRD.get_latest_for_session(str(session.id))
-            if latest_prd:
+            # Get the current working PRD (latest version, whether draft or frozen)
+            current_prd = PRD.get_latest_for_session(str(session.id))
+            if current_prd:
                 prd_info = {
-                    'id': str(latest_prd.id),
-                    'version': latest_prd.version,
-                    'status': latest_prd.status,
-                    'created_at': latest_prd.created_at.isoformat(),
-                    'created_by': latest_prd.created_by,
-                    'has_markdown': bool(latest_prd.md_uri),
-                    'has_json_summary': bool(latest_prd.json_uri),
-                    'sources': latest_prd.sources or []
+                    'id': str(current_prd.id),
+                    'version': current_prd.version,
+                    'status': current_prd.status,
+                    'created_at': current_prd.created_at.isoformat(),
+                    'created_by': current_prd.created_by,
+                    'has_markdown': bool(current_prd.md_uri),
+                    'has_json_summary': bool(current_prd.json_uri),
+                    'sources': current_prd.sources or []
                 }
         except Exception as prd_error:
             current_app.logger.error(f"Error retrieving PRD for session {session_id}: {str(prd_error)}")
@@ -758,6 +911,373 @@ def download_file(file_id):
         return jsonify({'error': 'Failed to download file'}), 500
 
 
+@upload_bp.route('/prd/deep-link/<session_id>', methods=['POST'])
+def generate_prd_deep_link(session_id):
+    """Generate JWT token for secure PRD deep linking to PO.html"""
+    try:
+        # Verify session exists
+        session = UploadSession.query.get(session_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Verify project exists (basic access control)
+        project = MissionControlProject.query.get(session.project_id)
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # Get PRD information for this session
+        try:
+            from ..models.prd import PRD
+        except ImportError:
+            from models.prd import PRD
+        
+        latest_prd = PRD.get_latest_for_session(str(session.id))
+        if not latest_prd:
+            return jsonify({'error': 'No PRD found for this session'}), 404
+        
+        # Generate JWT token with 15-minute TTL
+        secret_key = current_app.config.get('SECRET_KEY', 'default-secret-key')
+        payload = {
+            'session_id': str(session.id),
+            'project_id': session.project_id,
+            'prd_id': str(latest_prd.id),
+            'version': latest_prd.version,
+            'from': 'mission',
+            'exp': datetime.utcnow() + timedelta(minutes=15),
+            'iat': datetime.utcnow()
+        }
+        
+        token = jwt.encode(payload, secret_key, algorithm='HS256')
+        
+        # Create deep link URL
+        base_url = request.host_url.rstrip('/')
+        deep_link_url = f"{base_url}/po.html?projectId={session.project_id}&prdId={latest_prd.id}&version={latest_prd.version}&from=mission&token={token}"
+        
+        current_app.logger.info(f"Generated PRD deep link for session {session_id}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'deep_link_url': deep_link_url,
+                'token': token,
+                'expires_at': (datetime.utcnow() + timedelta(minutes=15)).isoformat(),
+                'prd_info': {
+                    'id': str(latest_prd.id),
+                    'version': latest_prd.version,
+                    'status': latest_prd.status,
+                    'created_at': latest_prd.created_at.isoformat()
+                }
+            },
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0'
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"Error generating PRD deep link: {str(e)}")
+        return jsonify({'error': 'Failed to generate deep link'}), 500
+
+
+@upload_bp.route('/prd/validate-token', methods=['POST'])
+def validate_prd_token():
+    """Validate JWT token for PRD access"""
+    try:
+        data = request.get_json()
+        if not data or 'token' not in data:
+            return jsonify({'error': 'Token is required'}), 400
+        
+        token = data['token']
+        secret_key = current_app.config.get('SECRET_KEY', 'default-secret-key')
+        
+        try:
+            # Decode and validate token
+            payload = jwt.decode(token, secret_key, algorithms=['HS256'])
+            
+            # Verify session and PRD still exist
+            session = UploadSession.query.get(payload['session_id'])
+            if not session:
+                return jsonify({'error': 'Session not found', 'valid': False}), 404
+            
+            try:
+                from ..models.prd import PRD
+            except ImportError:
+                from models.prd import PRD
+            
+            prd = PRD.query.get(payload['prd_id'])
+            if not prd:
+                return jsonify({'error': 'PRD not found', 'valid': False}), 404
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'valid': True,
+                    'payload': payload,
+                    'session_info': {
+                        'id': str(session.id),
+                        'project_id': session.project_id,
+                        'description': session.description,
+                        'status': session.status
+                    },
+                    'prd_info': {
+                        'id': str(prd.id),
+                        'version': prd.version,
+                        'status': prd.status,
+                        'created_at': prd.created_at.isoformat()
+                    }
+                },
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0'
+            })
+            
+        except jwt.ExpiredSignatureError:
+            return jsonify({
+                'success': False,
+                'data': {'valid': False, 'error': 'Token has expired'},
+                'error': 'Token has expired',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0'
+            }), 401
+        except jwt.InvalidTokenError:
+            return jsonify({
+                'success': False,
+                'data': {'valid': False, 'error': 'Invalid token'},
+                'error': 'Invalid token',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0'
+            }), 401
+            
+    except Exception as e:
+        current_app.logger.error(f"Error validating PRD token: {str(e)}")
+        return jsonify({
+            'success': False,
+            'data': {'valid': False, 'error': 'Failed to validate token'},
+            'error': 'Failed to validate token',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0'
+        }), 500
+
+
+@upload_bp.route('/prd/<prd_id>/freeze', methods=['POST'])
+def freeze_prd(prd_id):
+    """Freeze PRD to create immutable version snapshot"""
+    try:
+        data = request.get_json() or {}
+        created_by = data.get('created_by', 'user')
+        
+        # Get PRD record
+        try:
+            from ..models.prd import PRD
+        except ImportError:
+            from models.prd import PRD
+        
+        prd = PRD.query.get(prd_id)
+        if not prd:
+            return jsonify({
+                'success': False,
+                'error': 'PRD not found',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0'
+            }), 404
+        
+        # Debug: Log PRD info before freezing
+        current_app.logger.info(f"🔍 DEBUG: Attempting to freeze PRD {prd_id}")
+        current_app.logger.info(f"🔍 DEBUG: PRD status: {prd.status}, version: {prd.version}")
+        current_app.logger.info(f"🔍 DEBUG: PRD draft_id: {prd.draft_id}")
+        
+        # Store original version before freezing
+        original_version = prd.version
+        
+        # Freeze the PRD (changes status from draft to frozen)
+        frozen_prd = prd.freeze_version(created_by)
+        current_app.logger.info(f"✅ DEBUG: Successfully frozen PRD {frozen_prd.id} at version {frozen_prd.version}")
+        
+        # Create audit trail entry
+        audit_entry = {
+            'action': 'prd_frozen',
+            'prd_id': str(frozen_prd.id),
+            'original_version': original_version,
+            'frozen_version': frozen_prd.version,
+            'created_by': created_by,
+            'timestamp': datetime.utcnow().isoformat(),
+            'source_inputs': frozen_prd.sources or []
+        }
+        
+        current_app.logger.info(f"PRD {prd_id} frozen as version {frozen_prd.version} by {created_by}")
+        
+        # Send webhook notification for real-time updates
+        webhook_sent = False
+        try:
+            # Send internal webhook to our own endpoint for consistency
+            webhook_url = f"{request.host_url.rstrip('/')}/api/upload/events/prd.updated"
+            webhook_payload = {
+                'event': 'prd.updated',
+                'prd_id': str(frozen_prd.id),
+                'session_id': str(frozen_prd.draft_id),
+                'version': frozen_prd.version,
+                'status': frozen_prd.status,
+                'timestamp': audit_entry['timestamp']
+            }
+            
+            # Send webhook asynchronously with proper Flask context
+            import threading
+            def send_webhook():
+                with current_app.app_context():
+                    try:
+                        response = requests.post(webhook_url, json=webhook_payload, timeout=5)
+                        if response.status_code == 200:
+                            current_app.logger.info(f"PRD update webhook sent successfully")
+                        else:
+                            current_app.logger.warning(f"PRD update webhook failed with status {response.status_code}")
+                    except Exception as e:
+                        current_app.logger.warning(f"Failed to send PRD update webhook: {str(e)}")
+            
+            # Send webhook in background thread with app context
+            webhook_thread = threading.Thread(target=send_webhook)
+            webhook_thread.daemon = True
+            webhook_thread.start()
+            webhook_sent = True
+        except Exception as webhook_error:
+            current_app.logger.warning(f"Failed to send PRD update webhook: {str(webhook_error)}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'success': True,
+                'frozen_prd': {
+                    'id': str(frozen_prd.id),
+                    'version': frozen_prd.version,
+                    'status': frozen_prd.status,
+                    'created_by': frozen_prd.created_by,
+                    'created_at': frozen_prd.created_at.isoformat()
+                },
+                'audit_entry': audit_entry,
+                'webhook_sent': webhook_sent
+            },
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0'
+        })
+        
+    except ValueError as e:
+        # Handle PRD already frozen error or other validation issues
+        current_app.logger.error(f"❌ ValueError freezing PRD {prd_id}: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0'
+        }), 400
+        
+    except Exception as e:
+        current_app.logger.error(f"Error freezing PRD: {str(e)}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to freeze PRD',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0'
+        }), 500
+        
+        # Get PRD
+        try:
+            from ..models.prd import PRD
+        except ImportError:
+            from models.prd import PRD
+        
+        prd = PRD.query.get(prd_id)
+        if not prd:
+            return jsonify({'error': 'PRD not found'}), 404
+        
+        # Verify session exists (basic access control)
+        session = UploadSession.query.get(prd.draft_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Verify project exists
+        project = MissionControlProject.query.get(session.project_id)
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # Create frozen version
+        frozen_prd = prd.freeze_version(created_by=created_by)
+        
+        # Create audit trail entry
+        audit_entry = {
+            'action': 'prd_frozen',
+            'prd_id': str(frozen_prd.id),
+            'previous_version': prd.version,
+            'new_version': frozen_prd.version,
+            'created_by': created_by,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'source_inputs': [f.filename for f in session.files] if session.files else []
+        }
+        
+        # Store audit trail in session metadata (simple approach)
+        if not hasattr(session, 'metadata') or not session.metadata:
+            session.metadata = '{}'
+        
+        try:
+            metadata = json.loads(session.metadata) if session.metadata else {}
+        except (json.JSONDecodeError, TypeError):
+            metadata = {}
+        
+        if 'audit_trail' not in metadata:
+            metadata['audit_trail'] = []
+        
+        metadata['audit_trail'].append(audit_entry)
+        session.metadata = json.dumps(metadata)
+        db.session.commit()
+        
+        # Trigger webhook event for Po.html integration
+        webhook_payload = {
+            'event': 'prd.updated',
+            'data': {
+                'prd_id': str(frozen_prd.id),
+                'session_id': str(session.id),
+                'project_id': session.project_id,
+                'version': frozen_prd.version,
+                'status': frozen_prd.status,
+                'created_by': created_by,
+                'created_at': frozen_prd.created_at.isoformat(),
+                'audit_entry': audit_entry
+            }
+        }
+        
+        # Send webhook (in a real implementation, this would be async)
+        try:
+            import requests
+            webhook_url = current_app.config.get('PRD_WEBHOOK_URL')
+            if webhook_url:
+                requests.post(webhook_url, json=webhook_payload, timeout=5)
+        except Exception as webhook_error:
+            current_app.logger.warning(f"Webhook delivery failed: {str(webhook_error)}")
+        
+        current_app.logger.info(f"PRD {prd_id} frozen to version {frozen_prd.version} by {created_by}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'success': True,
+                'frozen_prd': {
+                    'id': str(frozen_prd.id),
+                    'version': frozen_prd.version,
+                    'status': frozen_prd.status,
+                    'created_by': frozen_prd.created_by,
+                    'created_at': frozen_prd.created_at.isoformat()
+                },
+                'audit_entry': audit_entry,
+                'webhook_sent': webhook_url is not None
+            },
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0'
+        })
+        
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        current_app.logger.error(f"Error freezing PRD: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': 'Failed to freeze PRD'}), 500
+
+
 @upload_bp.route('/test-logging', methods=['GET'])
 def test_logging():
     """Test endpoint to verify logging is working"""
@@ -771,30 +1291,21 @@ def test_logging():
 def analyze_session_files(session_id):
     """Trigger AI analysis of all files in a session"""
     try:
-        print(f"🔍 DEBUG: Starting analysis for session {session_id}")
-        current_app.logger.info(f"🔍 Starting analysis for session {session_id}")
+        current_app.logger.info(f"Starting analysis for session {session_id}")
         
         # Verify session exists
-        print(f"🔍 DEBUG: Looking up session {session_id}")
         session = UploadSession.query.get(session_id)
         if not session:
-            print(f"❌ DEBUG: Session {session_id} not found")
-            current_app.logger.error(f"❌ Session {session_id} not found")
+            current_app.logger.error(f"Session {session_id} not found")
             return jsonify({'error': 'Session not found'}), 404
         
-        print(f"✅ DEBUG: Found session {session_id}, project_id: {session.project_id}")
-        
         # Get all files in the session (pending or complete)
-        print(f"🔍 DEBUG: Getting files for session {session_id}")
         files = [f for f in session.files if f.processing_status in ['pending', 'complete']]
-        print(f"✅ DEBUG: Found {len(files)} files to analyze")
         
         if not files:
-            print(f"❌ DEBUG: No files to analyze")
             return jsonify({'error': 'No files to analyze'}), 400
         
         # Update session status to indicate analysis is starting
-        print(f"🔍 DEBUG: Updating session status to 'extracting'")
         session.update_status('extracting')
         
         # Prepare file data for AI analysis
@@ -808,80 +1319,79 @@ def analyze_session_files(session_id):
             })
         
         # Get AI broker and analyze files
-        print(f"🔍 DEBUG: Importing AI broker")
         try:
             from ..services.ai_broker import get_ai_broker
         except ImportError:
             from services.ai_broker import get_ai_broker
         
-        print(f"🔍 DEBUG: Getting AI broker instance")
         ai_broker = get_ai_broker()
         
         # Get preferred model from request data
-        print(f"🔍 DEBUG: Getting request data")
         data = request.get_json() or {}
         preferred_model = data.get('preferred_model', 'claude-opus-4')
-        print(f"✅ DEBUG: Using model: {preferred_model}")
         
         # Analyze files
-        print(f"🔍 DEBUG: Starting AI analysis with {len(file_data)} files")
+        current_app.logger.info(f"Starting AI analysis with {len(file_data)} files using {preferred_model}")
         analysis_result = ai_broker.analyze_uploaded_files(
             session_id=session_id,
             files=file_data,
             preferred_model=preferred_model
         )
-        print(f"✅ DEBUG: AI analysis completed, success: {analysis_result.get('success', False)}")
         
         if analysis_result['success']:
-            print(f"✅ DEBUG: AI analysis successful for session {session_id}")
-            current_app.logger.info(f"✅ AI analysis successful for session {session_id}")
+            current_app.logger.info(f"AI analysis successful for session {session_id}")
             
             # Update session with analysis results
-            print(f"🔍 DEBUG: Updating session with analysis results")
             session.update_ai_analysis(analysis_result['analysis'])
             session.update_ai_model_used(analysis_result['model_used'])
             session.update_status('ready')
-            print(f"✅ DEBUG: Session updated successfully")
             
             # Generate structured PRD summary using the PRD model
-            print(f"🔍 DEBUG: Importing PRD models")
             try:
                 from ..models.prd import extract_prd_summary, PRD
             except ImportError:
                 from models.prd import extract_prd_summary, PRD
-            print(f"✅ DEBUG: PRD models imported successfully")
             
             # Extract source IDs from files for attribution
-            print(f"🔍 DEBUG: Extracting source IDs from {len(files)} files")
             source_ids = [f.source_id for f in files if f.source_id]
-            print(f"✅ DEBUG: Found {len(source_ids)} source IDs: {source_ids}")
             
             # Generate structured summary
-            print(f"🔍 DEBUG: Generating PRD summary from analysis")
-            prd_summary = extract_prd_summary(analysis_result['analysis'], source_ids)
-            print(f"✅ DEBUG: PRD summary generated successfully")
+            try:
+                prd_summary = extract_prd_summary(analysis_result['analysis'], source_ids)
+                current_app.logger.info(f"PRD summary generated successfully for session {session_id}")
+            except Exception as summary_error:
+                current_app.logger.error(f"Failed to generate PRD summary: {summary_error}")
+                # Create a fallback summary that shows the analysis was completed
+                # but structured parsing failed - this still allows the user to see the full analysis
+                prd_summary = {
+                    'problem': {'text': 'Analysis completed but summary extraction failed - see full PRD for details', 'sources': source_ids},
+                    'audience': {'text': 'Target audience information available in full analysis', 'sources': source_ids},
+                    'goals': {'items': ['Goals available in full analysis document'], 'sources': source_ids},
+                    'risks': {'items': ['Risk analysis available in full document'], 'sources': source_ids},
+                    'competitive_scan': {'items': ['Competitive insights available in full analysis'], 'sources': source_ids},
+                    'open_questions': {'items': ['Questions and next steps available in full document'], 'sources': source_ids}
+                }
             
             # Create PRD record in database
             try:
-                print(f"🔄 Creating PRD record for session {session_id}, project {session.project_id}")
                 current_app.logger.info(f"Creating PRD record for session {session_id}, project {session.project_id}")
-                prd_record = PRD.create_draft(
-                    project_id=str(session.project_id),  # Ensure string conversion
-                    draft_id=str(session.id),
-                    md_content=analysis_result['analysis'],  # Store full markdown content
-                    json_summary=prd_summary,  # Store structured JSON summary
-                    sources=source_ids,  # Link to source files for traceability
-                    created_by=data.get('created_by', 'system')  # Track who created it
-                )
                 
-                print(f"✅ Created PRD record {prd_record.id} for session {session_id}")
-                current_app.logger.info(f"Created PRD record {prd_record.id} for session {session_id}")
+                # Ensure we're in the Flask app context
+                with current_app.app_context():
+                    prd_record = PRD.create_draft(
+                        project_id=str(session.project_id),  # Ensure string conversion
+                        draft_id=str(session.id),
+                        md_content=analysis_result['analysis'],  # Store full markdown content
+                        json_summary=prd_summary,  # Store structured JSON summary
+                        sources=source_ids,  # Link to source files for traceability
+                        created_by=data.get('created_by', 'system')  # Track who created it
+                    )
+                    
+                    current_app.logger.info(f"Created PRD record {prd_record.id} for session {session_id}")
                 
             except Exception as prd_error:
-                import traceback
-                print(f"❌ Failed to create PRD record for session {session_id}: {str(prd_error)}")
-                print(f"PRD creation traceback: {traceback.format_exc()}")
                 current_app.logger.error(f"Failed to create PRD record for session {session_id}: {str(prd_error)}")
+                # Continue anyway - the analysis is still successful
                 current_app.logger.error(f"PRD creation traceback: {traceback.format_exc()}")
                 # Continue processing even if PRD creation fails
                 prd_record = None
@@ -927,6 +1437,11 @@ def analyze_session_files(session_id):
             completeness_score = calculate_completeness_score(session)
             session.update_completeness_score(completeness_score)
             
+            # Mark all files as successfully processed
+            for file in files:
+                file.processing_status = 'complete'
+            db.session.commit()
+            
             current_app.logger.info(f"Successfully analyzed files for session {session_id} using {analysis_result['model_used']}")
             
             response_data = {
@@ -948,8 +1463,12 @@ def analyze_session_files(session_id):
             
             return jsonify({'data': response_data})
         else:
-            # Analysis failed
+            # Analysis failed - mark files as error
             session.update_status('error')
+            
+            for file in files:
+                file.processing_status = 'error'
+            db.session.commit()
             
             current_app.logger.error(f"AI analysis failed for session {session_id}: {analysis_result['error']}")
             
@@ -969,12 +1488,18 @@ def analyze_session_files(session_id):
         current_app.logger.error(f"Error analyzing session files: {str(e)}")
         current_app.logger.error(f"Traceback: {traceback.format_exc()}")
         
-        # Update session status to error
+        # Update session status to error and mark files as error
         try:
             session = UploadSession.query.get(session_id)
             if session:
                 session.update_status('error')
-        except:
+                # Mark all files in session as error
+                files = [f for f in session.files if f.processing_status in ['pending', 'processing']]
+                for file in files:
+                    file.processing_status = 'error'
+                db.session.commit()
+        except Exception as cleanup_error:
+            current_app.logger.error(f"Failed to cleanup session after error: {cleanup_error}")
             pass
         
         # Return 500 error to match what the UI is seeing

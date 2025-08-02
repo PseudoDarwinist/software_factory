@@ -702,6 +702,808 @@ async def get_idea_details(idea_id: str) -> str:
     
     return json.dumps(idea_details, indent=2)
 
+# ===============================================================================
+# BUILD PHASE MCP TOOLS - For Step 4: Build integration with external coding assistants
+# ===============================================================================
+
+@mcp.tool()
+async def get_project_tasks(
+    project_id: str,
+    status_filter: str = None
+) -> str:
+    """Get all tasks for a project with their current status and context
+    
+    Args:
+        project_id: The project ID to get tasks for
+        status_filter: Optional status filter (ready, running, review, done, failed)
+    """
+    if using_mock_data:
+        # Mock task data for testing
+        mock_tasks = [
+            {
+                "id": f"{project_id}_task_1",
+                "project_id": project_id,
+                "spec_id": f"{project_id}_spec_oauth",
+                "title": "Add OAuth login API endpoint",
+                "description": "Implement OAuth 2.0 login endpoint with JWT token generation",
+                "task_number": "1.1",
+                "status": "ready",
+                "priority": "high",
+                "likely_touches": ["src/auth/oauth.py", "src/api/auth.py", "tests/test_auth.py"],
+                "requirements_refs": ["REQ-AUTH-001", "REQ-SEC-002"],
+                "goal_line": "Users can log in using OAuth and receive JWT tokens",
+                "effort_estimate_hours": 4.0
+            },
+            {
+                "id": f"{project_id}_task_2", 
+                "project_id": project_id,
+                "spec_id": f"{project_id}_spec_oauth",
+                "title": "Update frontend login component",
+                "description": "Modify login component to support OAuth flow",
+                "task_number": "1.2",
+                "status": "ready",
+                "priority": "medium",
+                "likely_touches": ["src/components/Login.tsx", "src/services/auth.ts"],
+                "requirements_refs": ["REQ-UI-003"],
+                "goal_line": "Login UI supports OAuth flow with proper error handling",
+                "effort_estimate_hours": 2.5
+            }
+        ]
+        
+        if status_filter:
+            mock_tasks = [t for t in mock_tasks if t["status"] == status_filter.lower()]
+        
+        return json.dumps({"tasks": mock_tasks, "count": len(mock_tasks)}, indent=2)
+    else:
+        try:
+            app = get_flask_app()
+            with app.app_context():
+                from flask import current_app
+                from src.models.task import Task, TaskStatus
+                app_db = current_app.extensions['sqlalchemy']
+                
+                # Build query
+                query = app_db.session.query(Task).filter_by(project_id=str(project_id))
+                
+                if status_filter:
+                    try:
+                        status_enum = TaskStatus(status_filter.lower())
+                        query = query.filter_by(status=status_enum)
+                    except ValueError:
+                        return json.dumps({"error": f"Invalid status: {status_filter}"})
+                
+                tasks = query.order_by(Task.task_number).all()
+                tasks_data = [task.to_dict() for task in tasks]
+                
+                return json.dumps({"tasks": tasks_data, "count": len(tasks_data)}, indent=2)
+        except Exception as e:
+            logger.error(f"Error getting project tasks: {e}")
+            return json.dumps({"error": f"Error getting project tasks: {str(e)}"})
+
+@mcp.tool()
+async def get_task_context(task_id: str) -> str:
+    """Get comprehensive context for a specific task including all implementation details
+    
+    Args:
+        task_id: The ID of the task to get context for
+    """
+    if using_mock_data:
+        # Mock task context for testing
+        mock_context = {
+            "task": {
+                "id": task_id,
+                "title": "Add OAuth login API endpoint",
+                "description": "Implement OAuth 2.0 login endpoint with JWT token generation",
+                "task_number": "1.1", 
+                "status": "ready",
+                "priority": "high",
+                "likely_touches": ["src/auth/oauth.py", "src/api/auth.py", "tests/test_auth.py"],
+                "requirements_refs": ["REQ-AUTH-001", "REQ-SEC-002"],
+                "goal_line": "Users can log in using OAuth and receive JWT tokens",
+                "effort_estimate_hours": 4.0
+            },
+            "project_context": {
+                "name": "Software Factory",
+                "repo_url": "https://github.com/example/software-factory",
+                "tech_stack": ["Python", "FastAPI", "React", "TypeScript"]
+            },
+            "requirements": {
+                "REQ-AUTH-001": "System must support OAuth 2.0 authentication flow",
+                "REQ-SEC-002": "JWT tokens must expire after 24 hours"
+            },
+            "design_notes": "Follow existing auth patterns in src/auth/. Use Pydantic models for request/response validation.",
+            "file_context": {
+                "src/auth/oauth.py": "Create new file - OAuth provider configuration",
+                "src/api/auth.py": "Add new endpoints - /oauth/login, /oauth/callback", 
+                "tests/test_auth.py": "Add OAuth flow test cases"
+            }
+        }
+        return json.dumps(mock_context, indent=2)
+    else:
+        try:
+            app = get_flask_app()
+            with app.app_context():
+                from flask import current_app
+                from src.models.task import Task
+                from src.models.mission_control_project import MissionControlProject
+                from src.models.specification_artifact import SpecificationArtifact
+                app_db = current_app.extensions['sqlalchemy']
+                
+                # Get task
+                task = app_db.session.query(Task).get(task_id)
+                if not task:
+                    return json.dumps({"error": f"Task {task_id} not found"})
+                
+                # Get project info
+                project = app_db.session.query(MissionControlProject).get(task.project_id)
+                
+                # Get related spec artifacts
+                spec_artifacts = app_db.session.query(SpecificationArtifact).filter_by(
+                    spec_id=task.spec_id
+                ).all()
+                
+                context = {
+                    "task": task.to_dict(),
+                    "project_context": {
+                        "id": project.id,
+                        "name": project.name,
+                        "description": project.description if hasattr(project, 'description') else None,
+                        "repo_url": project.repo_url if hasattr(project, 'repo_url') else None
+                    },
+                    "specification_artifacts": [
+                        {
+                            "type": artifact.artifact_type.value,
+                            "content": artifact.content[:500] + "..." if len(artifact.content) > 500 else artifact.content
+                        }
+                        for artifact in spec_artifacts
+                    ],
+                    "implementation_context": {
+                        "likely_files_to_modify": task.likely_touches or [],
+                        "requirements_references": task.requirements_refs or [],
+                        "goal": task.goal_line,
+                        "estimated_effort_hours": task.effort_estimate_hours,
+                        "dependencies": task.depends_on or []
+                    }
+                }
+                
+                return json.dumps(context, indent=2)
+        except Exception as e:
+            logger.error(f"Error getting task context: {e}")
+            return json.dumps({"error": f"Error getting task context: {str(e)}"})
+
+@mcp.tool()
+async def get_task_repository_info(task_id: str) -> str:
+    """Get repository access information for a task to enable local development
+    
+    Args:
+        task_id: The ID of the task to get repository info for
+    """
+    if using_mock_data:
+        mock_repo_info = {
+            "task_id": task_id,
+            "repository": {
+                "url": "https://github.com/example/software-factory",
+                "clone_url": "git@github.com:example/software-factory.git",
+                "default_branch": "main",
+                "access_method": "ssh_key_required"
+            },
+            "branch_info": {
+                "suggested_branch_name": f"feature/{task_id}-oauth-login-implementation", 
+                "base_branch": "main",
+                "branch_exists": False
+            },
+            "development_setup": {
+                "setup_commands": [
+                    "git clone git@github.com:example/software-factory.git",
+                    "cd software-factory",
+                    "python -m venv venv",
+                    "source venv/bin/activate",
+                    "pip install -r requirements.txt"
+                ],
+                "test_command": "pytest tests/",
+                "dev_server": "python -m src.app"
+            }
+        }
+        return json.dumps(mock_repo_info, indent=2)
+    else:
+        try:
+            app = get_flask_app()
+            with app.app_context():
+                from flask import current_app
+                from src.models.task import Task
+                from src.models.mission_control_project import MissionControlProject
+                app_db = current_app.extensions['sqlalchemy']
+                
+                # Get task and project
+                task = app_db.session.query(Task).get(task_id)
+                if not task:
+                    return json.dumps({"error": f"Task {task_id} not found"})
+                
+                project = app_db.session.query(MissionControlProject).get(task.project_id)
+                if not project:
+                    return json.dumps({"error": f"Project {task.project_id} not found"})
+                
+                # Generate branch name if not already set
+                if not task.branch_name:
+                    task_title_clean = task.title.lower().replace(' ', '-').replace('_', '-')
+                    suggested_branch = f"feature/{task.id}-{task_title_clean}"
+                else:
+                    suggested_branch = task.branch_name
+                
+                repo_info = {
+                    "task_id": task_id,
+                    "repository": {
+                        "url": project.repo_url if hasattr(project, 'repo_url') else None,
+                        "default_branch": "main",
+                        "access_method": "github_token_required" if hasattr(project, 'github_token') and project.github_token else "ssh_key_required"
+                    },
+                    "branch_info": {
+                        "suggested_branch_name": suggested_branch,
+                        "base_branch": "main",
+                        "branch_exists": False  # TODO: Check with GitHub API
+                    },
+                    "development_context": {
+                        "files_to_modify": task.likely_touches or [],
+                        "test_files_pattern": "tests/test_*.py",
+                        "related_components": task.related_components or []
+                    }
+                }
+                
+                return json.dumps(repo_info, indent=2)
+        except Exception as e:
+            logger.error(f"Error getting repository info: {e}")
+            return json.dumps({"error": f"Error getting repository info: {str(e)}"})
+
+@mcp.tool()
+async def mark_task_complete(
+    task_id: str,
+    completion_notes: str = None,
+    pr_url: str = None
+) -> str:
+    """Mark a task as completed after implementation
+    
+    Args:
+        task_id: The ID of the task to mark as complete
+        completion_notes: Optional notes about the implementation
+        pr_url: Optional URL of the pull request created for this task
+    """
+    if using_mock_data:
+        result = {
+            "success": True,
+            "task_id": task_id,
+            "new_status": "done",
+            "message": f"Task {task_id} marked as complete",
+            "completion_notes": completion_notes,
+            "pr_url": pr_url
+        }
+        return json.dumps(result, indent=2)
+    else:
+        try:
+            app = get_flask_app()
+            with app.app_context():
+                from flask import current_app
+                from src.models.task import Task, TaskStatus
+                app_db = current_app.extensions['sqlalchemy']
+                
+                # Get task
+                task = app_db.session.query(Task).get(task_id)
+                if not task:
+                    return json.dumps({"error": f"Task {task_id} not found"})
+                
+                # Mark as complete
+                task.complete_task(completed_by="mcp_external_assistant", pr_url=pr_url)
+                
+                # Add completion notes if provided
+                if completion_notes:
+                    task.add_progress_message(f"Task completed via MCP: {completion_notes}", 100)
+                
+                app_db.session.commit()
+                
+                result = {
+                    "success": True,
+                    "task_id": task_id,
+                    "new_status": task.status.value,
+                    "message": f"Task {task_id} marked as complete",
+                    "completion_notes": completion_notes,
+                    "pr_url": pr_url,
+                    "completed_at": task.completed_at.isoformat() if task.completed_at else None
+                }
+                
+                return json.dumps(result, indent=2)
+        except Exception as e:
+            logger.error(f"Error marking task complete: {e}")
+            return json.dumps({"error": f"Error marking task complete: {str(e)}"})
+
+@mcp.tool()
+async def update_task_status(
+    task_id: str,
+    new_status: str,
+    progress_message: str = None
+) -> str:
+    """Update the status of a task during development
+    
+    Args:
+        task_id: The ID of the task to update
+        new_status: New status (ready, running, review, done, failed)
+        progress_message: Optional progress message to add
+    """
+    if using_mock_data:
+        result = {
+            "success": True,
+            "task_id": task_id,
+            "old_status": "ready",
+            "new_status": new_status,
+            "message": f"Task {task_id} status updated to {new_status}",
+            "progress_message": progress_message
+        }
+        return json.dumps(result, indent=2)
+    else:
+        try:
+            app = get_flask_app()
+            with app.app_context():
+                from flask import current_app
+                from src.models.task import Task, TaskStatus
+                app_db = current_app.extensions['sqlalchemy']
+                
+                # Get task
+                task = app_db.session.query(Task).get(task_id)
+                if not task:
+                    return json.dumps({"error": f"Task {task_id} not found"})
+                
+                old_status = task.status.value
+                
+                # Update status
+                try:
+                    task.status = TaskStatus(new_status.lower())
+                except ValueError:
+                    return json.dumps({"error": f"Invalid status: {new_status}"})
+                
+                # Add progress message if provided
+                if progress_message:
+                    task.add_progress_message(progress_message)
+                
+                app_db.session.commit()
+                
+                result = {
+                    "success": True,
+                    "task_id": task_id,
+                    "old_status": old_status,
+                    "new_status": task.status.value,
+                    "message": f"Task {task_id} status updated from {old_status} to {task.status.value}",
+                    "progress_message": progress_message
+                }
+                
+                return json.dumps(result, indent=2)
+        except Exception as e:
+            logger.error(f"Error updating task status: {e}")
+            return json.dumps({"error": f"Error updating task status: {str(e)}"})
+
+# ===============================================================================
+# THINK → DEFINE PHASE MCP TOOLS - For spec generation and management
+# ===============================================================================
+
+@mcp.tool()
+async def get_ideas_without_specs(project_id: str = None) -> str:
+    """Get ideas that haven't had specifications generated yet (Think stage ideas ready for Define)
+    
+    Args:
+        project_id: Optional project ID to filter ideas
+    """
+    if using_mock_data:
+        mock_ideas = [
+            {
+                "id": "idea_oauth_mobile",
+                "project_id": project_id or "project_1", 
+                "title": "Add OAuth login to mobile app",
+                "summary": "Users want to log in with Google/Apple accounts for easier access",
+                "severity": "amber",
+                "stage": "think", 
+                "created_at": "2025-01-30T10:00:00Z",
+                "has_specs": False,
+                "ready_for_define": True
+            },
+            {
+                "id": "idea_push_notifications",
+                "project_id": project_id or "project_1",
+                "title": "Implement push notifications", 
+                "summary": "Send notifications for order updates and promotions",
+                "severity": "red",
+                "stage": "think",
+                "created_at": "2025-01-30T09:00:00Z", 
+                "has_specs": False,
+                "ready_for_define": True
+            }
+        ]
+        return json.dumps({"ideas_without_specs": mock_ideas, "count": len(mock_ideas)}, indent=2)
+    else:
+        try:
+            app = get_flask_app()
+            with app.app_context():
+                from flask import current_app
+                app_db = current_app.extensions['sqlalchemy']
+                
+                # Query for ideas that don't have specs yet
+                query = app_db.session.query(FeedItem).filter_by(kind=FeedItem.KIND_IDEA)
+                
+                if project_id:
+                    query = query.filter_by(project_id=project_id)
+                
+                ideas = query.all()
+                
+                # Check which ideas don't have specs
+                ideas_without_specs = []
+                for idea in ideas:
+                    # Check if idea has any specification artifacts
+                    spec_count = app_db.session.query(SpecificationArtifact).filter_by(
+                        project_id=idea.project_id,
+                        # Assuming spec_id is related to idea_id - adjust based on your schema
+                        spec_id=f"spec_{idea.id}"
+                    ).count()
+                    
+                    if spec_count == 0:
+                        ideas_without_specs.append({
+                            "id": idea.id,
+                            "project_id": idea.project_id,
+                            "title": idea.title,
+                            "summary": idea.summary,
+                            "severity": idea.severity,
+                            "actor": idea.actor,
+                            "created_at": idea.created_at.isoformat() if idea.created_at else None,
+                            "metadata": idea.meta_data or {},
+                            "has_specs": False,
+                            "ready_for_define": True
+                        })
+                
+                return json.dumps({
+                    "ideas_without_specs": ideas_without_specs,
+                    "count": len(ideas_without_specs)
+                }, indent=2)
+        except Exception as e:
+            logger.error(f"Error getting ideas without specs: {e}")
+            return json.dumps({"error": f"Error getting ideas without specs: {str(e)}"})
+
+@mcp.tool()
+async def get_ideas_with_incomplete_specs(project_id: str = None) -> str:
+    """Get ideas in Define stage that are missing some specification documents
+    
+    Args:
+        project_id: Optional project ID to filter ideas
+    """
+    if using_mock_data:
+        mock_incomplete = [
+            {
+                "id": "idea_api_refactor",
+                "project_id": project_id or "project_1",
+                "title": "Refactor API architecture", 
+                "summary": "Modernize API endpoints for better performance",
+                "stage": "define",
+                "existing_specs": ["requirements"],
+                "missing_specs": ["design", "tasks"],
+                "completion_percentage": 33
+            }
+        ]
+        return json.dumps({"ideas_with_incomplete_specs": mock_incomplete, "count": len(mock_incomplete)}, indent=2)
+    else:
+        try:
+            app = get_flask_app()
+            with app.app_context():
+                from flask import current_app
+                app_db = current_app.extensions['sqlalchemy']
+                
+                # Get all ideas that have at least one spec but not all three
+                ideas_query = app_db.session.query(FeedItem).filter_by(kind=FeedItem.KIND_IDEA)
+                if project_id:
+                    ideas_query = ideas_query.filter_by(project_id=project_id)
+                
+                ideas = ideas_query.all()
+                incomplete_ideas = []
+                
+                for idea in ideas:
+                    # Check which spec types exist for this idea
+                    spec_query = app_db.session.query(SpecificationArtifact).filter_by(
+                        project_id=idea.project_id,
+                        spec_id=f"spec_{idea.id}"
+                    )
+                    existing_specs = spec_query.all()
+                    
+                    if len(existing_specs) > 0 and len(existing_specs) < 3:
+                        existing_types = [spec.artifact_type.value for spec in existing_specs]
+                        all_types = ["requirements", "design", "tasks"]
+                        missing_types = [t for t in all_types if t not in existing_types]
+                        
+                        incomplete_ideas.append({
+                            "id": idea.id,
+                            "project_id": idea.project_id,
+                            "title": idea.title,
+                            "summary": idea.summary,
+                            "stage": "define",
+                            "existing_specs": existing_types,
+                            "missing_specs": missing_types,
+                            "completion_percentage": round((len(existing_types) / 3) * 100)
+                        })
+                
+                return json.dumps({
+                    "ideas_with_incomplete_specs": incomplete_ideas,
+                    "count": len(incomplete_ideas)
+                }, indent=2)
+        except Exception as e:
+            logger.error(f"Error getting incomplete specs: {e}")
+            return json.dumps({"error": f"Error getting incomplete specs: {str(e)}"})
+
+@mcp.tool()
+async def update_specification_artifact(
+    project_id: str,
+    spec_id: str,
+    artifact_type: str,
+    new_content: str,
+    update_reason: str = None
+) -> str:
+    """Update an existing specification artifact (requirements.md, design.md, or tasks.md)
+    
+    Args:
+        project_id: The project ID 
+        spec_id: The specification ID
+        artifact_type: Type of artifact to update ('requirements', 'design', or 'tasks')
+        new_content: The updated content
+        update_reason: Optional reason for the update
+    """
+    if using_mock_data:
+        result = {
+            "success": True,
+            "spec_id": spec_id,
+            "artifact_type": artifact_type,
+            "updated_by": "mcp_assistant",
+            "update_reason": update_reason,
+            "previous_status": "human_reviewed",
+            "new_status": "ai_draft",
+            "message": f"Updated {artifact_type}.md specification - will need human review"
+        }
+        return json.dumps(result, indent=2)
+    else:
+        try:
+            from src.models.specification_artifact import ArtifactType, ArtifactStatus
+            
+            # Validate artifact type
+            valid_types = ["requirements", "design", "tasks"]
+            if artifact_type not in valid_types:
+                return json.dumps({"error": f"Invalid artifact_type. Must be one of: {valid_types}"})
+            
+            app = get_flask_app()
+            with app.app_context():
+                from flask import current_app
+                app_db = current_app.extensions['sqlalchemy']
+                
+                # Find existing artifact
+                artifact_id = f"{spec_id}_{artifact_type}"
+                artifact = app_db.session.query(SpecificationArtifact).get(artifact_id)
+                
+                if not artifact:
+                    return json.dumps({"error": f"Specification artifact {artifact_id} not found"})
+                
+                # Store previous status
+                previous_status = artifact.status.value if artifact.status else "unknown"
+                
+                # Update the artifact
+                artifact.content = new_content
+                artifact.updated_at = app_db.func.now()
+                artifact.status = ArtifactStatus.AI_DRAFT  # Reset to AI draft when updated via MCP
+                artifact.ai_generated = True
+                artifact.ai_model_used = "mcp_assistant"
+                
+                # Add update reason to context sources
+                if update_reason:
+                    context_sources = artifact.context_sources or []
+                    context_sources.append(f"MCP_UPDATE: {update_reason}")
+                    artifact.context_sources = context_sources
+                
+                app_db.session.commit()
+                
+                result = {
+                    "success": True,
+                    "spec_id": spec_id,
+                    "artifact_id": artifact_id,
+                    "artifact_type": artifact_type,
+                    "updated_by": "mcp_assistant", 
+                    "update_reason": update_reason,
+                    "previous_status": previous_status,
+                    "new_status": artifact.status.value,
+                    "message": f"Updated {artifact_type}.md - status reset to AI draft for human review"
+                }
+                
+                return json.dumps(result, indent=2)
+        except Exception as e:
+            logger.error(f"Error updating specification artifact: {e}")
+            return json.dumps({"error": f"Error updating specification: {str(e)}"})
+
+@mcp.tool()
+async def generate_missing_specs_for_idea(
+    idea_id: str,
+    project_id: str,
+    missing_spec_types: list = None,
+    generation_context: str = None
+) -> str:
+    """Generate missing specification documents for an idea
+    
+    Args:
+        idea_id: The idea ID to generate specs for
+        project_id: The project ID
+        missing_spec_types: List of spec types to generate ['requirements', 'design', 'tasks']
+        generation_context: Additional context for AI generation
+    """
+    if using_mock_data:
+        spec_types = missing_spec_types or ["requirements", "design", "tasks"]
+        generated_specs = []
+        
+        for spec_type in spec_types:
+            generated_specs.append({
+                "artifact_type": spec_type,
+                "artifact_id": f"spec_{idea_id}_{spec_type}",
+                "status": "ai_draft",
+                "generated": True
+            })
+        
+        result = {
+            "success": True,
+            "idea_id": idea_id,
+            "spec_id": f"spec_{idea_id}",
+            "generated_specs": generated_specs,
+            "message": f"Generated {len(spec_types)} specification documents"
+        }
+        return json.dumps(result, indent=2)
+    else:
+        try:
+            # Get idea details first
+            app = get_flask_app()
+            with app.app_context():
+                from flask import current_app
+                app_db = current_app.extensions['sqlalchemy']
+                
+                idea = app_db.session.query(FeedItem).get(idea_id)
+                if not idea:
+                    return json.dumps({"error": f"Idea {idea_id} not found"})
+                
+                spec_id = f"spec_{idea_id}"
+                spec_types = missing_spec_types or ["requirements", "design", "tasks"]
+                generated_specs = []
+                
+                # Generate each missing spec type
+                for spec_type in spec_types:
+                    if spec_type == "requirements":
+                        # Use existing create_requirements function
+                        result = await create_requirements(
+                            project_id=project_id,
+                            feature_name=idea.title,
+                            requirements_content=f"# Requirements for {idea.title}\n\n{idea.summary}\n\n{generation_context or ''}",
+                            idea_id=idea_id
+                        )
+                    elif spec_type == "design":
+                        # Use existing create_design function  
+                        result = await create_design(
+                            project_id=project_id,
+                            spec_id=spec_id,
+                            design_content=f"# Design for {idea.title}\n\n{generation_context or 'AI-generated design document'}"
+                        )
+                    elif spec_type == "tasks":
+                        # Use existing create_tasks function
+                        result = await create_tasks(
+                            project_id=project_id,
+                            spec_id=spec_id,
+                            tasks_content=f"# Tasks for {idea.title}\n\n{generation_context or 'AI-generated task breakdown'}"
+                        )
+                    
+                    generated_specs.append({
+                        "artifact_type": spec_type,
+                        "result": json.loads(result) if isinstance(result, str) else result
+                    })
+                
+                return json.dumps({
+                    "success": True,
+                    "idea_id": idea_id,
+                    "spec_id": spec_id,
+                    "generated_specs": generated_specs,
+                    "message": f"Generated {len(spec_types)} specification documents for idea: {idea.title}"
+                }, indent=2)
+        except Exception as e:
+            logger.error(f"Error generating missing specs: {e}")
+            return json.dumps({"error": f"Error generating specs: {str(e)}"})
+
+@mcp.tool()
+async def get_spec_generation_status(idea_id: str, project_id: str) -> str:
+    """Get the current status of specification generation for an idea
+    
+    Args:
+        idea_id: The idea ID to check
+        project_id: The project ID
+    """
+    if using_mock_data:
+        status = {
+            "idea_id": idea_id,
+            "project_id": project_id,
+            "idea_title": "Add OAuth login to mobile app",
+            "spec_id": f"spec_{idea_id}",
+            "specifications": {
+                "requirements": {"exists": True, "status": "human_reviewed", "last_updated": "2025-01-30T10:00:00Z"},
+                "design": {"exists": True, "status": "ai_draft", "last_updated": "2025-01-30T11:00:00Z"},
+                "tasks": {"exists": False, "status": None, "last_updated": None}
+            },
+            "completion_status": {
+                "total_specs": 3,
+                "completed_specs": 2,
+                "completion_percentage": 67,
+                "ready_for_freeze": False,
+                "missing_specs": ["tasks"]
+            }
+        }
+        return json.dumps(status, indent=2)
+    else:
+        try:
+            app = get_flask_app()
+            with app.app_context():
+                from flask import current_app
+                app_db = current_app.extensions['sqlalchemy']
+                
+                # Get idea details
+                idea = app_db.session.query(FeedItem).get(idea_id)
+                if not idea:
+                    return json.dumps({"error": f"Idea {idea_id} not found"})
+                
+                spec_id = f"spec_{idea_id}"
+                
+                # Check each spec type
+                spec_types = ["requirements", "design", "tasks"]
+                specifications = {}
+                completed_count = 0
+                
+                for spec_type in spec_types:
+                    artifact_id = f"{spec_id}_{spec_type}"
+                    artifact = app_db.session.query(SpecificationArtifact).get(artifact_id)
+                    
+                    if artifact:
+                        specifications[spec_type] = {
+                            "exists": True,
+                            "status": artifact.status.value if artifact.status else "unknown",
+                            "last_updated": artifact.updated_at.isoformat() if artifact.updated_at else None,
+                            "ai_generated": artifact.ai_generated,
+                            "ai_model": artifact.ai_model_used
+                        }
+                        completed_count += 1
+                    else:
+                        specifications[spec_type] = {
+                            "exists": False,
+                            "status": None,
+                            "last_updated": None
+                        }
+                
+                missing_specs = [spec_type for spec_type, info in specifications.items() if not info["exists"]]
+                completion_percentage = round((completed_count / len(spec_types)) * 100)
+                
+                # Check if ready for freeze (all specs exist and at least human reviewed)
+                ready_for_freeze = (
+                    completed_count == len(spec_types) and
+                    all(spec["status"] in ["human_reviewed", "frozen"] for spec in specifications.values() if spec["exists"])
+                )
+                
+                status = {
+                    "idea_id": idea_id,
+                    "project_id": project_id,
+                    "idea_title": idea.title,
+                    "idea_summary": idea.summary,
+                    "spec_id": spec_id,
+                    "specifications": specifications,
+                    "completion_status": {
+                        "total_specs": len(spec_types),
+                        "completed_specs": completed_count,
+                        "completion_percentage": completion_percentage,
+                        "ready_for_freeze": ready_for_freeze,
+                        "missing_specs": missing_specs
+                    }
+                }
+                
+                return json.dumps(status, indent=2)
+        except Exception as e:
+            logger.error(f"Error getting spec status: {e}")
+            return json.dumps({"error": f"Error getting spec status: {str(e)}"})
+
 # Tool handlers are now defined using @mcp.tool() decorators above
 
 def main():
@@ -723,27 +1525,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-def main():
-    """Run the MCP server"""
-    import asyncio
-    
-    async def run_server():
-        """Run the MCP server asynchronously"""
-        logger.info("Starting Software Factory MCP server")
-        
-        if using_mock_data:
-            logger.warning("Running with mock data - database connection not available")
-        
-        try:
-            # Run the server
-            await mcp.run()
-        except KeyboardInterrupt:
-            logger.info("Server stopped by user")
-        except Exception as e:
-            logger.error(f"Server error: {e}")
-            logger.error(traceback.format_exc())
-            sys.exit(1)
-    
-    asyncio.run(run_server())
 

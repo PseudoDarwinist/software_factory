@@ -28,6 +28,7 @@ interface SourceQuote {
   sourceId: string
   quote: string
   filename: string
+  section?: string // Add section context for different quotes per section
 }
 
 interface SourcesTrayCardProps {
@@ -89,86 +90,410 @@ const parsePRDSummary = (aiResponse: string): PRDSummary => {
   
   if (!aiResponse) return summary
   
-  const lines = aiResponse.split('\n')
-  let currentSection: keyof PRDSummary | null = null
+  console.log('🔍 Parsing PRD summary from AI response:', aiResponse.substring(0, 200) + '...')
   
-  for (const rawLine of lines) {
-    const line = rawLine.trim()
-    if (!line) continue
-    
-    // Header detection
-    if (line.startsWith('#')) {
-      const normalized = line.replace(/#+\s*/, '').toLowerCase()
-      if (normalized.includes('problem')) {
-        currentSection = 'problem'
-      } else if (normalized.includes('audience') || normalized.includes('target')) {
-        currentSection = 'audience'
-      } else if (normalized.includes('goal') || normalized.includes('objective')) {
-        currentSection = 'goals'
-      } else if (normalized.includes('risk') || normalized.includes('concern')) {
-        currentSection = 'risks'
-      } else if (normalized.includes('competitive') || normalized.includes('competitor')) {
-        currentSection = 'competitive_scan'
-      } else if (normalized.includes('question')) {
-        currentSection = 'open_questions'
-      } else {
-        currentSection = null
+  // First try to parse as JSON (for new structured responses)
+  try {
+    const jsonData = JSON.parse(aiResponse)
+    if (jsonData.problem && jsonData.audience) {
+      console.log('✅ Successfully parsed JSON structured response')
+      
+      // Clean up any template text or placeholder content for text sections
+      const cleanTextSection = (section: any): { text: string; sources: string[] } => {
+        let text = section.text || ''
+        // Remove template patterns and clean up
+        text = text.replace(/Extract.*?from.*?files.*?focusing.*?on/gi, '')
+        text = text.replace(/Define.*?based.*?on.*?specifications/gi, '')
+        text = text.replace(/\*\*.*?\*\*/g, '') // Remove markdown bold
+        text = text.replace(/\\n/g, ' ') // Convert \n to spaces
+        text = text.replace(/###?\s*/g, '') // Remove markdown headers
+        text = text.replace(/^\s*-\s*/gm, '') // Remove leading dashes
+        text = text.trim()
+        
+        return {
+          text,
+          sources: Array.isArray(section.sources) ? section.sources : ['S1']
+        }
       }
-      continue
+
+      // Clean up any template text or placeholder content for list sections
+      const cleanListSection = (section: any): { items: string[]; sources: string[] } => {
+        let items = section.items || []
+        // Clean up template patterns in list items
+        items = items.map((item: string) => {
+          return item
+            .replace(/Extract.*?infer.*?using.*?framework/gi, '')
+            .replace(/Define.*?focused.*?on.*?improvement/gi, '')
+            .replace(/Identify.*?addressing.*?efficiency/gi, '')
+            .replace(/Generate.*?question.*?based.*?on/gi, '')
+            .replace(/\*\*.*?\*\*/g, '') // Remove markdown bold
+            .replace(/\\n/g, ' ') // Convert \n to spaces
+            .trim()
+        }).filter((item: string) => item.length > 10) // Filter out very short items
+        
+        return {
+          items,
+          sources: Array.isArray(section.sources) ? section.sources : items.map(() => 'S1')
+        }
+      }
+      
+      return {
+        problem: cleanTextSection(jsonData.problem),
+        audience: cleanTextSection(jsonData.audience),
+        goals: cleanListSection(jsonData.goals),
+        risks: cleanListSection(jsonData.risks),
+        competitive_scan: cleanListSection(jsonData.competitive_scan),
+        open_questions: cleanListSection(jsonData.open_questions)
+      }
+    }
+  } catch (e) {
+    console.log('⚠️ Not JSON format, proceeding with text parsing')
+  }
+  
+  // Enhanced text parsing for markdown-style responses
+  const extractContent = (text: string) => {
+    // More robust source tag extraction
+    const sourceTags = text.match(/\bS\d+\b/g) || []
+    const cleanText = text.replace(/\bS\d+\b/g, '').replace(/\s+/g, ' ').trim()
+    return { text: cleanText, sources: [...new Set(sourceTags)] }
+  }
+  
+  const extractListItems = (section: string, startMarkers = ['–', '-', '*', '•']) => {
+    const items: string[] = []
+    const sources: string[] = []
+    
+    const lines = section.split('\n')
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (trimmed && startMarkers.some(marker => trimmed.startsWith(marker))) {
+        const content = trimmed.replace(/^[–\-*•]\s*/, '').trim()
+        if (content) {
+          const { text, sources: lineSources } = extractContent(content)
+          items.push(text)
+          sources.push(lineSources[0] || 'S1')
+        }
+      }
     }
     
-    // Bullet point detection
-    if (currentSection && (line.startsWith('- ') || line.startsWith('* ') || /^\d+\.\s/.test(line))) {
-      const content = line.replace(/^[-*]\s*|\d+\.\s*/, '').trim()
+    return { items, sources }
+  }
+  
+  // Split by major sections (bullet points or headers)
+  const sections = aiResponse.split(/^[•▪]\s*/m).filter(s => s.trim())
+  
+  for (const section of sections) {
+    const lines = section.trim().split('\n')
+    const headerLine = lines[0]?.trim().toLowerCase()
+    if (!headerLine) continue
+    
+    console.log('🔍 Processing section:', headerLine.substring(0, 50))
+    
+    if (headerLine.includes('problem')) {
+      // Extract problem text (usually first line after header)
+      let problemText = headerLine.replace(/^problem[.:]\s*/i, '').trim()
+      if (!problemText && lines.length > 1) {
+        problemText = lines[1]?.trim() || ''
+      }
+      const { text, sources } = extractContent(problemText)
+      summary.problem.text = text
+      summary.problem.sources = sources
+      console.log('✅ Extracted problem:', text)
       
-      if (currentSection === 'problem' || currentSection === 'audience') {
-        // Text-based sections
-        const section = summary[currentSection]
-        section.text += (section.text ? ' ' : '') + content
-        
-        // Extract source tags
-        const sourceTags = content.match(/\[S\d+\]/g) || []
-        sourceTags.forEach(tag => {
-          if (!section.sources.includes(tag)) {
-            section.sources.push(tag)
-          }
-        })
+    } else if (headerLine.includes('audience')) {
+      let audienceText = headerLine.replace(/^audience[.:]\s*/i, '').trim()
+      if (!audienceText && lines.length > 1) {
+        audienceText = lines[1]?.trim() || ''
+      }
+      const { text, sources } = extractContent(audienceText)
+      summary.audience.text = text
+      summary.audience.sources = sources
+      console.log('✅ Extracted audience:', text)
+      
+    } else if (headerLine.includes('goal')) {
+      const { items, sources } = extractListItems(section)
+      if (items.length > 0) {
+        summary.goals.items = items
+        summary.goals.sources = sources
+        console.log('✅ Extracted goals:', items.length, 'items')
+      }
+      
+    } else if (headerLine.includes('risk')) {
+      // Check if risks are in list format or single line
+      const { items, sources } = extractListItems(section)
+      if (items.length > 0) {
+        summary.risks.items = items
+        summary.risks.sources = sources
       } else {
-        // List-based sections
-        const section = summary[currentSection]
-        section.items.push(content)
-        
-        // Extract source tags for this item
-        const sourceTags = content.match(/\[S\d+\]/g) || []
-        section.sources.push(sourceTags.join(', ') || '')
+        // Single risk in header line
+        let riskText = headerLine.replace(/^risks?[.:]\s*/i, '').trim()
+        if (riskText) {
+          const { text, sources } = extractContent(riskText)
+          summary.risks.items = [text]
+          summary.risks.sources = sources
+        }
+      }
+      console.log('✅ Extracted risks:', summary.risks.items.length, 'items')
+      
+    } else if (headerLine.includes('competitive')) {
+      const { items, sources } = extractListItems(section)
+      if (items.length > 0) {
+        summary.competitive_scan.items = items
+        summary.competitive_scan.sources = sources
+        console.log('✅ Extracted competitive scan:', items.length, 'items')
+      }
+      
+    } else if (headerLine.includes('question')) {
+      const { items, sources } = extractListItems(section)
+      if (items.length > 0) {
+        summary.open_questions.items = items
+        summary.open_questions.sources = sources
+        console.log('✅ Extracted open questions:', items.length, 'items')
       }
     }
   }
+  
+  // Log final summary
+  console.log('🔍 Final parsed summary:', {
+    problem: !!summary.problem.text,
+    audience: !!summary.audience.text,
+    goals: summary.goals.items.length,
+    risks: summary.risks.items.length,
+    competitive_scan: summary.competitive_scan.items.length,
+    open_questions: summary.open_questions.items.length
+  })
   
   return summary
 }
 
-// Helper function to extract source quotes (mock implementation for now)
-const extractSourceQuotes = async (sessionId: string | null): Promise<Record<string, SourceQuote>> => {
-  // This would fetch actual source quotes from the backend
-  // For now, return mock data
-  return {
-    '[S1]': {
-      sourceId: 'S1',
-      quote: 'Users are struggling with complex onboarding flows that take too long to complete.',
-      filename: 'user_research.pdf'
-    },
-    '[S2]': {
-      sourceId: 'S2', 
-      quote: 'Market analysis shows 73% of users abandon apps during first use.',
-      filename: 'market_analysis.pdf'
-    },
-    '[S3]': {
-      sourceId: 'S3',
-      quote: 'Competitive analysis reveals simpler alternatives gaining market share.',
-      filename: 'competitor_research.pdf'
+// Helper function to extract section-specific source quotes from actual session files
+const extractSourceQuotes = async (sessionId: string | null, prdContent?: string): Promise<Record<string, SourceQuote>> => {
+  if (!sessionId) return {}
+  
+  try {
+    // Fetch session context to get file information
+    const context = await missionControlApi.getSessionContext(sessionId)
+    const sourceQuotes: Record<string, SourceQuote> = {}
+    
+    console.log('🔍 Extracting source quotes for', context.files?.length || 0, 'files')
+    
+    // Try to parse PRD content to get section-specific information
+    let parsedPRD: any = null
+    if (prdContent) {
+      try {
+        parsedPRD = JSON.parse(prdContent)
+      } catch {
+        // Ignore parsing errors, will use fallback
+      }
+    }
+    
+    // Map files to source IDs (S1, S2, S3, etc.)
+    context.files?.forEach((file: any, index: number) => {
+      const sourceId = `S${index + 1}`
+      let quote = `Content from ${file.filename}`
+      
+      try {
+        // Extract meaningful quotes based on file type and content
+        if (file.file_type === 'url' && context.combined_content) {
+          // For URL files, extract from combined content
+          const urlContent = context.combined_content.split('\n\n').find((section: string) => 
+            section.includes(file.filename) || section.includes('URL:')
+          )
+          if (urlContent) {
+            const lines = urlContent.split('\n').filter((line: string) => 
+              line.trim() && !line.startsWith('URL:') && !line.startsWith('File:')
+            )
+            if (lines.length > 0) {
+              quote = lines[0].trim().substring(0, 120) + (lines[0].length > 120 ? '...' : '')
+            }
+          }
+        }
+        
+        // Extract different quotes from the original document or AI analysis
+        if (context.ai_analysis && quote === `Content from ${file.filename}`) {
+          // Try to extract from the full PRD content first (which contains original source quotes)
+          if (parsedPRD && parsedPRD.full_prd) {
+            // Look for quotes in the full PRD that seem to be from the original document
+            const fullPrdText = parsedPRD.full_prd.replace(/\\n/g, '\n')
+            
+            // Extract meaningful sentences that look like they came from the source
+            const meaningfulSentences = fullPrdText
+              .split(/[.!?]+/)
+              .map((s: string) => s.trim())
+              .filter((s: string) => 
+                s.length > 30 && 
+                s.length < 150 && 
+                !s.includes('##') && 
+                !s.includes('**') &&
+                !s.toLowerCase().includes('framework') &&
+                !s.toLowerCase().includes('analysis') &&
+                !s.toLowerCase().includes('section')
+              )
+            
+            if (meaningfulSentences.length > 0) {
+              // Use the first meaningful sentence as the quote
+              quote = meaningfulSentences[0] + '.'
+              if (quote.length > 120) {
+                quote = quote.substring(0, 120) + '...'
+              }
+            }
+          }
+          
+          // Fallback to AI analysis if no PRD content
+          if (quote === `Content from ${file.filename}`) {
+            const keyInsights = [
+              // Look for specific business insights
+              /remote teams.*?(?:struggle|challenge|difficulty).*?with.*?([^.!?]{20,100})[.!?]/i,
+              /(?:users|customers|teams).*?(?:need|require|want).*?([^.!?]{20,100})[.!?]/i,
+              /(?:productivity|efficiency|collaboration).*?(?:improved?|enhanced?|increased?).*?([^.!?]{20,100})[.!?]/i,
+              /(?:market|business|revenue).*?(?:opportunity|potential|growth).*?([^.!?]{20,100})[.!?]/i
+            ]
+            
+            for (const pattern of keyInsights) {
+              const match = context.ai_analysis.match(pattern)
+              if (match) {
+                quote = match[0].trim()
+                if (quote.length > 120) {
+                  quote = quote.substring(0, 120) + '...'
+                }
+                break
+              }
+            }
+          }
+        }
+        
+        // Enhanced quote extraction from PRD preview
+        if (context.prd_preview && quote === `Content from ${file.filename}`) {
+          const prdLines = context.prd_preview.split('\n').filter((line: string) => line.trim())
+          const contentPatterns = [
+            /• Problem\.\s*([^S•]+)/i,
+            /• Audience\.\s*([^S•]+)/i,
+            /– ([^S–•]+)/i,
+            /• Goals\.\s*\n\s*– ([^S–•]+)/i
+          ]
+          
+          for (const pattern of contentPatterns) {
+            const match = context.prd_preview.match(pattern)
+            if (match && match[1]) {
+              quote = match[1].trim()
+              if (quote.length > 120) {
+                quote = quote.substring(0, 120) + '...'
+              }
+              break
+            }
+          }
+        }
+        
+        // Clean up the quote
+        quote = quote.replace(/\s+/g, ' ').trim()
+        if (!quote.endsWith('.') && !quote.endsWith('...') && !quote.endsWith('!') && !quote.endsWith('?')) {
+          if (quote.length < 120) {
+            quote += '.'
+          }
+        }
+        
+        console.log(`📝 Source ${sourceId} (${file.filename}): "${quote.substring(0, 50)}..."`)
+        
+      } catch (extractError) {
+        console.error(`Failed to extract quote for ${file.filename}:`, extractError)
+        // Keep the default quote
+      }
+      
+      sourceQuotes[sourceId] = {
+        sourceId,
+        quote,
+        filename: file.filename
+      }
+    })
+    
+    console.log('✅ Extracted', Object.keys(sourceQuotes).length, 'source quotes')
+    return sourceQuotes
+    
+  } catch (error) {
+    console.error('Failed to fetch source quotes:', error)
+    // Return fallback quotes
+    return {
+      'S1': {
+        sourceId: 'S1',
+        quote: 'Content from uploaded document',
+        filename: 'Document'
+      }
     }
   }
+}
+
+// PRD Version Badge Component
+interface PRDVersionBadgeProps {
+  sessionId: string | null
+}
+
+const PRDVersionBadge: React.FC<PRDVersionBadgeProps> = ({ sessionId }) => {
+  const [versionInfo, setVersionInfo] = useState<{
+    version: string
+    status: 'draft' | 'frozen'
+  } | null>(null)
+
+  useEffect(() => {
+    if (!sessionId) return
+
+    const fetchVersionInfo = async () => {
+      try {
+        const context = await missionControlApi.getSessionContext(sessionId)
+        if (context.prd_info) {
+          setVersionInfo({
+            version: context.prd_info.version,
+            status: context.prd_info.status as 'draft' | 'frozen'
+          })
+        }
+      } catch (error) {
+        console.error('Failed to fetch PRD version info:', error)
+      }
+    }
+
+    fetchVersionInfo()
+
+    // Set up event listener for PRD updates
+    const handlePRDUpdate = (event: CustomEvent) => {
+      if (event.detail?.session_id === sessionId) {
+        setVersionInfo({
+          version: event.detail.version,
+          status: event.detail.status
+        })
+      }
+    }
+
+    // Listen for custom PRD update events
+    window.addEventListener('prd.updated', handlePRDUpdate as EventListener)
+
+    // For now, we'll also poll for updates every 30 seconds as fallback
+    const pollInterval = setInterval(fetchVersionInfo, 30000)
+
+    return () => {
+      clearInterval(pollInterval)
+      window.removeEventListener('prd.updated', handlePRDUpdate as EventListener)
+    }
+  }, [sessionId])
+
+  if (!versionInfo) {
+    return null
+  }
+
+  const isDraft = versionInfo.status === 'draft'
+  const badgeColor = isDraft ? '#FFE96A' : '#48E0D8'
+  const badgeText = isDraft ? `${versionInfo.version} draft` : `${versionInfo.version} frozen`
+
+  return (
+    <span
+      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
+      style={{
+        background: `rgba(${isDraft ? '255, 233, 106' : '72, 224, 216'}, 0.15)`,
+        color: badgeColor,
+        border: `1px solid rgba(${isDraft ? '255, 233, 106' : '72, 224, 216'}, 0.3)`,
+        textShadow: `0 0 8px rgba(${isDraft ? '255, 233, 106' : '72, 224, 216'}, 0.4)`
+      }}
+    >
+      {badgeText}
+    </span>
+  )
 }
 
 // PRD Summary Display Component
@@ -184,11 +509,13 @@ const PRDSummaryDisplay: React.FC<PRDSummaryDisplayProps> = ({ prdContent, sessi
   
   useEffect(() => {
     if (prdContent) {
+      console.log('🔍 PRD Content received:', prdContent.substring(0, 200) + '...')
       const parsedSummary = parsePRDSummary(prdContent)
+      console.log('🔍 Parsed PRD Summary:', parsedSummary)
       setSummary(parsedSummary)
       
-      // Load source quotes
-      extractSourceQuotes(sessionId).then(setSourceQuotes)
+      // Load source quotes with PRD content for better extraction
+      extractSourceQuotes(sessionId, prdContent).then(setSourceQuotes)
     }
   }, [prdContent, sessionId])
   
@@ -205,9 +532,12 @@ const PRDSummaryDisplay: React.FC<PRDSummaryDisplayProps> = ({ prdContent, sessi
   const renderSourceTag = (sourceTag: string) => {
     if (!sourceTag) return null
     
+    const quote = sourceQuotes[sourceTag]?.quote || `Content from ${sourceQuotes[sourceTag]?.filename || 'document'}`
+    console.log(`🔍 Rendering source tag ${sourceTag}:`, quote.substring(0, 50) + '...')
+    
     return (
       <span
-        className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ml-2 cursor-help transition-all duration-200 hover:scale-105"
+        className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium cursor-help transition-all duration-200 hover:scale-105"
         style={{
           background: 'rgba(72, 224, 216, 0.15)',
           color: 'var(--source-tag)',
@@ -215,7 +545,7 @@ const PRDSummaryDisplay: React.FC<PRDSummaryDisplayProps> = ({ prdContent, sessi
         }}
         onMouseEnter={() => setHoveredSource(sourceTag)}
         onMouseLeave={() => setHoveredSource(null)}
-        title={sourceQuotes[sourceTag]?.quote || `Source: ${sourceTag}`}
+        title={quote}
       >
         {sourceTag}
       </span>
@@ -230,9 +560,13 @@ const PRDSummaryDisplay: React.FC<PRDSummaryDisplayProps> = ({ prdContent, sessi
         <span style={{ color: 'var(--text-strong)', minWidth: 'fit-content' }}>• {title}.</span>
         <div className="flex-1">
           <span style={{ color: 'var(--text-dim)' }}>{section.text}</span>
-          {section.sources.map((source, idx) => (
-            <span key={idx}>{renderSourceTag(source)}</span>
-          ))}
+          {section.sources && section.sources.length > 0 && (
+            <span className="ml-2">
+              {section.sources.map((source, idx) => (
+                <span key={idx}>{renderSourceTag(source)}</span>
+              ))}
+            </span>
+          )}
         </div>
       </div>
     )
@@ -248,8 +582,12 @@ const PRDSummaryDisplay: React.FC<PRDSummaryDisplayProps> = ({ prdContent, sessi
           {section.items.map((item, idx) => (
             <div key={idx} className="flex items-start gap-2">
               <span style={{ color: 'var(--text-dim)', fontSize: '14px' }}>–</span>
-              <span style={{ color: 'var(--text-dim)' }}>{item}</span>
-              {section.sources[idx] && renderSourceTag(section.sources[idx])}
+              <div className="flex-1">
+                <span style={{ color: 'var(--text-dim)' }}>{item}</span>
+                {section.sources && section.sources[idx] && (
+                  <span className="ml-2">{renderSourceTag(section.sources[idx])}</span>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -272,15 +610,14 @@ const PRDSummaryDisplay: React.FC<PRDSummaryDisplayProps> = ({ prdContent, sessi
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
-          className="absolute z-50 p-3 rounded-lg shadow-lg max-w-sm"
+          className="fixed z-50 p-3 rounded-lg shadow-lg max-w-sm pointer-events-none"
           style={{
             background: 'rgba(12, 17, 25, 0.95)',
             border: '1px solid rgba(72, 224, 216, 0.3)',
             backdropFilter: 'blur(12px)',
-            bottom: '100%',
+            top: '50%',
             left: '50%',
-            transform: 'translateX(-50%)',
-            marginBottom: '8px'
+            transform: 'translate(-50%, -50%)'
           }}
         >
           <div className="text-xs font-medium mb-1" style={{ color: 'var(--source-tag)' }}>
@@ -317,20 +654,96 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
   const [prdContent, setPrdContent] = useState<string>('')
   const statusPollingRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Create upload session when component mounts
+  // Load existing session state when resuming
+  const loadExistingSessionState = async (sessionId: string) => {
+    try {
+      console.log('🔄 Loading existing session state for:', sessionId)
+      
+      // Get session context with files and PRD content
+      const context = await missionControlApi.getSessionContext(sessionId)
+      
+      // Restore files list
+      if (context.files && context.files.length > 0) {
+        const restoredFiles: FileItem[] = context.files.map((file: any) => ({
+          name: file.filename,
+          type: file.file_type === 'url' ? 'link' : 
+                ['pdf', 'jpg', 'jpeg', 'png', 'gif'].includes(file.file_type) ? file.file_type as FileItem['type'] :
+                'document' as FileItem['type'],
+          progress: file.processing_status === 'complete' ? 1 : 
+                   file.processing_status === 'processing' ? 0.75 : 
+                   file.processing_status === 'error' ? 0 : 1,
+          error: file.processing_status === 'error' ? 'Processing failed' : undefined
+        }))
+        
+        setFiles(restoredFiles)
+        console.log('✅ Restored', restoredFiles.length, 'files')
+      }
+      
+      // Restore PRD content and status
+      if (context.ai_analysis || context.prd_preview) {
+        const prdText = context.prd_preview || context.ai_analysis
+        setPrdContent(prdText)
+        setStatus('ready')
+        console.log('✅ Restored PRD content and set status to ready')
+      } else if (context.status === 'ready') {
+        setStatus('ready')
+      } else if (context.files && context.files.length > 0) {
+        // Has files but no PRD yet
+        setStatus('idle')
+        console.log('✅ Restored files, status set to idle (ready to analyze)')
+      }
+      
+      console.log('✅ Successfully loaded existing session state')
+      
+    } catch (error) {
+      console.error('❌ Failed to load existing session state:', error)
+      // Don't set error here, just continue with empty state
+    }
+  }
+
+  // Initialize or resume session when component mounts
   useEffect(() => {
-    const createSession = async () => {
+    const initializeSession = async () => {
       try {
+        console.log('🔍 Checking for existing sessions for project:', projectId)
+        
+        // First, try to find existing session for this project with PRD content
+        try {
+          // Get project sessions to see if we have an existing one
+          const existingSessions = await missionControlApi.getProjectSessions?.(projectId)
+          
+          if (existingSessions && existingSessions.length > 0) {
+            // Find the most recent session with files or PRD content
+            const activeSession = existingSessions
+              .filter((s: any) => s.status === 'ready' || s.file_count > 0)
+              .sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0]
+            
+            if (activeSession) {
+              console.log('✅ Found existing session to resume:', activeSession.session_id)
+              setSessionId(activeSession.session_id)
+              
+              // Load existing session state
+              await loadExistingSessionState(activeSession.session_id)
+              return
+            }
+          }
+        } catch (error) {
+          console.log('⚠️ Could not check existing sessions, will create new one')
+        }
+        
+        // No existing session found, create new one
+        console.log('🆕 Creating new upload session for project:', projectId)
         const session = await missionControlApi.createUploadSession(projectId, 'Upload sources for PRD generation')
         setSessionId(session.session_id)
-        console.log('Created upload session:', session.session_id)
+        console.log('✅ Created new upload session:', session.session_id)
+        
       } catch (error) {
-        console.error('Failed to create upload session:', error)
+        console.error('❌ Failed to initialize upload session:', error)
         setError('Failed to initialize upload session')
       }
     }
 
-    createSession()
+    initializeSession()
 
     // Cleanup polling on unmount
     return () => {
@@ -339,6 +752,29 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
       }
     }
   }, [projectId])
+
+  // Set up WebSocket listener for PRD updates
+  useEffect(() => {
+    if (!sessionId) return
+
+    // Listen for custom events dispatched by webhook handlers
+    const handleCustomPRDUpdate = (event: CustomEvent) => {
+      if (event.detail.session_id === sessionId) {
+        console.log('🔄 PRD updated via webhook:', event.detail)
+        // Trigger a refresh of the PRD content
+        if (event.detail.version && event.detail.status) {
+          // Update UI to reflect new version status
+          console.log(`PRD updated to ${event.detail.version} (${event.detail.status})`)
+        }
+      }
+    }
+
+    window.addEventListener('prd.updated', handleCustomPRDUpdate as EventListener)
+    
+    return () => {
+      window.removeEventListener('prd.updated', handleCustomPRDUpdate as EventListener)
+    }
+  }, [sessionId])
 
   // Progress steps
   const progressSteps = [
@@ -409,6 +845,34 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
     await handleFileUpload(selectedFiles)
   }, [sessionId])
 
+  // Handle file removal
+  const handleFileRemove = useCallback(async (index: number) => {
+    const fileToRemove = files[index]
+    if (!fileToRemove || !sessionId) return
+
+    try {
+      // Get session context to find the file ID
+      const context = await missionControlApi.getSessionContext(sessionId)
+      const backendFile = context.files.find(f => f.filename === fileToRemove.name)
+      
+      if (backendFile) {
+        // Delete from backend
+        await missionControlApi.deleteUploadedFile(backendFile.id)
+        console.log(`✅ Deleted file: ${fileToRemove.name}`)
+      }
+
+      // Remove from UI immediately
+      setFiles(prev => prev.filter((_, i) => i !== index))
+      
+      // Call original callback if provided
+      onFileRemove?.(index)
+
+    } catch (error) {
+      console.error('Failed to remove file:', error)
+      setError(`Failed to remove ${fileToRemove.name}`)
+    }
+  }, [files, sessionId, onFileRemove])
+
   // Handle file upload to backend
   const handleFileUpload = useCallback(async (fileList: File[]) => {
     if (!sessionId) {
@@ -423,11 +887,11 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
       // Filter supported files
       const supportedFiles = fileList.filter(file => {
         const extension = file.name.split('.').pop()?.toLowerCase()
-        return ['pdf', 'jpg', 'jpeg', 'png', 'gif'].includes(extension || '')
+        return ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'md', 'txt', 'doc', 'docx'].includes(extension || '')
       })
 
       if (supportedFiles.length === 0) {
-        setError('No supported files found. Please upload PDF, JPG, PNG, or GIF files.')
+        setError('No supported files found. Please upload PDF, JPG, PNG, GIF, MD, TXT, DOC, or DOCX files.')
         setStatus('idle')
         return
       }
@@ -436,7 +900,8 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
       const newFiles: FileItem[] = supportedFiles.map((file) => {
         const extension = file.name.split('.').pop()?.toLowerCase()
         const fileType = extension === 'pdf' ? 'pdf' : 
-                        ['jpg', 'jpeg', 'png', 'gif'].includes(extension || '') ? 'image' : 'document'
+                        ['jpg', 'jpeg', 'png', 'gif'].includes(extension || '') ? 'image' : 
+                        ['md', 'txt', 'doc', 'docx'].includes(extension || '') ? 'document' : 'document'
         
         return {
           name: file.name,
@@ -555,17 +1020,22 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
         setTimeout(async () => {
           try {
             // Get the full session context with AI analysis
+            console.log('🔍 Fetching session context for:', sessionId)
             const context = await missionControlApi.getSessionContext(sessionId)
+            console.log('✅ Session context received:', context)
             
             if (context.ai_analysis) {
               // Use the structured PRD preview if available, otherwise use raw AI analysis
               const prdText = context.prd_preview || context.ai_analysis
+              console.log('📝 PRD text length:', prdText.length)
+              console.log('📝 PRD preview available:', !!context.prd_preview)
               setPrdContent(prdText)
               setStatus('ready')
               console.log('PRD generated successfully')
               
 
             } else {
+              console.error('❌ No AI analysis in context:', context)
               setError('No AI analysis available')
               setStatus('idle')
             }
@@ -592,12 +1062,80 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
   }, [sessionId, files.length, onAnalyze])
 
   // Handle freeze PRD
-  const handleFreezePRD = useCallback(() => {
+  const handleFreezePRD = useCallback(async () => {
     if (status === 'ready' && sessionId) {
-      onFreezePRD?.()
-      onUploadComplete?.(sessionId)
+      try {
+        // Get the current PRD ID from session context
+        const context = await missionControlApi.getSessionContext(sessionId)
+        const prdId = context.prd_info?.id
+        
+        if (!prdId) {
+          setError('No PRD found to freeze')
+          return
+        }
+        
+        // Call freeze endpoint
+        const response = await missionControlApi.freezePRD(prdId, 'mission-control-user')
+        
+        if (response.success) {
+          console.log('✅ PRD frozen successfully:', response.frozen_prd)
+          
+          // Trigger real-time update event
+          const updateEvent = new CustomEvent('prd.updated', {
+            detail: {
+              session_id: sessionId,
+              version: response.frozen_prd.version,
+              status: response.frozen_prd.status,
+              created_by: response.frozen_prd.created_by
+            }
+          })
+          window.dispatchEvent(updateEvent)
+          
+          // Call original callbacks
+          onFreezePRD?.()
+          onUploadComplete?.(sessionId)
+        } else {
+          setError('Failed to freeze PRD')
+        }
+      } catch (error) {
+        console.error('Error freezing PRD:', error)
+        setError('Failed to freeze PRD')
+      }
     }
   }, [status, sessionId, onFreezePRD, onUploadComplete])
+
+  // Handle open full PRD
+  const handleOpenFullPRD = useCallback(async () => {
+    if (status === 'ready' && sessionId) {
+      try {
+        console.log('🔗 Generating PRD deep link for session:', sessionId)
+        
+        // Generate JWT deep link
+        const response = await missionControlApi.generatePRDDeepLink(sessionId)
+        
+        console.log('🔗 Deep link response:', response)
+        
+        if (response && response.deep_link_url) {
+          console.log('✅ Opening PRD in new tab:', response.deep_link_url)
+          // Open in new tab
+          window.open(response.deep_link_url, '_blank')
+        } else {
+          console.error('❌ Invalid deep link response:', response)
+          setError('Failed to generate PRD link - invalid response')
+        }
+      } catch (error) {
+        console.error('❌ Error opening full PRD:', error)
+        setError(`Failed to open full PRD: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      }
+    } else {
+      console.warn('⚠️ Cannot open PRD - status:', status, 'sessionId:', sessionId)
+      if (status !== 'ready') {
+        setError('PRD is not ready yet')
+      } else {
+        setError('No active session')
+      }
+    }
+  }, [status, sessionId])
 
   // Get file icon
   const getFileIcon = (type: FileItem['type']) => {
@@ -819,7 +1357,7 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
                 multiple
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 onChange={handleFileInput}
-                accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4,.mov"
+                accept=".pdf,.doc,.docx,.md,.txt,.jpg,.jpeg,.png,.gif"
               />
             </div>
 
@@ -853,7 +1391,8 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
                       {/* Remove button */}
                       <button
                         className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 ml-1 p-1 hover:bg-white/10 rounded"
-                        onClick={() => onFileRemove?.(index)}
+                        onClick={() => handleFileRemove(index)}
+                        title={`Remove ${file.name}`}
                       >
                         <CloseIcon />
                       </button>
@@ -897,27 +1436,97 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
             {/* Progress Rail */}
             <div className="mb-8">
               <div className="flex items-center justify-between relative">
-                {/* Progress line */}
+                {/* Base progress line */}
                 <div 
                   className="absolute top-1/2 left-0 right-0 h-px -translate-y-1/2"
                   style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04))' }}
                 />
                 
+                {/* Animated progress line overlay */}
+                <div 
+                  className="absolute top-1/2 left-0 h-px -translate-y-1/2 transition-all duration-1000 ease-out"
+                  style={{ 
+                    background: 'linear-gradient(90deg, rgba(255,233,106,0.9) 0%, rgba(255,216,77,0.7) 50%, rgba(255,233,106,0.9) 100%)',
+                    boxShadow: '0 0 12px rgba(255,233,106,0.6), 0 0 24px rgba(255,216,77,0.4)',
+                    width: `${Math.max(0, Math.min(100, (progressSteps.filter(s => s.active).length - 1) * 33.33))}%`,
+                    opacity: progressSteps.some(s => s.active) ? 1 : 0
+                  }}
+                />
+                
+                {/* Flowing light effects during analysis */}
+                {status === 'analyzing' && (
+                  <>
+                    {/* Primary flowing light */}
+                    <div 
+                      className="absolute top-1/2 left-0 h-px -translate-y-1/2"
+                      style={{ 
+                        background: 'radial-gradient(ellipse 40px 6px, rgba(255,233,106,1) 0%, rgba(255,233,106,0) 100%)',
+                        width: '80px',
+                        height: '6px',
+                        filter: 'blur(1px)',
+                        animation: 'flowRight 3s ease-in-out infinite',
+                        animationDelay: '0s'
+                      }}
+                    />
+                    {/* Secondary flowing light */}
+                    <div 
+                      className="absolute top-1/2 left-0 h-px -translate-y-1/2"
+                      style={{ 
+                        background: 'radial-gradient(ellipse 30px 4px, rgba(255,216,77,0.8) 0%, rgba(255,216,77,0) 100%)',
+                        width: '60px',
+                        height: '4px',
+                        filter: 'blur(0.5px)',
+                        animation: 'flowRight 2.5s ease-in-out infinite',
+                        animationDelay: '0.8s'
+                      }}
+                    />
+                    {/* Tertiary flowing light */}
+                    <div 
+                      className="absolute top-1/2 left-0 h-px -translate-y-1/2"
+                      style={{ 
+                        background: 'radial-gradient(ellipse 25px 3px, rgba(255,233,106,0.6) 0%, rgba(255,233,106,0) 100%)',
+                        width: '50px',
+                        height: '3px',
+                        filter: 'blur(0.3px)',
+                        animation: 'flowRight 2.2s ease-in-out infinite',
+                        animationDelay: '1.5s'
+                      }}
+                    />
+                  </>
+                )}
+                
                 {/* Progress nodes */}
                 {progressSteps.map((step, index) => (
-                  <div key={step.key} className="relative flex flex-col items-center">
+                  <div key={step.key} className="relative flex flex-col items-center z-10">
                     <div
-                      className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                      className={`w-3 h-3 rounded-full transition-all duration-500 relative ${
                         step.active ? 'shadow-lg' : ''
                       }`}
                       style={{
-                        background: step.active ? 'var(--progress-active)' : 'var(--progress-idle)',
-                        boxShadow: step.active ? '0 0 10px var(--progress-active), 0 0 18px rgba(55,183,247,0.28)' : 'none'
+                        background: step.active ? '#FFE96A' : 'var(--progress-idle)',
+                        boxShadow: step.active ? 
+                          '0 0 10px rgba(255,233,106,0.8), 0 0 18px rgba(255,216,77,0.4), 0 0 24px rgba(255,233,106,0.2)' : 
+                          'none'
                       }}
-                    />
+                    >
+                      {/* Pulsing ring for active step */}
+                      {step.active && (
+                        <div
+                          className="absolute inset-0 rounded-full animate-ping"
+                          style={{
+                            background: 'transparent',
+                            border: '1px solid rgba(255,233,106,0.6)',
+                            transform: 'scale(1.5)'
+                          }}
+                        />
+                      )}
+                    </div>
                     <span 
-                      className="text-xs mt-2 whitespace-nowrap"
-                      style={{ color: 'var(--text-dim)' }}
+                      className="text-xs mt-2 whitespace-nowrap transition-colors duration-300"
+                      style={{ 
+                        color: step.active ? '#FFE96A' : 'var(--text-dim)',
+                        textShadow: step.active ? '0 0 8px rgba(255,233,106,0.4)' : 'none'
+                      }}
                     >
                       {step.label}
                     </span>
@@ -929,14 +1538,86 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
             {/* PRD Section (always visible for design work) */}
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h3 
-                  className="text-base font-semibold"
-                  style={{ color: 'var(--text-strong)' }}
-                >
-                  PRD draft <span style={{ color: 'var(--text-dim)' }}>(live doc)</span>
-                </h3>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3">
+                    <h3 
+                      className="text-base font-semibold"
+                      style={{ color: 'var(--text-strong)' }}
+                    >
+                      PRD draft <span style={{ color: 'var(--text-dim)' }}>(live doc)</span>
+                    </h3>
+                    <PRDVersionBadge sessionId={sessionId} />
+                  </div>
+                </div>
                 
-                <button
+                <div className="flex items-center gap-3">
+                  {/* Open full PRD button */}
+                  <button
+                    className="group relative inline-flex items-center justify-center rounded-full font-semibold text-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] focus:outline-none"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      minWidth: '160px',
+                      height: '44px',
+                      padding: '0 24px',
+                      filter: 'saturate(1.02)'
+                    }}
+                    onClick={handleOpenFullPRD}
+                    aria-disabled={status !== 'ready'}
+                    title={status === 'ready' ? 'Open full PRD in new tab' : 'PRD not ready yet'}
+                  >
+                    {/* Gradient ring */}
+                    <span
+                      className="pointer-events-none absolute inset-0 rounded-full"
+                      style={{
+                        padding: '2px',
+                        borderRadius: '9999px',
+                        background: 'linear-gradient(90deg, rgba(72,224,216,0.92) 0%, rgba(21,241,204,0.78) 38%, rgba(160,255,223,0.70) 100%)',
+                        WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+                        WebkitMaskComposite: 'xor',
+                        maskComposite: 'exclude',
+                        boxShadow: '0 0 18px rgba(72,224,216,0.35), 0 0 24px rgba(21,241,204,0.25)'
+                      } as React.CSSProperties}
+                    />
+                    {/* Edge vignette */}
+                    <span
+                      className="pointer-events-none absolute inset-[2px] rounded-full"
+                      style={{
+                        background: 'radial-gradient(120% 100% at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.22) 100%)',
+                        mixBlendMode: 'multiply'
+                      }}
+                    />
+                    {/* Luminous core */}
+                    <span
+                      className="pointer-events-none absolute inset-[6px] rounded-full"
+                      style={{
+                        background: 'radial-gradient(46% 46% at 50% 50%, rgba(72,224,216,0.30) 0%, rgba(72,224,216,0.10) 36%, rgba(72,224,216,0) 65%)',
+                        filter: 'blur(2px)',
+                        mixBlendMode: 'screen'
+                      }}
+                    />
+                    {/* Specular highlight */}
+                    <span
+                      className="pointer-events-none absolute inset-0 rounded-full"
+                      style={{
+                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)'
+                      }}
+                    />
+                    {/* Label */}
+                    <span
+                      className="relative z-10"
+                      style={{
+                        color: '#48E0D8',
+                        textShadow: '0 0 16px rgba(72,224,216,0.60), 0 0 36px rgba(72,224,216,0.28), 0 0 2px rgba(72,224,216,0.90)',
+                        letterSpacing: '0.2px'
+                      }}
+                    >
+                      Open full PRD
+                    </span>
+                  </button>
+
+                  {/* Freeze PRD button */}
+                  <button
                   className="group relative inline-flex items-center justify-center rounded-full font-semibold text-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] focus:outline-none"
                   style={{
                     background: 'transparent',
@@ -999,6 +1680,7 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
                     Freeze PRD
                   </span>
                 </button>
+                </div>
               </div>
               
               {/* PRD Content Preview */}

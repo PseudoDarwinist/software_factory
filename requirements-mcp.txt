@@ -1,0 +1,2 @@
+# Requirements for MCP (Model Context Protocol) integration
+mcp>=1.0.0

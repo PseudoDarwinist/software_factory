@@ -221,7 +221,14 @@ class GooseIntegration:
         """Enhance instruction with context and repository information"""
         enhanced_instruction = instruction
         
-        # Add business context if provided
+        # Check if this is a document analysis request - don't add extra context that might confuse the AI
+        if ("analyze" in instruction.lower() and "document" in instruction.lower()) or \
+           ("PRD" in instruction) or ("requirements" in instruction.lower()):
+            # For document analysis, preserve the original instruction to avoid hallucination
+            logger.info("Document analysis detected - preserving original instruction without enhancement")
+            return instruction
+        
+        # Add business context if provided (only for non-document analysis tasks)
         if business_context and any(business_context.values()):
             context_str = self._format_business_context(business_context)
             enhanced_instruction = f"""Business Context:
@@ -515,6 +522,14 @@ Please respond as a {role} expert, providing practical, actionable insights rele
     def _get_vector_context(self, instruction: str, role: str = None) -> str:
         """Get relevant context from vector database for AI model calls"""
         try:
+            # Check if this is a document analysis request - don't add vector context that might confuse the AI
+            if ("analyze" in instruction.lower() and "document" in instruction.lower()) or \
+               ("PRD" in instruction) or ("requirements" in instruction.lower()) or \
+               ("IROPS" in instruction) or ("irregular operation" in instruction.lower()):
+                # For document analysis, skip vector context to avoid hallucination
+                self.logger.info("Document analysis detected - skipping vector context to prevent hallucination")
+                return ""
+            
             # Import vector service
             from .vector_service import get_vector_service
             vector_service = get_vector_service()

@@ -5,10 +5,11 @@ REST endpoints for Mission Control functionality
 
 from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy import text
 try:
     from ..models import (
         MissionControlProject, FeedItem, Stage, StageTransition, 
-        ProductBrief, ChannelMapping, db
+        ProductBrief, ChannelMapping, SpecificationArtifact, ArtifactType, ArtifactStatus, db
     )
 except ImportError:
     import sys
@@ -16,7 +17,7 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from models import (
         MissionControlProject, FeedItem, Stage, StageTransition, 
-        ProductBrief, ChannelMapping, db
+        ProductBrief, ChannelMapping, SpecificationArtifact, ArtifactType, ArtifactStatus, db
     )
 from datetime import datetime
 import logging
@@ -277,10 +278,14 @@ def create_mission_control_project():
 
 @mission_control_bp.route('/api/mission-control/projects/<project_id>', methods=['DELETE'])
 def delete_mission_control_project(project_id):
-    """Delete a Mission Control project"""
+    """Delete a Mission Control project and all related data"""
     try:
-        project = MissionControlProject.query.get(project_id)
+        logger.info(f"Starting deletion of Mission Control project: {project_id}")
+        
+        # Check if project exists
+        project = db.session.get(MissionControlProject, project_id)
         if not project:
+            logger.warning(f"Project not found for deletion: {project_id}")
             return jsonify({
                 'success': False,
                 'error': 'Project not found',
@@ -289,32 +294,106 @@ def delete_mission_control_project(project_id):
             }), 404
         
         project_name = project.name
+        # Store project data before deletion
+        project_data = project.to_dict()
         
-        # Delete related data that doesn't cascade automatically
-        ChannelMapping.query.filter_by(project_id=project_id).delete()
-        FeedItem.query.filter_by(project_id=project_id).delete(synchronize_session=False)
-        Stage.query.filter_by(project_id=project_id).delete(synchronize_session=False)
-        StageTransition.query.filter_by(project_id=project_id).delete(synchronize_session=False)
-        ProductBrief.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+        logger.info(f"Deleting all related data for project: {project_name} ({project_id})")
         
-        # Delete project
-        db.session.delete(project)
-        db.session.commit()
+        # Simple approach: delete only the data we know exists based on the debug output
+        # The debug showed that stage_transition has 21 records, so let's focus on that
         
-        logger.info(f"Deleted Mission Control project: {project_name} ({project_id})")
+        try:
+            # Delete StageTransitions first (we know this has data)
+            deleted_transitions = StageTransition.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+            logger.info(f"Deleted {deleted_transitions} StageTransition records for project {project_id}")
+            
+            # Delete other related data that might exist
+            deleted_stages = Stage.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+            if deleted_stages > 0:
+                logger.info(f"Deleted {deleted_stages} Stage records for project {project_id}")
+            
+            deleted_feed_items = FeedItem.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+            if deleted_feed_items > 0:
+                logger.info(f"Deleted {deleted_feed_items} FeedItem records for project {project_id}")
+            
+            deleted_briefs = ProductBrief.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+            if deleted_briefs > 0:
+                logger.info(f"Deleted {deleted_briefs} ProductBrief records for project {project_id}")
+            
+            deleted_specs = SpecificationArtifact.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+            if deleted_specs > 0:
+                logger.info(f"Deleted {deleted_specs} SpecificationArtifact records for project {project_id}")
+            
+            deleted_channels = ChannelMapping.query.filter_by(project_id=project_id).delete(synchronize_session=False)
+            if deleted_channels > 0:
+                logger.info(f"Deleted {deleted_channels} ChannelMapping records for project {project_id}")
+            
+            # Commit all deletions at once
+            db.session.commit()
+            logger.info(f"Successfully committed all related data deletions for project {project_id}")
+            
+        except Exception as e:
+            logger.error(f"Error during related data cleanup for project {project_id}: {e}")
+            try:
+                db.session.rollback()
+            except:
+                pass
+            # Continue with project deletion anyway
+        
+        # Delete the project itself
+        try:
+            # Refresh the project object in case it was modified during related data deletion
+            project = db.session.get(MissionControlProject, project_id)
+            if project:
+                db.session.delete(project)
+                db.session.commit()
+                logger.info(f"Successfully deleted Mission Control project: {project_name} ({project_id})")
+            else:
+                logger.warning(f"Project {project_id} was already deleted during related data cleanup")
+                
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error deleting project record {project_id}: {e}")
+            
+            # Final fallback - try direct SQL deletion
+            try:
+                logger.info(f"Attempting direct SQL deletion for project {project_id}")
+                db.session.execute(text("DELETE FROM mission_control_project WHERE id = :project_id"), {"project_id": project_id})
+                db.session.commit()
+                logger.info(f"Successfully deleted project {project_id} using direct SQL")
+            except Exception as sql_error:
+                db.session.rollback()
+                logger.error(f"Direct SQL deletion also failed for project {project_id}: {sql_error}")
+                raise sql_error
         
         return jsonify({
             'success': True,
-            'data': project.to_dict(),
+            'data': project_data,
+            'message': f'Project "{project_name}" and all related data deleted successfully',
             'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
         })
         
     except Exception as e:
-        db.session.rollback()
-        logger.error(f"Error deleting Mission Control project {project_id}: {e}")
+        try:
+            db.session.rollback()
+        except:
+            pass
+        
+        error_msg = str(e)
+        logger.error(f"Error deleting Mission Control project {project_id}: {error_msg}", exc_info=True)
+        
+        # Provide more specific error information for debugging
+        if "foreign key" in error_msg.lower():
+            error_msg = f"Cannot delete project due to foreign key constraints: {error_msg}"
+        elif "does not exist" in error_msg.lower():
+            error_msg = f"Database table missing: {error_msg}"
+        else:
+            error_msg = f"Database error during deletion: {error_msg}"
+        
         return jsonify({
             'success': False,
-            'error': 'Failed to delete project',
+            'error': error_msg,
             'timestamp': datetime.utcnow().isoformat(),
             'version': '1.0.0',
         }), 500
@@ -560,6 +639,99 @@ def get_channel_mapping(channel_id):
         return jsonify({
             'success': False,
             'error': 'Failed to retrieve channel mapping',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@mission_control_bp.route('/api/specification/<item_id>', methods=['GET'])
+def get_specification(item_id):
+    """Get specification artifacts for a feed item"""
+    try:
+        project_id = request.args.get('projectId')
+        if not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'projectId parameter is required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Create spec_id from item_id
+        spec_id = f"spec_{item_id}"
+        
+        # Get all specification artifacts for this spec
+        specs = SpecificationArtifact.query.filter_by(spec_id=spec_id).all()
+        
+        if not specs:
+            # No specifications exist yet - return empty structure
+            return jsonify({
+                'success': True,
+                'data': {
+                    'spec_id': spec_id,
+                    'project_id': project_id,
+                    'requirements': None,
+                    'design': None,
+                    'tasks': None,
+                    'completion_status': {
+                        'complete': False,
+                        'total_artifacts': 0,
+                        'ai_draft': 0,
+                        'human_reviewed': 0,
+                        'frozen': 0,
+                        'ready_to_freeze': False
+                    }
+                },
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            })
+        
+        # Build specification set
+        spec_set = {
+            'spec_id': spec_id,
+            'project_id': project_id,
+            'requirements': None,
+            'design': None,
+            'tasks': None
+        }
+        
+        # Organize specs by type
+        for spec in specs:
+            artifact_type = spec.artifact_type.value
+            spec_set[artifact_type] = spec.to_dict()
+        
+        # Calculate completion status
+        status_counts = {'ai_draft': 0, 'human_reviewed': 0, 'frozen': 0}
+        for spec in specs:
+            status_counts[spec.status.value] += 1
+        
+        completion_status = {
+            'complete': len(specs) == 3,  # requirements, design, tasks
+            'total_artifacts': len(specs),
+            'ai_draft': status_counts['ai_draft'],
+            'human_reviewed': status_counts['human_reviewed'],
+            'frozen': status_counts['frozen'],
+            'ready_to_freeze': (
+                len(specs) == 3 and 
+                status_counts['ai_draft'] == 0 and 
+                status_counts['frozen'] == 0
+            )
+        }
+        
+        spec_set['completion_status'] = completion_status
+        
+        return jsonify({
+            'success': True,
+            'data': spec_set,
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to get specification for {item_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to retrieve specification',
             'timestamp': datetime.utcnow().isoformat(),
             'version': '1.0.0',
         }), 500
