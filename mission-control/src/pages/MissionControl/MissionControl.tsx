@@ -15,11 +15,12 @@
  * All the major functionality is coordinated from here.
  */
 
-import React, { useEffect, useRef, useCallback } from 'react'
+import React, { useEffect, useRef, useCallback, useState } from 'react'
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MissionControlLayout } from '@/components/layout/MissionControlLayout'
+import { PrdRequirementDialog } from '@/components/dialogs/PrdRequirementDialog'
 import { 
   useMissionControlStore, 
   useActions, 
@@ -37,6 +38,16 @@ export const MissionControl: React.FC = () => {
   const ui = useUIState()
   const loading = useLoadingState()
   const errors = useErrorState()
+  
+  // PRD requirement dialog state
+  const [prdDialog, setPrdDialog] = useState<{
+    isOpen: boolean
+    projectId: string
+    itemId: string
+    itemTitle: string
+    prdStatus: 'missing' | 'draft' | 'frozen'
+    uploadSessions: Array<{ id: string; description: string }>
+  } | null>(null)
   
   // Get current state
   const { projects, feedItems, conversation } = useMissionControlStore()
@@ -256,6 +267,29 @@ export const MissionControl: React.FC = () => {
       return
     }
 
+    // PRD requirement validation for Define stage
+    if (toStage === 'define') {
+      try {
+        const prdStatus = await missionControlApi.getProjectPrdStatus(projectId)
+        if (!prdStatus.can_move_to_define) {
+          // Show PRD requirement dialog
+          const feedItem = feedItems.find(f => f.id === itemId)
+          setPrdDialog({
+            isOpen: true,
+            projectId,
+            itemId,
+            itemTitle: feedItem?.title || 'Untitled Item',
+            prdStatus: prdStatus.prd_status,
+            uploadSessions: prdStatus.upload_sessions
+          })
+          return // Don't proceed with the move
+        }
+      } catch (error) {
+        console.error('[MissionControl] Failed to check PRD status:', error)
+        // Continue with the move if PRD check fails (fail open)
+      }
+    }
+
     try {
       actions.setLoading('action', true)
       actions.setError('action', null)
@@ -284,7 +318,21 @@ export const MissionControl: React.FC = () => {
       // we stay in the same project context.
       await loadFeedItems(projectId)
     } catch (error) {
-      actions.setError('action', error instanceof Error ? error.message : 'Failed to move item')
+      // Check if this is a PRD requirement error
+      if (error instanceof Error && error.message.includes('PRD_REQUIRED')) {
+        // This shouldn't happen since we check above, but handle it gracefully
+        const feedItem = feedItems.find(f => f.id === itemId)
+        setPrdDialog({
+          isOpen: true,
+          projectId,
+          itemId,
+          itemTitle: feedItem?.title || 'Untitled Item',
+          prdStatus: 'missing',
+          uploadSessions: []
+        })
+      } else {
+        actions.setError('action', error instanceof Error ? error.message : 'Failed to move item')
+      }
     } finally {
       actions.setLoading('action', false)
     }
@@ -366,6 +414,23 @@ export const MissionControl: React.FC = () => {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* PRD Requirement Dialog */}
+        {prdDialog && (
+          <PrdRequirementDialog
+            isOpen={prdDialog.isOpen}
+            onClose={() => setPrdDialog(null)}
+            projectId={prdDialog.projectId}
+            itemId={prdDialog.itemId}
+            itemTitle={prdDialog.itemTitle}
+            prdStatus={prdDialog.prdStatus}
+            uploadSessions={prdDialog.uploadSessions}
+            onPrdCreated={() => {
+              setPrdDialog(null)
+              // Optionally refresh data or show success message
+            }}
+          />
+        )}
       </div>
     </DndProvider>
   )

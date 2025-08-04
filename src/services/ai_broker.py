@@ -1451,13 +1451,14 @@ Content:
             import time
             
             start_time = time.time()
+            print(f"🤖 [AI] Starting Claude analysis with {len(files)} files")
             logger.info(f"Starting Claude analysis with {len(files)} files")
             
             # Use Model Garden API URL for Claude
             api_url = os.environ.get('MODEL_GARDEN_API_URL', 
                                    'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions')
             api_key = os.environ.get('MODEL_GARDEN_API_KEY', 
-                                   'b3540f69-5289-483e-91fe-942c4bfa458c')
+                                   '4b7103fd-77b1-4db6-9ab7-a88e92a0e835')
             
             headers = {
                 "Content-Type": "application/json",
@@ -1493,6 +1494,7 @@ Content:
                 "max_tokens": 3000   # Slightly reduced for faster response
             }
             
+            print(f"📡 [AI] Sending request to Claude API")
             logger.info(f"Sending request to Claude API...")
             
             response = requests.post(api_url, headers=headers, json=payload, timeout=240)  # 4 minutes
@@ -1512,6 +1514,7 @@ Content:
             }
             
         except Exception as e:
+            print(f"❌ [AI] Claude analysis failed: {e}")
             logger.error(f"Claude analysis failed: {e}")
             return {
                 'success': False,
@@ -1531,7 +1534,7 @@ Content:
             api_url = os.environ.get('MODEL_GARDEN_API_URL', 
                                    'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions')
             api_key = os.environ.get('MODEL_GARDEN_API_KEY', 
-                                   'b3540f69-5289-483e-91fe-942c4bfa458c')
+                                   '4b7103fd-77b1-4db6-9ab7-a88e92a0e835')
             
             headers = {
                 "Content-Type": "application/json",
@@ -1589,7 +1592,7 @@ Content:
             api_url = os.environ.get('MODEL_GARDEN_API_URL', 
                                    'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions')
             api_key = os.environ.get('MODEL_GARDEN_API_KEY', 
-                                   'b3540f69-5289-483e-91fe-942c4bfa458c')
+                                   '4b7103fd-77b1-4db6-9ab7-a88e92a0e835')
             
             headers = {
                 "Content-Type": "application/json",
@@ -1678,9 +1681,116 @@ Content:
                 'content': None
             }
 
+    def enhance_idea_summary(self, idea_title: str, prd_content: str, project_context: str = "") -> str:
+        """
+        Generate a concise 2-3 line summary for an idea based on PRD content
+        
+        Args:
+            idea_title: Original idea title
+            prd_content: PRD content for the idea
+            project_context: Optional project context
+            
+        Returns:
+            Enhanced summary (2-3 lines max)
+        """
+        try:
+            prompt = f"""Based on the PRD content below, create a concise 2-3 line summary for this idea:
+
+IDEA TITLE: {idea_title}
+
+PRD CONTENT:
+{prd_content[:2000]}  # Limit to avoid token overflow
+
+PROJECT CONTEXT:
+{project_context[:500] if project_context else "No additional context"}
+
+Generate a professional, business-focused summary that includes:
+- What problem it solves
+- Who it's for
+- Key business value
+
+Keep it to 2-3 lines maximum. Be concise and clear."""
+
+            # Use model garden for summary generation
+            response = self.model_garden.generate_response(
+                prompt=prompt,
+                model="gemini-2.5-flash",  # Fast model for simple summaries
+                max_tokens=150,
+                temperature=0.3
+            )
+            
+            if response and response.get('content'):
+                summary = response['content'].strip()
+                # Ensure it's not too long
+                lines = summary.split('\n')
+                if len(lines) > 3:
+                    summary = '\n'.join(lines[:3])
+                return summary
+            else:
+                logger.warning(f"Failed to generate summary for idea: {idea_title}")
+                return f"Business feature: {idea_title}. Details available in PRD."
+                
+        except Exception as e:
+            logger.error(f"Error generating idea summary: {e}")
+            return f"Business feature: {idea_title}. Details available in PRD."
+
 
 # Global broker instance
 ai_broker = None
+
+
+def get_ai_broker() -> AIBroker:
+        """
+        Generate a concise 2-3 line summary for an idea based on PRD content
+        
+        Args:
+            idea_title: Original idea title
+            prd_content: PRD content for the idea
+            project_context: Optional project context
+            
+        Returns:
+            Enhanced summary (2-3 lines max)
+        """
+        try:
+            prompt = f"""Based on the PRD content below, create a concise 2-3 line summary for this idea:
+
+IDEA TITLE: {idea_title}
+
+PRD CONTENT:
+{prd_content[:2000]}  # Limit to avoid token overflow
+
+PROJECT CONTEXT:
+{project_context[:500] if project_context else "No additional context"}
+
+Generate a professional, business-focused summary that includes:
+- What problem it solves
+- Who it's for
+- Key business value
+
+Keep it to 2-3 lines maximum. Be concise and clear."""
+
+            # Use model garden for summary generation
+            response = self.model_garden.generate_response(
+                prompt=prompt,
+                model="gemini-2.5-flash",  # Fast model for simple summaries
+                max_tokens=150,
+                temperature=0.3
+            )
+            
+            if response and response.get('content'):
+                summary = response['content'].strip()
+                # Ensure it's not too long
+                lines = summary.split('\n')
+                if len(lines) > 3:
+                    summary = '\n'.join(lines[:3])
+                return summary
+            else:
+                logger.warning(f"Failed to generate summary for idea: {idea_title}")
+                return f"Business feature: {idea_title}. Details available in PRD."
+                
+        except Exception as e:
+            logger.error(f"Error generating idea summary: {e}")
+            return f"Business feature: {idea_title}. Details available in PRD."
 
 
 def get_ai_broker() -> AIBroker:

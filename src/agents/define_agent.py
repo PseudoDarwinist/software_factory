@@ -136,8 +136,8 @@ class DefineAgent(BaseAgent):
                     error_message="Could not retrieve idea content"
                 )
             
-            # Retrieve context using pgvector
-            context_data = self._retrieve_context(idea_content, event.project_id, project_context)
+            # Retrieve context using pgvector with idea-specific PRD support
+            context_data = self._retrieve_context(idea_content, event.project_id, project_context, event.aggregate_id)
             
             # Generate specifications using AI
             specifications = self._generate_specifications(
@@ -160,8 +160,8 @@ class DefineAgent(BaseAgent):
             # Create spec ID based on the idea ID
             spec_id = f"spec_{event.aggregate_id}"
             
-            # Store specifications (in a real implementation, you'd save to database)
-            self._store_specifications(spec_id, event.project_id, specifications)
+            # Store specifications with context sources
+            self._store_specifications(spec_id, event.project_id, specifications, context_data)
             
             # Create spec.frozen event
             spec_frozen_event = SpecFrozenEvent(
@@ -238,17 +238,113 @@ class DefineAgent(BaseAgent):
             logger.error(f"Failed to retrieve idea content: {e}")
             return None
     
+    def _get_prd_context(self, project_id: str, idea_id: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve PRD context with idea-specific priority.
+        
+        Priority order:
+        1. Idea-specific PRD (if idea_id provided)
+        2. Latest frozen project PRD
+        3. Latest draft project PRD
+        """
+        try:
+            # Import PRD model
+            try:
+                from ..models.prd import PRD
+            except ImportError:
+                from models.prd import PRD
+            
+            prd = None
+            prd_type = 'missing'
+            
+            # Strategy 1: Look for idea-specific PRD first (NEW ARCHITECTURE)
+            if idea_id:
+                idea_prd = PRD.get_frozen_for_feed_item(idea_id)
+                if idea_prd:
+                    prd = idea_prd
+                    prd_type = 'idea-specific'
+                    logger.info(f"Using idea-specific PRD {prd.id} for idea {idea_id}")
+                else:
+                    # Check for draft idea-specific PRD
+                    draft_idea_prd = PRD.get_for_feed_item(idea_id)
+                    if draft_idea_prd:
+                        prd = draft_idea_prd
+                        prd_type = 'idea-draft'
+                        logger.info(f"Using draft idea-specific PRD {prd.id} for idea {idea_id}")
+            
+            # Strategy 2: Fallback to project-level PRDs (BACKWARD COMPATIBILITY)
+            if not prd:
+                # Get the latest frozen PRD for this project
+                project_prd = PRD.query.filter_by(project_id=project_id, status='frozen')\
+                                     .order_by(PRD.created_at.desc())\
+                                     .first()
+                
+                if project_prd:
+                    prd = project_prd
+                    prd_type = 'project-frozen'
+                    logger.info(f"Using project-level frozen PRD {prd.id}")
+                else:
+                    # Try to find any PRD (including drafts) for this project
+                    draft_prd = PRD.query.filter_by(project_id=project_id)\
+                                        .order_by(PRD.created_at.desc())\
+                                        .first()
+                    if draft_prd:
+                        prd = draft_prd
+                        prd_type = 'project-draft'
+                        logger.info(f"Using project-level draft PRD {prd.id}")
+            
+            if prd:
+                prd_summary = prd.get_summary()
+                context = {
+                    'prd_id': str(prd.id),
+                    'prd_type': prd_type,
+                    'version': prd.version,
+                    'status': prd.status,
+                    'md_content': prd.md_uri,
+                    'summary': prd_summary,
+                    'business_goals': prd_summary.get('goals', {}).get('items', []),
+                    'user_personas': prd_summary.get('audience', {}).get('text', ''),
+                    'problem_statement': prd_summary.get('problem', {}).get('text', ''),
+                    'success_metrics': prd_summary.get('goals', {}).get('items', []),
+                    'risks': prd_summary.get('risks', {}).get('items', []),
+                    'competitive_analysis': prd_summary.get('competitive_scan', {}).get('items', []),
+                    'open_questions': prd_summary.get('open_questions', {}).get('items', []),
+                    'sources': prd.sources or [],
+                    'source_files': prd.source_files or [],
+                    'created_at': prd.created_at.isoformat() if prd.created_at else None
+                }
+                
+                logger.info(f"Retrieved {prd_type} PRD context with {len(context['business_goals'])} goals and {len(context['sources'])} sources")
+                return context
+            
+            logger.info(f"No PRD context found for project {project_id}, idea {idea_id}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve PRD context for project {project_id}, idea {idea_id}: {e}")
+            return None
+    
     def _retrieve_context(self, idea_content: str, project_id: str, 
-                         project_context: ProjectContext) -> Dict[str, Any]:
+                         project_context: ProjectContext, idea_id: str = None) -> Dict[str, Any]:
         """Retrieve relevant context using pgvector and other sources"""
         context_data = {
             'similar_specs': [],
             'related_docs': [],
             'similar_code': [],
+            'prd_context': None,
             'sources': []
         }
         
         try:
+            # Get PRD context with idea-specific priority
+            prd_context = self._get_prd_context(project_id, idea_id)
+            if prd_context:
+                context_data['prd_context'] = prd_context
+                context_data['sources'].append(f"prd:{prd_context.get('version', 'unknown')}:{prd_context.get('prd_type', 'unknown')}")
+                logger.info(f"Retrieved {prd_context.get('prd_type')} PRD context version {prd_context.get('version')} for project {project_id}, idea {idea_id}")
+            else:
+                logger.info(f"No PRD context found for project {project_id}")
+            
             if self.vector_context_service:
                 # Find similar specifications
                 similar_specs = self.vector_context_service.find_similar_specs(
@@ -328,6 +424,77 @@ class DefineAgent(BaseAgent):
         """Prepare comprehensive context for AI specification generation with Kiro-style repository awareness"""
         context_parts = []
         
+        # Add PRD context first (highest priority)
+        if context_data.get('prd_context'):
+            prd = context_data['prd_context']
+            prd_type = prd.get('prd_type', 'unknown')
+            
+            context_parts.append("=== PRODUCT REQUIREMENTS DOCUMENT (PRIMARY BUSINESS CONTEXT) ===")
+            context_parts.append(f"PRD Type: {prd_type.upper()} - Version: {prd.get('version', 'unknown')} ({prd.get('status', 'unknown')})")
+            
+            if prd_type == 'idea-specific':
+                context_parts.append("🎯 IDEA-SPECIFIC PRD: This PRD was created specifically for this feature idea.")
+            elif prd_type == 'idea-draft':
+                context_parts.append("⚠️ DRAFT IDEA-SPECIFIC PRD: This PRD is in draft status but created for this specific idea.")
+            else:
+                context_parts.append("📋 PROJECT-LEVEL PRD: Using project-wide PRD as context.")
+            
+            context_parts.append("")
+            
+            # Enhanced business context
+            if prd.get('problem_statement'):
+                context_parts.append(f"Problem Statement: {prd.get('problem_statement')}")
+                context_parts.append("")
+            
+            if prd.get('user_personas'):
+                context_parts.append(f"Target Users: {prd.get('user_personas')}")
+                context_parts.append("")
+            
+            if prd.get('business_goals'):
+                context_parts.append("Business Goals:")
+                for goal in prd.get('business_goals', [])[:5]:  # Show more goals for idea-specific PRDs
+                    context_parts.append(f"- {goal}")
+                context_parts.append("")
+            
+            if prd.get('success_metrics'):
+                context_parts.append("Success Metrics:")
+                for metric in prd.get('success_metrics', [])[:3]:
+                    context_parts.append(f"- {metric}")
+                context_parts.append("")
+            
+            if prd.get('risks'):
+                context_parts.append("Known Risks:")
+                for risk in prd.get('risks', [])[:3]:
+                    context_parts.append(f"- {risk}")
+                context_parts.append("")
+            
+            if prd.get('competitive_analysis'):
+                context_parts.append("Competitive Context:")
+                for comp in prd.get('competitive_analysis', [])[:3]:
+                    context_parts.append(f"- {comp}")
+                context_parts.append("")
+            
+            if prd.get('open_questions'):
+                context_parts.append("Open Questions to Address:")
+                for question in prd.get('open_questions', [])[:3]:
+                    context_parts.append(f"- {question}")
+                context_parts.append("")
+            
+            # Source attribution
+            if prd.get('source_files'):
+                context_parts.append("PRD Sources:")
+                for source_file in prd.get('source_files', [])[:5]:
+                    context_parts.append(f"- {source_file.get('filename', 'Unknown file')}")
+                context_parts.append("")
+            
+            if prd.get('md_content'):
+                # Include a larger snippet for idea-specific PRDs
+                max_length = 2000 if prd_type == 'idea-specific' else 1000
+                prd_snippet = prd.get('md_content', '')[:max_length]
+                context_parts.append("PRD Content (excerpt):")
+                context_parts.append(prd_snippet + "..." if len(prd.get('md_content', '')) > max_length else prd_snippet)
+                context_parts.append("")
+        
         # Add Kiro-style repository analysis instruction
         context_parts.append("=== REPOSITORY ANALYSIS INSTRUCTION ===")
         context_parts.append("You have full filesystem access to analyze this repository. Before generating specifications:")
@@ -336,6 +503,7 @@ class DefineAgent(BaseAgent):
         context_parts.append("3. Understand the technology stack and dependencies")
         context_parts.append("4. Identify integration points and existing APIs")
         context_parts.append("5. Follow established coding conventions and patterns")
+        context_parts.append("6. ENSURE ALIGNMENT with the PRD business goals and user personas above")
         context_parts.append("")
         
         # Add project information
@@ -384,7 +552,15 @@ class DefineAgent(BaseAgent):
     def _generate_requirements(self, idea_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
         """Generate requirements.md using AI Broker with enhanced repository-aware context"""
         try:
-            # Enhanced Kiro-style prompt that leverages repository access
+            # Enhanced Kiro-style prompt that leverages repository access and PRD context
+            prd_instruction = ""
+            if ai_context and "PRODUCT REQUIREMENTS DOCUMENT" in ai_context:
+                prd_instruction = """
+**CRITICAL**: This feature request must align with the Product Requirements Document (PRD) provided above. 
+Ensure all requirements directly support the business goals, target the specified user personas, 
+and contribute to the defined success metrics from the PRD.
+"""
+            
             prompt = f"""You are a senior product manager and business analyst with full filesystem access to analyze this repository.
 
 {ai_context}
@@ -402,12 +578,15 @@ INSTRUCTIONS:
    - Component architectures and relationships
    - Testing patterns and infrastructure
 
-2. **GENERATE REPOSITORY-AWARE REQUIREMENTS**: Create requirements.md that:
+2. **ALIGN WITH BUSINESS CONTEXT**: {prd_instruction}
+
+3. **GENERATE REPOSITORY-AWARE REQUIREMENTS**: Create requirements.md that:
    - References actual files, classes, and patterns from the codebase
    - Follows established architectural patterns
    - Integrates with existing APIs and data models
    - Uses the same technology stack and conventions
    - Mentions specific files that need modification or creation
+   - Explicitly connects to PRD business goals and user personas (if provided)
 
 Create a requirements.md document with the following structure:
 
@@ -485,9 +664,7 @@ List 8-12 numbered requirements using EARS format:
 
 Generate a comprehensive, repository-aware requirements document that demonstrates deep understanding of the existing codebase and seamlessly integrates with established patterns."""
             
-            # Create clean DefineAgent prompt with only system map context
-            clean_prompt = self._create_clean_define_agent_prompt(idea_content, ai_context)
-            
+            # Use the full enhanced prompt for better context awareness
             # Try Claude Code SDK first as primary option
             logger.info("Trying Claude Code SDK as primary AI provider")
             try:
@@ -525,16 +702,16 @@ Generate a comprehensive, repository-aware requirements document that demonstrat
             ai_request = AIRequest(
                 request_id=f"requirements_{uuid.uuid4().hex[:8]}",
                 task_type=TaskType.DOCUMENTATION,
-                instruction=clean_prompt,  # Clean DefineAgent prompt only
+                instruction=prompt,  # Use the full enhanced prompt with PRD context
                 priority=Priority.HIGH,
                 max_tokens=32000,
                 timeout_seconds=300.0,
                 preferred_models=['claude-opus-4'],  # Use Model Garden Anthropic model only
-                metadata={'agent': self.config.agent_id, 'type': 'requirements', 'approach': 'clean_define_agent'}
+                metadata={'agent': self.config.agent_id, 'type': 'requirements', 'approach': 'enhanced_with_prd'}
             )
             
-            logger.info(f"Submitting clean DefineAgent request with models: {ai_request.preferred_models}")
-            logger.info(f"Request ID: {ai_request.request_id}, Clean prompt length: {len(clean_prompt)}")
+            logger.info(f"Submitting enhanced DefineAgent request with models: {ai_request.preferred_models}")
+            logger.info(f"Request ID: {ai_request.request_id}, Enhanced prompt length: {len(prompt)}")
             
             response = self.ai_broker.submit_request_sync(ai_request, timeout=120.0)
             
@@ -841,8 +1018,8 @@ ORIGINAL IDEA:
                     error_message="Could not retrieve idea content"
                 )
             
-            # Retrieve context using pgvector
-            context_data = self._retrieve_context(idea_content, event.project_id, project_context)
+            # Retrieve context using pgvector with idea-specific PRD support
+            context_data = self._retrieve_context(idea_content, event.project_id, project_context, event.aggregate_id)
             
             # Generate specifications using Kiro-style approach
             specifications = self._generate_specifications(
@@ -1459,10 +1636,16 @@ Convert the approved requirements and design into actionable coding tasks. Focus
             logger.error(f"Error generating tasks document: {e}")
             return None
 
-    def _store_specifications(self, spec_id: str, project_id: str, specifications: Dict[str, str]):
-        """Store generated specifications in the database"""
+    def _store_specifications(self, spec_id: str, project_id: str, specifications: Dict[str, str], context_data: Dict[str, Any] = None):
+        """Store generated specifications in the database with context tracking"""
         try:
             logger.info(f"Storing specifications for spec {spec_id} in project {project_id}")
+            
+            # Extract context sources for tracking
+            context_sources = []
+            if context_data:
+                context_sources = context_data.get('sources', [])
+                logger.info(f"Context sources for spec {spec_id}: {context_sources}")
             
             # Map specification types to artifact types
             artifact_type_mapping = {
@@ -1482,16 +1665,17 @@ Convert the approved requirements and design into actionable coding tasks. Focus
                     existing_artifact = SpecificationArtifact.query.get(artifact_id)
                     
                     if existing_artifact:
-                        # Update existing artifact
-                        logger.info(f"Updating existing {spec_type} artifact")
+                        # Update existing artifact with new context sources
+                        logger.info(f"Updating existing {spec_type} artifact with PRD context")
                         existing_artifact.content = content
                         existing_artifact.updated_by = self.config.agent_id
                         existing_artifact.updated_at = datetime.utcnow()
                         existing_artifact.ai_model_used = "claude-opus-4"
+                        existing_artifact.context_sources = context_sources
                         artifact = existing_artifact
                     else:
-                        # Create new artifact
-                        logger.info(f"Creating new {spec_type} artifact")
+                        # Create new artifact with context sources
+                        logger.info(f"Creating new {spec_type} artifact with PRD context")
                         artifact = SpecificationArtifact.create_artifact(
                             spec_id=spec_id,
                             project_id=project_id,  # Keep as string, don't convert to int
@@ -1500,15 +1684,15 @@ Convert the approved requirements and design into actionable coding tasks. Focus
                             created_by=self.config.agent_id,
                             ai_generated=True,
                             ai_model_used="claude-opus-4",  # This would come from the AI response
-                            context_sources=[]  # This would come from the context data
+                            context_sources=context_sources
                         )
                     
                     stored_artifacts.append(artifact)
-                    logger.debug(f"Created {spec_type} artifact: {len(content)} characters")
+                    logger.debug(f"Created {spec_type} artifact: {len(content)} characters, sources: {context_sources}")
             
             # Commit all artifacts
             db.session.commit()
-            logger.info(f"Successfully stored {len(stored_artifacts)} specification artifacts")
+            logger.info(f"Successfully stored {len(stored_artifacts)} specification artifacts with context tracking")
             
         except Exception as e:
             logger.error(f"Failed to store specifications: {e}")

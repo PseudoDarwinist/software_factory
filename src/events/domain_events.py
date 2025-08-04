@@ -905,3 +905,147 @@ class TaskCompletedEvent(DomainEvent):
             'result': self.result
         })
         return payload
+
+# PRD and Context Events
+
+class PRDCreatedEvent(DomainEvent):
+    """Event fired when a PRD is created."""
+    
+    def __init__(
+        self,
+        prd_id: str,
+        project_id: str,
+        feed_item_id: Optional[str] = None,
+        version: str = "v0",
+        created_by: Optional[str] = None,
+        **kwargs
+    ):
+        super().__init__(prd_id, "prd", **kwargs)
+        self.project_id = project_id
+        self.feed_item_id = feed_item_id
+        self.version = version
+        self.created_by = created_by
+    
+    def get_event_type(self) -> str:
+        return "prd.created"
+    
+    def get_version(self) -> str:
+        return EventVersion.V1.value
+    
+    def get_payload(self) -> Dict[str, Any]:
+        payload = super().get_payload()
+        payload.update({
+            'project_id': self.project_id,
+            'feed_item_id': self.feed_item_id,
+            'version': self.version,
+            'created_by': self.created_by
+        })
+        return payload
+
+
+class PRDUpdatedEvent(DomainEvent):
+    """Event fired when a PRD is updated."""
+    
+    def __init__(
+        self,
+        prd_id: str,
+        project_id: str,
+        old_version: str,
+        new_version: str,
+        changes: Dict[str, Any],
+        updated_by: Optional[str] = None,
+        **kwargs
+    ):
+        super().__init__(prd_id, "prd", **kwargs)
+        self.project_id = project_id
+        self.old_version = old_version
+        self.new_version = new_version
+        self.changes = changes
+        self.updated_by = updated_by
+    
+    def get_event_type(self) -> str:
+        return "prd.updated"
+    
+    def get_version(self) -> str:
+        return EventVersion.V1.value
+    
+    def get_payload(self) -> Dict[str, Any]:
+        payload = super().get_payload()
+        payload.update({
+            'project_id': self.project_id,
+            'old_version': self.old_version,
+            'new_version': self.new_version,
+            'changes': self.changes,
+            'updated_by': self.updated_by
+        })
+        return payload
+
+
+class PRDFrozenEvent(DomainEvent):
+    """Event fired when a PRD is frozen."""
+    
+    def __init__(
+        self,
+        prd_id: str,
+        project_id: str,
+        version: str,
+        frozen_by: Optional[str] = None,
+        **kwargs
+    ):
+        super().__init__(prd_id, "prd", **kwargs)
+        self.project_id = project_id
+        self.version = version
+        self.frozen_by = frozen_by
+    
+    def get_event_type(self) -> str:
+        return "prd.frozen"
+    
+    def get_version(self) -> str:
+        return EventVersion.V1.value
+    
+    def get_payload(self) -> Dict[str, Any]:
+        payload = super().get_payload()
+        payload.update({
+            'project_id': self.project_id,
+            'version': self.version,
+            'frozen_by': self.frozen_by
+        })
+        return payload
+
+
+class ContextDriftDetectedEvent(DomainEvent):
+    """Event fired when drift is detected between PRD and specifications."""
+    
+    def __init__(
+        self,
+        spec_id: str,
+        project_id: str,
+        prd_id: str,
+        drift_score: float,
+        drift_level: str,
+        factors: Dict[str, float],
+        **kwargs
+    ):
+        super().__init__(spec_id, "context", **kwargs)
+        self.project_id = project_id
+        self.prd_id = prd_id
+        self.drift_score = drift_score
+        self.drift_level = drift_level
+        self.factors = factors
+    
+    def get_event_type(self) -> str:
+        return "context.drift_detected"
+    
+    def get_version(self) -> str:
+        return EventVersion.V1.value
+    
+    def get_payload(self) -> Dict[str, Any]:
+        payload = super().get_payload()
+        payload.update({
+            'project_id': self.project_id,
+            'prd_id': self.prd_id,
+            'drift_score': self.drift_score,
+            'drift_level': self.drift_level,
+            'factors': self.factors
+        })
+        return payload

@@ -114,7 +114,7 @@ class Config:
     STATIC_FOLDER = os.environ.get('STATIC_FOLDER', 'frontend/dist')
     GOOSE_SCRIPT_PATH = os.environ.get('GOOSE_SCRIPT_PATH', './scripts/goose-gemini')
     MODEL_GARDEN_API_URL = os.environ.get('MODEL_GARDEN_API_URL', 'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions')
-    MODEL_GARDEN_API_KEY = os.environ.get('MODEL_GARDEN_API_KEY', 'b3540f69-5289-483e-91fe-942c4bfa458c')
+    MODEL_GARDEN_API_KEY = os.environ.get('MODEL_GARDEN_API_KEY', '4b7103fd-77b1-4db6-9ab7-a88e92a0e835')
     REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
     REDIS_CACHE_DB = os.environ.get('REDIS_CACHE_DB', '1')
     CACHE_DEFAULT_TTL = int(os.environ.get('CACHE_DEFAULT_TTL', 300))
@@ -145,16 +145,16 @@ def create_app(config_class=Config):
 
     setup_logging(app)
 
-    # Add minimal request logging for important endpoints
+    # Add minimal request logging for analysis only
     @app.before_request
     def log_important_requests():
-        if '/analyze' in request.url or '/upload' in request.url:
-            logger.info(f"{request.method} {request.url}")
+        if '/analyze' in request.url:
+            print(f"🌐 [REQUEST] {request.method} {request.url}")
 
     @app.after_request
     def log_important_responses(response):
-        if '/analyze' in request.url or '/upload' in request.url:
-            logger.info(f"Response: {response.status_code}")
+        if '/analyze' in request.url:
+            print(f"📤 [RESPONSE] {response.status_code} - {request.method} {request.url}")
         return response
 
     db.init_app(app)

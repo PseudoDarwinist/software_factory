@@ -255,6 +255,23 @@ export const PlanStage: React.FC<PlanStageProps> = ({
       .map(t => t!.title)
   }, [tasks])
 
+  // Get dependency status for a task
+  const getDependencyStatus = useCallback((task: Task) => {
+    if (!task.depends_on || task.depends_on.length === 0) {
+      return { total: 0, completed: 0, blocked: false }
+    }
+    
+    const dependencies = task.depends_on
+      .map(depId => tasks.find(t => t.id === depId))
+      .filter(Boolean)
+    
+    const completed = dependencies.filter(dep => dep!.status === 'done').length
+    const total = dependencies.length
+    const blocked = completed < total
+    
+    return { total, completed, blocked }
+  }, [tasks])
+
   // Handle field updates
   const handleUpdateField = useCallback(async (taskId: string, field: string, value: any) => {
     try {
@@ -395,6 +412,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
               onTaskSelect={handleTaskSelect}
               isTaskBlocked={isTaskBlocked}
               getBlockingTasks={getBlockingTasks}
+              getDependencyStatus={getDependencyStatus}
               onUpdateField={handleUpdateField}
               onSuggestAssignee={handleSuggestAssignee}
               onSuggestEstimate={handleSuggestEstimate}
@@ -412,6 +430,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
               onTaskSelect={handleTaskSelect}
               isTaskBlocked={isTaskBlocked}
               getBlockingTasks={getBlockingTasks}
+              getDependencyStatus={getDependencyStatus}
               onUpdateField={handleUpdateField}
               onSuggestAssignee={handleSuggestAssignee}
               onSuggestEstimate={handleSuggestEstimate}
@@ -429,6 +448,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
               onTaskSelect={handleTaskSelect}
               isTaskBlocked={isTaskBlocked}
               getBlockingTasks={getBlockingTasks}
+              getDependencyStatus={getDependencyStatus}
               onUpdateField={handleUpdateField}
               onSuggestAssignee={handleSuggestAssignee}
               onSuggestEstimate={handleSuggestEstimate}
@@ -488,6 +508,7 @@ interface KanbanColumnProps {
   onTaskSelect: (task: Task) => void
   isTaskBlocked: (task: Task) => boolean
   getBlockingTasks: (task: Task) => string[]
+  getDependencyStatus: (task: Task) => { total: number; completed: number; blocked: boolean }
   onUpdateField: (taskId: string, field: string, value: any) => void
   onSuggestAssignee: (taskId: string) => void
   onSuggestEstimate: (taskId: string) => void
@@ -501,6 +522,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   onTaskSelect,
   isTaskBlocked,
   getBlockingTasks,
+  getDependencyStatus,
   onUpdateField,
   onSuggestAssignee,
   onSuggestEstimate,
@@ -522,6 +544,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
             onSelect={() => onTaskSelect(task)}
             isBlocked={isTaskBlocked(task)}
             blockingTasks={getBlockingTasks(task)}
+            dependencyStatus={getDependencyStatus(task)}
             index={index}
             onUpdateField={onUpdateField}
             onSuggestAssignee={onSuggestAssignee}
@@ -547,6 +570,7 @@ interface TaskCardProps {
   onSelect: () => void
   isBlocked: boolean
   blockingTasks: string[]
+  dependencyStatus: { total: number; completed: number; blocked: boolean }
   index: number
   onUpdateField: (taskId: string, field: string, value: any) => void
   onSuggestAssignee: (taskId: string) => void
@@ -560,6 +584,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
   onSelect,
   isBlocked,
   blockingTasks,
+  dependencyStatus,
   index,
   onUpdateField,
   onSuggestAssignee,
@@ -611,11 +636,12 @@ const TaskCard: React.FC<TaskCardProps> = ({
     >
       <LiquidCard
         variant="default"
-        onClick={onSelect}
+        onClick={isBlocked ? undefined : onSelect}
         className={clsx(
-          'transition-all cursor-pointer hover:scale-105',
+          'transition-all',
+          !isBlocked && 'cursor-pointer hover:scale-105',
           getStatusColor(),
-          isBlocked && 'opacity-50',
+          isBlocked && 'opacity-40 grayscale cursor-not-allowed',
           task.status === 'failed' && 'relative'
         )}
       >
@@ -627,7 +653,20 @@ const TaskCard: React.FC<TaskCardProps> = ({
         <div className="p-4">
           {/* Task number and title */}
           <div className="mb-3">
-            <div className="text-sm text-white/60 mb-1">{task.task_number}</div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-sm text-white/60">{task.task_number}</div>
+              {dependencyStatus.total > 0 && (
+                <div className="flex items-center text-xs">
+                  <span className="text-white/40 mr-1">🔗</span>
+                  <span className={clsx(
+                    "font-medium",
+                    dependencyStatus.blocked ? "text-orange-400" : "text-green-400"
+                  )}>
+                    {dependencyStatus.completed}/{dependencyStatus.total}
+                  </span>
+                </div>
+              )}
+            </div>
             <h3 className="font-semibold text-white leading-tight">
               {task.title}
             </h3>
@@ -653,6 +692,30 @@ const TaskCard: React.FC<TaskCardProps> = ({
           {task.goal_line && (
             <div className="mb-3 p-2 bg-white/5 rounded text-xs text-white/80 italic">
               "{task.goal_line}"
+            </div>
+          )}
+
+          {/* Dependency progress indicator */}
+          {dependencyStatus.total > 0 && (
+            <div className="mb-3 p-2 bg-white/5 rounded text-xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-white/60">Dependencies:</span>
+                <span className={clsx(
+                  "font-medium",
+                  dependencyStatus.blocked ? "text-orange-400" : "text-green-400"
+                )}>
+                  {dependencyStatus.completed}/{dependencyStatus.total}
+                </span>
+              </div>
+              <div className="bg-white/20 rounded-full h-1">
+                <div 
+                  className={clsx(
+                    "h-1 rounded-full transition-all duration-300",
+                    dependencyStatus.blocked ? "bg-orange-400" : "bg-green-400"
+                  )}
+                  style={{ width: `${(dependencyStatus.completed / dependencyStatus.total) * 100}%` }}
+                />
+              </div>
             </div>
           )}
 
@@ -800,21 +863,35 @@ const TaskCard: React.FC<TaskCardProps> = ({
 
           {/* Blocking message */}
           {isBlocked && (
-            <div className="mt-3 p-2 bg-red-500/20 rounded text-xs text-red-300">
-              Blocked by: {blockingTasks.join(', ')}
+            <div className="mt-3 p-3 bg-red-500/30 border border-red-500/50 rounded-lg text-sm">
+              <div className="flex items-center text-red-300 font-medium mb-1">
+                <span className="mr-2">🔒</span>
+                Blocked
+              </div>
+              <div className="text-red-200 text-xs">
+                Waiting for: {blockingTasks.join(', ')}
+              </div>
             </div>
           )}
 
           {/* Start button for ready tasks */}
-          {task.status === 'ready' && !isBlocked && (
+          {task.status === 'ready' && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                onSelect()
+                if (!isBlocked) {
+                  onSelect()
+                }
               }}
-              className="neon-btn neon-btn--gray w-full mt-4 py-2"
+              disabled={isBlocked}
+              className={clsx(
+                "w-full mt-4 py-2 font-semibold rounded-lg transition-all",
+                isBlocked 
+                  ? "bg-gray-600/50 text-gray-400 cursor-not-allowed" 
+                  : "neon-btn neon-btn--gray hover:scale-105"
+              )}
             >
-              ⚡ Start Task
+              {isBlocked ? "🔒 Blocked" : "⚡ Start Task"}
             </button>
           )}
 

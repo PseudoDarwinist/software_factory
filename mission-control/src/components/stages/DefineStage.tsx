@@ -10,7 +10,7 @@
  * 
  * Features:
  * - Three-tab editor for requirements.md, design.md, tasks.md
- * - Badge system showing AI-draft (🟡) vs Human-reviewed (🟢) status
+ * - Badge system showing AI-draft vs Human-reviewed status
  * - Freeze Spec button that emits spec.frozen event
  * - Real-time collaboration and auto-save
  * - Context-aware AI assistant for specification help
@@ -542,8 +542,8 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                 style={{ overflow: 'visible' }}
               >
                 <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
-                    <span className="text-blue-400 text-sm">📝</span>
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                    <span className="text-blue-400 text-sm font-medium">•</span>
                   </div>
                   
                   <div className="flex-1 min-w-0">
@@ -551,7 +551,9 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                       {item.title}
                     </h4>
                     <p className="text-xs text-white/70 mt-1 line-clamp-2">
-                      {item.summary}
+                      {item.summary && item.summary.length > 0 && !item.summary.match(/^[A-Z0-9_]+$/) 
+                        ? item.summary 
+                        : 'Feature specification in progress...'}
                     </p>
                     <div className="flex items-center justify-between mt-3">
                       <div className="text-xs text-white/50">
@@ -564,9 +566,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                           disabled={specLoading}
                           className="min-w-[180px]"
                         />
-                        <div className="text-xs text-blue-400 bg-blue-500/20 px-2 py-1 rounded-full">
-                          In Definition
-                        </div>
+
                       </div>
                     </div>
                   </div>
@@ -577,8 +577,8 @@ export const DefineStage: React.FC<DefineStageProps> = ({
 
           {ideasInDefinition.length === 0 && (
             <div className="text-center py-8">
-              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-white/5 flex items-center justify-center">
-                <span className="text-white/40 text-lg">📝</span>
+              <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+                <span className="text-white/40 text-lg font-medium">•</span>
               </div>
               <h3 className="text-sm font-medium text-yellow-400 mb-2">No ideas in definition</h3>
               <p className="text-xs text-white/60">
@@ -661,9 +661,9 @@ export const DefineStage: React.FC<DefineStageProps> = ({
             <div className="flex border-b border-white/10">
               {(['requirements', 'design', 'tasks'] as const).map((tab) => {
                 const artifact = currentSpec[tab]
-                const badge = artifact?.status === 'ai_draft' ? '🟡' : 
-                            artifact?.status === 'human_reviewed' ? '🟢' : 
-                            artifact?.status === 'frozen' ? '🔒' : '⚪'
+                const badge = artifact?.status === 'ai_draft' ? '●' : 
+                            artifact?.status === 'human_reviewed' ? '●' : 
+                            artifact?.status === 'frozen' ? '●' : '○'
                 
                 return (
                   <motion.button
@@ -742,8 +742,8 @@ export const DefineStage: React.FC<DefineStageProps> = ({
         {!currentSpec && !specLoading && (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center text-white/60 p-8">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
-                <span className="text-white/40 text-2xl">📝</span>
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+                <span className="text-white/40 text-2xl font-medium">•</span>
               </div>
               <h3 className="text-lg font-medium text-yellow-400 mb-2">Select an idea to define</h3>
               <p className="text-sm">
@@ -853,17 +853,17 @@ const SimpleSpecificationEditor: React.FC<SimpleSpecificationEditorProps> = ({
   }
 
   const getBadgeInfo = () => {
-    if (!artifact) return { icon: '⚪', text: 'Not Created', color: 'gray' }
+    if (!artifact) return { icon: '○', text: 'Not Created', color: 'gray' }
     
     switch (artifact.status) {
       case 'ai_draft':
-        return { icon: '🟡', text: 'AI Draft', color: 'yellow' }
+        return { icon: '●', text: 'AI Draft', color: 'yellow' }
       case 'human_reviewed':
-        return { icon: '🟢', text: 'Human Reviewed', color: 'green' }
+        return { icon: '●', text: 'Human Reviewed', color: 'green' }
       case 'frozen':
-        return { icon: '🔒', text: 'Frozen', color: 'blue' }
+        return { icon: '●', text: 'Frozen', color: 'blue' }
       default:
-        return { icon: '⚪', text: 'Unknown', color: 'gray' }
+        return { icon: '○', text: 'Unknown', color: 'gray' }
     }
   }
 

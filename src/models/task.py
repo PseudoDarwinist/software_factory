@@ -230,7 +230,7 @@ class Task(db.Model):
         self._broadcast_progress_update()
     
     def complete_task(self, completed_by: str, pr_url: str = None):
-        """Mark task as completed"""
+        """Mark task as completed and check dependent tasks"""
         self.status = TaskStatus.DONE
         self.completed_at = datetime.utcnow()
         self.completed_by = completed_by
@@ -242,6 +242,9 @@ class Task(db.Model):
         
         # Broadcast status change
         self._broadcast_progress_update()
+        
+        # Check for tasks that were blocked by this task and notify them
+        self._check_and_notify_dependent_tasks()
     
     def assign_to_user(self, user_id: str, assigned_by: str):
         """Assign task to a user"""
@@ -330,6 +333,34 @@ class Task(db.Model):
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Failed to broadcast progress update for task {self.id}: {e}")
+    
+    def _check_and_notify_dependent_tasks(self):
+        """Check for tasks that depend on this task and notify them of status change"""
+        try:
+            # Find tasks that depend on this task
+            dependent_tasks = Task.query.filter(
+                Task.depends_on.contains([self.id])
+            ).all()
+            
+            # Import here to avoid circular imports
+            try:
+                from ..services.websocket_server import get_websocket_server
+            except ImportError:
+                from services.websocket_server import get_websocket_server
+            
+            ws_server = get_websocket_server()
+            
+            # Broadcast updates for dependent tasks so UI can refresh their blocking status
+            for dependent_task in dependent_tasks:
+                if ws_server:
+                    task_data = dependent_task.to_dict()
+                    ws_server.broadcast_task_progress(dependent_task.id, task_data)
+            
+        except Exception as e:
+            # Don't fail the task completion if dependency checking fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to check dependent tasks for task {self.id}: {e}")
     
     def set_error(self, error_message: str):
         """Set task error and mark as failed"""
@@ -446,6 +477,21 @@ class Task(db.Model):
         }
     
     @classmethod
+    def get_newly_unblocked_tasks(cls, project_id: str):
+        """Get tasks that are now ready to start (were blocked but dependencies are now complete)"""
+        ready_tasks = cls.query.filter_by(
+            project_id=str(project_id),
+            status=TaskStatus.READY
+        ).all()
+        
+        unblocked_tasks = []
+        for task in ready_tasks:
+            if task.can_start():
+                unblocked_tasks.append(task)
+        
+        return unblocked_tasks
+    
+    @classmethod
     def get_project_progress(cls, project_id: str):
         """Get project progress statistics"""
         tasks = cls.get_project_tasks(project_id)
@@ -460,12 +506,16 @@ class Task(db.Model):
                 'failed': 0,
                 'completion_percentage': 0.0,
                 'total_effort_hours': 0.0,
-                'completed_effort_hours': 0.0
+                'completed_effort_hours': 0.0,
+                'blocked_tasks': 0,
+                'unblocked_tasks': 0
             }
         
         status_counts = {status.value: 0 for status in TaskStatus}
         total_effort = 0.0
         completed_effort = 0.0
+        blocked_count = 0
+        unblocked_count = 0
         
         for task in tasks:
             status_counts[task.status.value] += 1
@@ -474,6 +524,13 @@ class Task(db.Model):
                 total_effort += task.effort_estimate_hours
                 if task.status == TaskStatus.DONE:
                     completed_effort += task.effort_estimate_hours
+            
+            # Count blocked vs unblocked ready tasks
+            if task.status == TaskStatus.READY:
+                if task.can_start():
+                    unblocked_count += 1
+                else:
+                    blocked_count += 1
         
         total_tasks = len(tasks)
         completion_percentage = (status_counts['done'] / total_tasks * 100) if total_tasks > 0 else 0
@@ -488,5 +545,7 @@ class Task(db.Model):
             'completion_percentage': completion_percentage,
             'total_effort_hours': total_effort,
             'completed_effort_hours': completed_effort,
-            'effort_completion_percentage': (completed_effort / total_effort * 100) if total_effort > 0 else 0
+            'effort_completion_percentage': (completed_effort / total_effort * 100) if total_effort > 0 else 0,
+            'blocked_tasks': blocked_count,
+            'unblocked_tasks': unblocked_count
         }

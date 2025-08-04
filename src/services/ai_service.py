@@ -342,7 +342,7 @@ class ModelGardenIntegration:
         self.api_url = os.environ.get('MODEL_GARDEN_API_URL', 
                                      'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions')
         self.api_key = os.environ.get('MODEL_GARDEN_API_KEY', 
-                                     'b3540f69-5289-483e-91fe-942c4bfa458c')
+                                     '4b7103fd-77b1-4db6-9ab7-a88e92a0e835')
         
         # Available models mapping
         self.available_models = {

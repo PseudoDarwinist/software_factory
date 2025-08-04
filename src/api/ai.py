@@ -84,7 +84,7 @@ def goose_execute():
                 import json
                 
                 model_garden_url = 'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions'
-                api_key = 'b3540f69-5289-483e-91fe-942c4bfa458c'
+                api_key = '4b7103fd-77b1-4db6-9ab7-a88e92a0e835'
                 
                 payload = {
                     "model": "claude-opus-4",
@@ -162,7 +162,7 @@ def model_garden_execute():
             import json
             
             model_garden_url = 'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions'
-            api_key = 'b3540f69-5289-483e-91fe-942c4bfa458c'
+            api_key = '4b7103fd-77b1-4db6-9ab7-a88e92a0e835'
             
             payload = {
                 "model": model,

@@ -73,18 +73,25 @@ def _ensure_prd_table():
 
 
 class PRD(db.Model):
-    """Model for storing Product Requirements Documents with versioning support."""
+    """Model for storing Product Requirements Documents with versioning support.
+    
+    Each PRD is now linked to a specific FeedItem (idea) for 1:1 relationship.
+    This enables idea-specific business context for spec generation.
+    """
     
     __tablename__ = 'prds'
     
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id = db.Column(UUID(as_uuid=True), nullable=False)
     draft_id = db.Column(UUID(as_uuid=True), nullable=False)  # Links to upload_session
+    feed_item_id = db.Column(UUID(as_uuid=True), nullable=True)  # NEW: Links to specific idea
     version = db.Column(db.String(10), nullable=False)  # v0, v1, v2, etc.
+    parent_version_id = db.Column(UUID(as_uuid=True), nullable=True)  # NEW: For version history
     md_uri = db.Column(db.Text, nullable=True)  # Full markdown PRD content
     json_uri = db.Column(db.Text, nullable=True)  # Structured JSON summary
     # Use custom type that handles PostgreSQL ARRAY and SQLite JSON
     sources = db.Column(StringArrayType, nullable=True)  # List of source file references
+    source_files = db.Column(db.JSON, nullable=True)  # NEW: Detailed file metadata
     created_by = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     status = db.Column(db.String(20), nullable=False, default='draft')  # draft, frozen
@@ -97,7 +104,8 @@ class PRD(db.Model):
     @classmethod
     def create_draft(cls, project_id: str, draft_id: str, md_content: str = None, 
                     json_summary: Dict = None, sources: List[str] = None, 
-                    created_by: str = None) -> 'PRD':
+                    created_by: str = None, feed_item_id: str = None, 
+                    source_files: List[Dict] = None) -> 'PRD':
         # Note: In production, table should exist from migrations
         # _ensure_prd_table() only needed for unit tests
         
@@ -113,6 +121,14 @@ class PRD(db.Model):
         except ValueError:
             # If not a valid UUID, generate one based on the string
             draft_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, draft_id)
+        
+        # Convert feed_item_id if provided
+        feed_item_uuid = None
+        if feed_item_id:
+            try:
+                feed_item_uuid = uuid.UUID(feed_item_id)
+            except ValueError:
+                feed_item_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, feed_item_id)
         
         # Determine the next version number based on existing PRDs for this session
         existing_versions = cls.query.filter_by(draft_id=draft_uuid).with_entities(cls.version).all()
@@ -147,10 +163,12 @@ class PRD(db.Model):
         prd = cls(
             project_id=project_uuid,
             draft_id=draft_uuid,
+            feed_item_id=feed_item_uuid,
             version=next_version,
             md_uri=md_content,
             json_uri=json.dumps(json_summary) if json_summary else None,
             sources=sources or [],
+            source_files=source_files or [],
             created_by=created_by,
             status='draft'
         )
@@ -265,6 +283,49 @@ class PRD(db.Model):
                        .order_by(cls.created_at.asc())\
                        .all()
     
+    @classmethod
+    def get_for_feed_item(cls, feed_item_id: str) -> Optional['PRD']:
+        """Get the current PRD for a specific FeedItem (idea)."""
+        
+        # Convert string ID to UUID
+        try:
+            feed_item_uuid = uuid.UUID(feed_item_id)
+        except ValueError:
+            feed_item_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, feed_item_id)
+        
+        return cls.query.filter_by(feed_item_id=feed_item_uuid)\
+                       .order_by(cls.created_at.desc())\
+                       .first()
+    
+    @classmethod
+    def get_frozen_for_feed_item(cls, feed_item_id: str) -> Optional['PRD']:
+        """Get the latest frozen PRD for a specific FeedItem."""
+        
+        # Convert string ID to UUID
+        try:
+            feed_item_uuid = uuid.UUID(feed_item_id)
+        except ValueError:
+            feed_item_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, feed_item_id)
+        
+        return cls.query.filter_by(
+            feed_item_id=feed_item_uuid,
+            status='frozen'
+        ).order_by(cls.created_at.desc()).first()
+    
+    @classmethod
+    def get_all_for_feed_item(cls, feed_item_id: str) -> List['PRD']:
+        """Get all PRD versions for a specific FeedItem, ordered by creation date."""
+        
+        # Convert string ID to UUID
+        try:
+            feed_item_uuid = uuid.UUID(feed_item_id)
+        except ValueError:
+            feed_item_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, feed_item_id)
+        
+        return cls.query.filter_by(feed_item_id=feed_item_uuid)\
+                       .order_by(cls.created_at.desc())\
+                       .all()
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert PRD to dictionary for API responses."""
         
@@ -272,10 +333,13 @@ class PRD(db.Model):
             'id': str(self.id),
             'project_id': str(self.project_id),
             'draft_id': str(self.draft_id),
+            'feed_item_id': str(self.feed_item_id) if self.feed_item_id else None,
             'version': self.version,
+            'parent_version_id': str(self.parent_version_id) if self.parent_version_id else None,
             'md_uri': self.md_uri,
             'json_summary': self.get_summary(),
             'sources': self.sources or [],
+            'source_files': self.source_files or [],
             'created_by': self.created_by,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'status': self.status

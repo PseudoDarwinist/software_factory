@@ -334,6 +334,17 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
                   <div className="my-8">
                     <SourcesTrayCard
                       projectId={selectedProject || 'default-project'}
+                      availableIdeas={feedItems
+                        .filter(item => item.projectId === selectedProject)
+                        .map(item => ({
+                          id: item.id,
+                          title: item.title,
+                          summary: item.summary,
+                          stage: item.metadata?.stage || 'think'
+                        }))
+                      }
+                      selectedIdeaId={selectedFeedItem || undefined}
+                      onIdeaSelect={(ideaId) => onFeedItemSelect(ideaId)}
                       onUploadComplete={(sessionId) => {
                         console.log('Upload completed for session:', sessionId)
                       }}
@@ -588,15 +599,15 @@ const FeedItemCard: React.FC<FeedItemCardProps> = ({
 
   const getItemIcon = () => {
     switch (item.kind) {
-      case 'idea': return '💭'
-      case 'ci_fail': return '🚨'
-      case 'pr_review': return '👀'
-      case 'spec_change': return '📝'
-      case 'qa_blocker': return '🛑'
-      case 'agent_suggestion': return '🤖'
-      case 'deployment': return '🚀'
-      case 'merge': return '🔀'
-      default: return '📋'
+      case 'idea': return '•'
+      case 'ci_fail': return '!'
+      case 'pr_review': return '↗'
+      case 'spec_change': return '~'
+      case 'qa_blocker': return '×'
+      case 'agent_suggestion': return '◦'
+      case 'deployment': return '↑'
+      case 'merge': return '→'
+      default: return '•'
     }
   }
 
@@ -640,15 +651,12 @@ const FeedItemCard: React.FC<FeedItemCardProps> = ({
         )}
       >
         <div className="flex items-start space-x-3">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-            <span className="text-sm">{getItemIcon()}</span>
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+            <span className="text-sm text-white/60 font-medium">{getItemIcon()}</span>
           </div>
           
           <div className="flex-1 min-w-0">
             <div className="flex items-center space-x-2 mb-1">
-              <span className="text-xs text-white/60 bg-white/10 px-2 py-1 rounded-full">
-                {getItemLabel()}
-              </span>
               {item.unread && (
                 <div className="w-2 h-2 bg-blue-500 rounded-full" />
               )}

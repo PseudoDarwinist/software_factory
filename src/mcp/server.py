@@ -43,7 +43,8 @@ print(f"🔍 MCP Server .env file exists: {os.path.exists('.env')}", file=sys.st
 # Import MCP library
 try:
     from mcp.server.fastmcp import FastMCP
-    from mcp.types import Tool
+    from mcp.types import Tool, TextContent, CreateMessageRequest, CreateMessageResult
+    from mcp.shared.exceptions import McpError
 except ImportError:
     print("Error: MCP library not found. Install with: pip install mcp", file=sys.stderr)
     sys.exit(1)
@@ -147,7 +148,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("software-factory-mcp")
 
-# Initialize MCP server
+# Initialize MCP server with sampling capability  
+# Note: FastMCP automatically handles capability negotiation
+# The server will request sampling from clients that support it
 mcp = FastMCP("software-factory")
 
 # Mock data for testing when database is not available
@@ -1315,6 +1318,197 @@ async def update_specification_artifact(
             logger.error(f"Error updating specification artifact: {e}")
             return json.dumps({"error": f"Error updating specification: {str(e)}"})
 
+async def generate_spec_with_sampling(
+    session,
+    spec_type: str,
+    idea_title: str,
+    idea_summary: str,
+    project_context: dict,
+    generation_context: str = None
+) -> str:
+    """Generate a specification document using MCP sampling (client's local model)
+    
+    Args:
+        session: MCP session with sampling capability
+        spec_type: Type of spec to generate ('requirements', 'design', 'tasks')
+        idea_title: Title of the idea
+        idea_summary: Summary of the idea
+        project_context: Project context including system map and existing specs
+        generation_context: Additional context for generation
+    
+    Returns:
+        Generated specification content as markdown
+    """
+    try:
+        # Build comprehensive prompt for spec generation
+        if spec_type == "requirements":
+            prompt = f"""You are a Product Owner creating detailed technical requirements for a software feature.
+
+Feature: {idea_title}
+Description: {idea_summary}
+
+Project Context:
+{json.dumps(project_context, indent=2)}
+
+{generation_context or ''}
+
+Generate a comprehensive requirements.md document that includes:
+
+## Overview
+- Clear problem statement
+- User stories and acceptance criteria
+- Success metrics
+
+## Functional Requirements
+- Detailed feature specifications
+- User interaction flows
+- Business rules and constraints
+
+## Technical Requirements
+- Integration points
+- Data requirements
+- Performance requirements
+- Security considerations
+
+## Non-Functional Requirements
+- Scalability
+- Reliability
+- Usability
+- Compliance
+
+Format as professional markdown with clear headers and bullet points."""
+            
+        elif spec_type == "design":
+            prompt = f"""You are a Technical Lead creating a detailed design document for a software feature.
+
+Feature: {idea_title}
+Description: {idea_summary}
+
+Project Context:
+{json.dumps(project_context, indent=2)}
+
+{generation_context or ''}
+
+Generate a comprehensive design.md document that includes:
+
+## Architecture Overview
+- High-level design approach
+- Component architecture
+- Data flow diagrams (described in text)
+
+## Technical Design
+- API specifications
+- Database schema changes
+- Service interactions
+- Error handling
+
+## Implementation Strategy
+- Development phases
+- Risk mitigation
+- Testing approach
+- Deployment considerations
+
+## Interface Specifications
+- API endpoints
+- Request/response formats
+- Frontend components
+- State management
+
+Format as professional markdown with clear technical specifications."""
+            
+        elif spec_type == "tasks":
+            prompt = f"""You are an Engineering Manager breaking down a feature into detailed development tasks.
+
+Feature: {idea_title}
+Description: {idea_summary}
+
+Project Context:
+{json.dumps(project_context, indent=2)}
+
+{generation_context or ''}
+
+Generate a comprehensive tasks.md document that includes:
+
+## Task Breakdown
+Break the feature into specific, actionable tasks with:
+
+### Backend Tasks
+- API endpoint implementation
+- Database migrations
+- Service layer changes
+- Authentication/authorization
+
+### Frontend Tasks
+- Component development
+- State management
+- UI/UX implementation
+- Integration with APIs
+
+### Testing Tasks
+- Unit tests
+- Integration tests
+- E2E tests
+- Performance tests
+
+### DevOps Tasks
+- Infrastructure changes
+- Deployment updates
+- Monitoring setup
+
+For each task include:
+- Task number (1.1, 1.2, etc.)
+- Clear description
+- Estimated effort (in hours)
+- Dependencies
+- Acceptance criteria
+- Files likely to be modified
+
+Format as professional markdown with numbered tasks and clear specifications."""
+        else:
+            raise ValueError(f"Unsupported spec type: {spec_type}")
+        
+        # Create sampling request - send raw dict to avoid validation issues
+        request_data = {
+            "method": "sampling/createMessage",
+            "params": {
+                "messages": [
+                    {
+                        "role": "user",  
+                        "content": {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    }
+                ],
+                "modelPreferences": {
+                    "hints": [
+                        {"name": "claude-3-sonnet"},
+                        {"name": "claude"},
+                        {"name": "gpt-4"}
+                    ],
+                    "intelligencePriority": 0.9,  # High intelligence for spec generation
+                    "speedPriority": 0.3,        # Quality over speed
+                    "costPriority": 0.4          # Moderate cost consideration
+                },
+                "systemPrompt": "You are an expert software development professional. Generate high-quality, actionable specifications.",
+                "maxTokens": 4000
+            }
+        }
+        
+        # Request sampling from client's local model
+        # This uses the MCP client's available models (Claude Code, Cursor, etc.)
+        result = await session.create_message(request_data["params"])
+        
+        if result and result.content and result.content.type == "text":
+            return result.content.text
+        else:
+            raise McpError("Sampling request failed or returned invalid content")
+            
+    except Exception as e:
+        logger.error(f"Error in generate_spec_with_sampling: {e}")
+        # Fallback to basic template if sampling fails
+        return f"# {spec_type.title()} for {idea_title}\n\n{idea_summary}\n\n*Note: AI generation failed, basic template provided*"
+
 @mcp.tool()
 async def generate_missing_specs_for_idea(
     idea_id: str,
@@ -1322,7 +1516,7 @@ async def generate_missing_specs_for_idea(
     missing_spec_types: list = None,
     generation_context: str = None
 ) -> str:
-    """Generate missing specification documents for an idea
+    """Generate missing specification documents for an idea using MCP sampling
     
     Args:
         idea_id: The idea ID to generate specs for
@@ -1366,30 +1560,102 @@ async def generate_missing_specs_for_idea(
                 spec_types = missing_spec_types or ["requirements", "design", "tasks"]
                 generated_specs = []
                 
-                # Generate each missing spec type
-                for spec_type in spec_types:
-                    if spec_type == "requirements":
-                        # Use existing create_requirements function
-                        result = await create_requirements(
-                            project_id=project_id,
-                            feature_name=idea.title,
-                            requirements_content=f"# Requirements for {idea.title}\n\n{idea.summary}\n\n{generation_context or ''}",
-                            idea_id=idea_id
-                        )
-                    elif spec_type == "design":
-                        # Use existing create_design function  
-                        result = await create_design(
-                            project_id=project_id,
-                            spec_id=spec_id,
-                            design_content=f"# Design for {idea.title}\n\n{generation_context or 'AI-generated design document'}"
-                        )
-                    elif spec_type == "tasks":
-                        # Use existing create_tasks function
-                        result = await create_tasks(
-                            project_id=project_id,
-                            spec_id=spec_id,
-                            tasks_content=f"# Tasks for {idea.title}\n\n{generation_context or 'AI-generated task breakdown'}"
-                        )
+                # Get project context for AI generation
+                project_context = {
+                    "project_info": get_repository_info(project_id),
+                    "system_map": get_system_map(project_id),
+                    "existing_specs": []
+                }
+                
+                # Check if we have sampling capability
+                session = getattr(mcp, 'current_session', None)
+                client_supports_sampling = session and hasattr(session, 'create_message')
+                
+                if client_supports_sampling:
+                    # Use MCP sampling for AI generation
+                    for spec_type in spec_types:
+                        try:
+                            logger.info(f"Using MCP sampling to generate {spec_type} spec for '{idea.title}'")
+                            # Generate spec using client's local model
+                            ai_content = await generate_spec_with_sampling(
+                                session,
+                                spec_type,
+                                idea.title,
+                                idea.summary,
+                                project_context,
+                                generation_context
+                            )
+                            
+                            # Store the AI-generated spec
+                            if spec_type == "requirements":
+                                result = await create_requirements(
+                                    project_id=project_id,
+                                    feature_name=idea.title,
+                                    requirements_content=ai_content,
+                                    idea_id=idea_id
+                                )
+                            elif spec_type == "design":
+                                result = await create_design(
+                                    project_id=project_id,
+                                    spec_id=spec_id,
+                                    design_content=ai_content
+                                )
+                            elif spec_type == "tasks":
+                                result = await create_tasks(
+                                    project_id=project_id,
+                                    spec_id=spec_id,
+                                    tasks_content=ai_content
+                                )
+                                
+                        except Exception as sampling_error:
+                            logger.error(f"MCP sampling failed for {spec_type}: {sampling_error}")
+                            # Fallback to basic template
+                            fallback_content = f"# {spec_type.title()} for {idea.title}\n\n{idea.summary}\n\n*Note: MCP sampling failed, using basic template*"
+                            
+                            if spec_type == "requirements":
+                                result = await create_requirements(
+                                    project_id=project_id,
+                                    feature_name=idea.title,
+                                    requirements_content=fallback_content,
+                                    idea_id=idea_id
+                                )
+                            elif spec_type == "design":
+                                result = await create_design(
+                                    project_id=project_id,
+                                    spec_id=spec_id,
+                                    design_content=fallback_content
+                                )
+                            elif spec_type == "tasks":
+                                result = await create_tasks(
+                                    project_id=project_id,
+                                    spec_id=spec_id,
+                                    tasks_content=fallback_content
+                                )
+                else:
+                    # Fallback: No sampling capability available
+                    logger.warning("MCP client does not support sampling, using basic templates")
+                    for spec_type in spec_types:
+                        basic_content = f"# {spec_type.title()} for {idea.title}\n\n{idea.summary}\n\n{generation_context or 'Basic template - MCP client does not support sampling'}"
+                        
+                        if spec_type == "requirements":
+                            result = await create_requirements(
+                                project_id=project_id,
+                                feature_name=idea.title,
+                                requirements_content=basic_content,
+                                idea_id=idea_id
+                            )
+                        elif spec_type == "design":
+                            result = await create_design(
+                                project_id=project_id,
+                                spec_id=spec_id,
+                                design_content=basic_content
+                            )
+                        elif spec_type == "tasks":
+                            result = await create_tasks(
+                                project_id=project_id,
+                                spec_id=spec_id,
+                                tasks_content=basic_content
+                            )
                     
                     generated_specs.append({
                         "artifact_type": spec_type,
@@ -1406,6 +1672,113 @@ async def generate_missing_specs_for_idea(
         except Exception as e:
             logger.error(f"Error generating missing specs: {e}")
             return json.dumps({"error": f"Error generating specs: {str(e)}"})
+
+@mcp.tool()
+async def generate_specs_for_external_project(
+    idea_id: str,
+    project_id: str,
+    idea_title: str,
+    idea_summary: str,
+    spec_types: list = None,
+    additional_context: str = None
+) -> str:
+    """Generate specifications for external projects using MCP sampling
+    
+    This tool is designed for external coding assistants to generate specs
+    for projects outside the main Software Factory instance.
+    
+    Args:
+        idea_id: Unique identifier for the idea
+        project_id: Project identifier (can be external)
+        idea_title: Title of the feature/idea
+        idea_summary: Description of the feature/idea
+        spec_types: List of spec types to generate ['requirements', 'design', 'tasks']
+        additional_context: Additional context for generation
+    """
+    spec_types = spec_types or ["requirements", "design", "tasks"]
+    generated_specs = []
+    
+    try:
+        # Build project context (may be minimal for external projects)
+        project_context = {
+            "project_id": project_id,
+            "idea_title": idea_title,
+            "idea_summary": idea_summary,
+            "additional_context": additional_context
+        }
+        
+        # Check if we have sampling capability
+        session = getattr(mcp, 'current_session', None)
+        client_supports_sampling = session and hasattr(session, 'create_message')
+        
+        if client_supports_sampling:
+            logger.info(f"Using MCP sampling for external project {project_id}")
+            
+            for spec_type in spec_types:
+                try:
+                    logger.info(f"Generating {spec_type} spec using MCP client's local model")
+                    # Generate spec using client's local model
+                    ai_content = await generate_spec_with_sampling(
+                        session,
+                        spec_type,
+                        idea_title,
+                        idea_summary,
+                        project_context,
+                        additional_context
+                    )
+                    
+                    generated_specs.append({
+                        "spec_type": spec_type,
+                        "content": ai_content,
+                        "generated_by": "mcp_sampling",
+                        "success": True
+                    })
+                    
+                except Exception as sampling_error:
+                    logger.error(f"MCP sampling failed for {spec_type}: {sampling_error}")
+                    # Fallback to basic template
+                    fallback_content = f"# {spec_type.title()} for {idea_title}\\n\\n{idea_summary}\\n\\n*Note: MCP sampling failed, using basic template*"
+                    
+                    generated_specs.append({
+                        "spec_type": spec_type,
+                        "content": fallback_content,
+                        "generated_by": "fallback_template",
+                        "success": False,
+                        "error": str(sampling_error)
+                    })
+        else:
+            logger.warning("MCP client does not support sampling")
+            for spec_type in spec_types:
+                basic_content = f"# {spec_type.title()} for {idea_title}\\n\\n{idea_summary}\\n\\n{additional_context or 'Basic template - MCP client does not support sampling'}"
+                
+                generated_specs.append({
+                    "spec_type": spec_type,
+                    "content": basic_content,
+                    "generated_by": "basic_template",
+                    "success": False,
+                    "error": "MCP client does not support sampling"
+                })
+        
+        result = {
+            "success": True,
+            "idea_id": idea_id,
+            "project_id": project_id,
+            "idea_title": idea_title,
+            "generated_specs": generated_specs,
+            "sampling_used": client_supports_sampling,
+            "message": f"Generated {len(spec_types)} specification documents using {'MCP sampling' if client_supports_sampling else 'basic templates'}"
+        }
+        
+        return json.dumps(result, indent=2)
+        
+    except Exception as e:
+        logger.error(f"Error in generate_specs_for_external_project: {e}")
+        return json.dumps({
+            "success": False,
+            "error": f"Failed to generate specs: {str(e)}",
+            "idea_id": idea_id,
+            "project_id": project_id
+        }, indent=2)
 
 @mcp.tool()
 async def get_spec_generation_status(idea_id: str, project_id: str) -> str:

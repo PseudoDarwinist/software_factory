@@ -32,6 +32,122 @@ logger = logging.getLogger(__name__)
 stages_bp = Blueprint('stages', __name__)
 
 
+def _validate_prd_requirement(project_id, item_id):
+    """
+    Idea-specific PRD requirement validation.
+    
+    Checks for PRDs in this priority order:
+    1. Idea-specific PRD (linked directly to this FeedItem)
+    2. Session-based PRDs (fallback for backward compatibility)
+    
+    Returns:
+        dict: {
+            'has_prd': bool,
+            'prd_status': str,  # 'missing', 'draft', 'frozen'
+            'prd_type': str,    # 'idea', 'session', 'missing'
+            'latest_prd': dict or None,
+            'upload_sessions': list,
+            'context_level': str  # Description of available context
+        }
+    """
+    try:
+        # Import PRD model
+        try:
+            from ..models.prd import PRD
+            from ..models.upload_session import UploadSession
+        except ImportError:
+            from models.prd import PRD
+            from models.upload_session import UploadSession
+        
+        # Strategy 1: Look for idea-specific PRD first (NEW ARCHITECTURE)
+        idea_prd = PRD.get_for_feed_item(item_id) if item_id else None
+        
+        if idea_prd:
+            # Found PRD specifically for this idea
+            prd_status = idea_prd.status
+            prd_type = 'idea'
+            has_prd = idea_prd.status == 'frozen'
+            
+            if has_prd:
+                context_level = f'Idea-specific PRD available (v{idea_prd.version}) - perfect context match'
+            else:
+                context_level = f'Draft idea-specific PRD (v{idea_prd.version}) - needs freezing'
+            
+            return {
+                'has_prd': has_prd,
+                'prd_status': prd_status,
+                'prd_type': prd_type,
+                'latest_prd': idea_prd.to_dict(),
+                'upload_sessions': [],  # Not relevant for idea-specific PRDs
+                'context_level': context_level,
+                'total_prds': 1,
+                'frozen_prds': 1 if has_prd else 0
+            }
+        
+        # Strategy 2: Fallback to project-level session-based PRDs (BACKWARD COMPATIBILITY)
+        upload_sessions = UploadSession.query.filter_by(project_id=project_id).all()
+        
+        project_prds = []
+        all_prds = []
+        
+        for session in upload_sessions:
+            session_prd = PRD.get_latest_for_session(str(session.id))
+            if session_prd:
+                all_prds.append(session_prd)
+                if session_prd.status == 'frozen':
+                    project_prds.append(session_prd)
+        
+        # Determine best available session PRD
+        latest_prd = None
+        prd_status = 'missing'
+        prd_type = 'missing'
+        context_level = 'No PRD context available - create idea-specific PRD'
+        
+        if project_prds:
+            # Use the most recent frozen PRD
+            latest_prd = max(project_prds, key=lambda p: p.created_at)
+            prd_status = 'frozen'
+            prd_type = 'session'
+            context_level = f'Session-based PRD available (v{latest_prd.version}) - consider creating idea-specific PRD'
+        elif all_prds:
+            # Use the most recent PRD even if draft
+            latest_prd = max(all_prds, key=lambda p: p.created_at)
+            prd_status = latest_prd.status
+            prd_type = 'session'
+            if prd_status == 'draft':
+                context_level = f'Draft session PRD (v{latest_prd.version}) - needs freezing or create idea-specific PRD'
+            else:
+                context_level = f'Session PRD available (v{latest_prd.version})'
+        
+        # For Define stage, we require at least one frozen PRD
+        has_prd = latest_prd is not None and latest_prd.status == 'frozen'
+        
+        return {
+            'has_prd': has_prd,
+            'prd_status': prd_status,
+            'prd_type': prd_type,
+            'latest_prd': latest_prd.to_dict() if latest_prd else None,
+            'upload_sessions': [{'id': str(s.id), 'description': s.description} for s in upload_sessions],
+            'context_level': context_level,
+            'total_prds': len(all_prds),
+            'frozen_prds': len(project_prds)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error validating PRD requirement: {e}")
+        # Fail open - allow transition if validation fails
+        return {
+            'has_prd': True,
+            'prd_status': 'unknown',
+            'prd_type': 'unknown',
+            'latest_prd': None,
+            'upload_sessions': [],
+            'context_level': 'PRD validation failed - allowing transition',
+            'total_prds': 0,
+            'frozen_prds': 0
+        }
+
+
 @stages_bp.route('/api/project/<project_id>/stages', methods=['GET'])
 def get_project_stages(project_id):
     """Get stage data for a project"""
@@ -113,6 +229,24 @@ def move_item_to_stage(item_id):
                 'timestamp': datetime.utcnow().isoformat(),
                 'version': '1.0.0',
             }), 404
+        
+        # PRD requirement validation for Define stage
+        if target_stage == 'define':
+            prd_validation_result = _validate_prd_requirement(project_id, item_id)
+            if not prd_validation_result['has_prd']:
+                return jsonify({
+                    'success': False,
+                    'error': 'PRD_REQUIRED',
+                    'error_details': {
+                        'message': 'A Product Requirements Document (PRD) is required before moving ideas to Define stage',
+                        'requirement_type': 'prd_missing',
+                        'project_id': project_id,
+                        'item_id': item_id,
+                        'suggested_action': 'create_prd'
+                    },
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'version': '1.0.0',
+                }), 422  # Unprocessable Entity
         
         # Batch all operations in a single transaction
         # Remove from current stage (don't commit yet)
@@ -1188,6 +1322,200 @@ def generate_product_brief_content(feed_item):
     }
     
     return brief_data
+
+
+def _get_prd_recommendations(prd_info):
+    """Generate recommendations based on PRD status and type"""
+    recommendations = []
+    
+    if prd_info['prd_status'] == 'missing':
+        if prd_info['prd_type'] == 'missing':
+            recommendations.append({
+                'type': 'create_idea_prd',
+                'priority': 'high',
+                'message': 'Create an idea-specific PRD for precise business context',
+                'action': 'Upload documents and attach to this specific idea'
+            })
+        else:
+            recommendations.append({
+                'type': 'create_prd',
+                'priority': 'medium',
+                'message': 'Create a PRD to provide business context',
+                'action': 'Upload business documents or create PRD from scratch'
+            })
+    elif prd_info['prd_status'] == 'draft':
+        recommendations.append({
+            'type': 'freeze_prd',
+            'priority': 'medium',
+            'message': 'Review and freeze the draft PRD to enable spec generation',
+            'action': 'Open PRD editor and click "Freeze PRD" when ready'
+        })
+    
+    # Suggest idea-specific PRD if using session-based fallback
+    if prd_info['prd_type'] == 'session' and prd_info['prd_status'] == 'frozen':
+        recommendations.append({
+            'type': 'upgrade_to_idea_prd',
+            'priority': 'low',
+            'message': 'Consider creating an idea-specific PRD for better context precision',
+            'action': 'Create new PRD specifically for this idea'
+        })
+    
+    if prd_info['total_prds'] > 1:
+        recommendations.append({
+            'type': 'consolidate_prds',
+            'priority': 'low',
+            'message': f'Multiple PRDs found ({prd_info["total_prds"]}). Consider consolidating for clarity',
+            'action': 'Review PRDs and merge related content'
+        })
+    
+    return recommendations
+
+
+@stages_bp.route('/api/project/<project_id>/prd-status', methods=['GET'])
+def get_project_prd_status(project_id):
+    """Get PRD status for a project to support Define stage validation"""
+    try:
+        # Check if project exists
+        project = MissionControlProject.query.get(project_id)
+        if not project:
+            return jsonify({
+                'success': False,
+                'error': 'Project not found',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 404
+        
+        # Get PRD validation info
+        prd_info = _validate_prd_requirement(project_id, None)  # item_id not needed for status check
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'project_id': project_id,
+                'has_frozen_prd': prd_info['has_prd'],
+                'prd_status': prd_info['prd_status'],
+                'prd_type': prd_info['prd_type'],
+                'latest_prd': prd_info['latest_prd'],
+                'upload_sessions': prd_info['upload_sessions'],
+                'context_level': prd_info['context_level'],
+                'total_prds': prd_info['total_prds'],
+                'frozen_prds': prd_info['frozen_prds'],
+                'can_move_to_define': prd_info['has_prd'],
+                'recommendations': _get_prd_recommendations(prd_info)
+            },
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to get PRD status for project {project_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to retrieve PRD status',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/idea/<item_id>/create-prd', methods=['POST'])
+def create_idea_specific_prd(item_id):
+    """Create a PRD specifically for an idea/FeedItem"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body must be JSON',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        project_id = data.get('projectId')
+        upload_session_id = data.get('uploadSessionId')
+        
+        if not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Project ID is required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Check if feed item exists
+        feed_item = FeedItem.query.get(item_id)
+        if not feed_item:
+            return jsonify({
+                'success': False,
+                'error': 'Feed item not found',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 404
+        
+        # Import PRD model
+        try:
+            from ..models.prd import PRD
+            from ..models.upload_session import UploadSession
+        except ImportError:
+            from models.prd import PRD
+            from models.upload_session import UploadSession
+        
+        # Create or get upload session for this PRD
+        if upload_session_id:
+            session = UploadSession.query.get(upload_session_id)
+            if not session:
+                return jsonify({
+                    'success': False,
+                    'error': 'Upload session not found',
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'version': '1.0.0',
+                }), 404
+        else:
+            # Create new upload session for this idea
+            session = UploadSession.create(
+                project_id=project_id,
+                description=f"PRD for: {feed_item.title}"
+            )
+            db.session.commit()
+        
+        # Create idea-specific PRD
+        prd = PRD.create_draft(
+            project_id=project_id,
+            draft_id=str(session.id),
+            feed_item_id=item_id,
+            md_content=f"# PRD for {feed_item.title}\n\n{feed_item.summary or 'No description provided'}",
+            json_summary={
+                'problem': {'text': feed_item.summary or 'Problem statement needed', 'sources': []},
+                'audience': {'text': 'Target audience to be defined', 'sources': []},
+                'goals': {'items': ['Define success metrics'], 'sources': []},
+                'risks': {'items': ['Identify potential risks'], 'sources': []},
+                'competitive_scan': {'items': ['Research competitors'], 'sources': []},
+                'open_questions': {'items': ['List open questions'], 'sources': []}
+            },
+            created_by='mission-control-user'  # TODO: get actual user
+        )
+        
+        logger.info(f"Created idea-specific PRD {prd.id} for FeedItem {item_id}")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'prd': prd.to_dict(),
+                'upload_session_id': str(session.id),
+                'message': f'Created PRD for "{feed_item.title}"'
+            },
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error creating idea-specific PRD for {item_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to create idea-specific PRD',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
 
 
 # Error handlers for this blueprint

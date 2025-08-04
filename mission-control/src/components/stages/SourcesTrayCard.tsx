@@ -31,17 +31,26 @@ interface SourceQuote {
   section?: string // Add section context for different quotes per section
 }
 
+interface IdeaOption {
+  id: string
+  title: string
+  summary?: string
+  stage: string
+}
+
 interface SourcesTrayCardProps {
   status?: 'idle' | 'uploading' | 'analyzing' | 'drafting' | 'ready'
   files?: FileItem[]
   projectId?: string
+  availableIdeas?: IdeaOption[]  // NEW: Ideas available for PRD creation
+  selectedIdeaId?: string        // NEW: Currently selected idea
+  onIdeaSelect?: (ideaId: string) => void  // NEW: Idea selection callback
   onFileAdd?: (files: File[]) => void
   onLinkAdd?: (url: string) => void
   onFileRemove?: (index: number) => void
   onAnalyze?: () => void
   onFreezePRD?: () => void
   onUploadComplete?: (sessionId: string) => void
-
 }
 
 // Icons as SVG components
@@ -636,6 +645,9 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
   status: propStatus,
   files: propFiles,
   projectId = 'default-project',
+  availableIdeas = [],
+  selectedIdeaId,
+  onIdeaSelect,
   onFileAdd,
   onLinkAdd,
   onFileRemove,
@@ -643,6 +655,7 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
   onFreezePRD,
   onUploadComplete
 }) => {
+  console.log('SourcesTrayCard - selectedIdeaId:', selectedIdeaId, 'availableIdeas:', availableIdeas);
   // Internal state for backend integration
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [files, setFiles] = useState<FileItem[]>(propFiles || [])
@@ -732,10 +745,15 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
         }
         
         // No existing session found, create new one
-        console.log('🆕 Creating new upload session for project:', projectId)
-        const session = await missionControlApi.createUploadSession(projectId, 'Upload sources for PRD generation')
+        const selectedIdea = availableIdeas.find(idea => idea.id === selectedIdeaId)
+        const sessionDescription = selectedIdea 
+          ? `PRD for: ${selectedIdea.title}`
+          : 'Upload sources for PRD generation'
+        
+        console.log('🆕 Creating new upload session for project:', projectId, 'with idea:', selectedIdea?.title)
+        const session = await missionControlApi.createUploadSession(projectId, sessionDescription, selectedIdeaId || undefined)
         setSessionId(session.session_id)
-        console.log('✅ Created new upload session:', session.session_id)
+        console.log('✅ Created new upload session:', session.session_id, 'linked to idea:', selectedIdeaId)
         
       } catch (error) {
         console.error('❌ Failed to initialize upload session:', error)
@@ -837,13 +855,13 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
     setIsDragOver(false)
     const droppedFiles = Array.from(e.dataTransfer.files)
     await handleFileUpload(droppedFiles)
-  }, [sessionId])
+  }, [sessionId, selectedIdeaId, availableIdeas])
 
   // File input handler
   const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || [])
     await handleFileUpload(selectedFiles)
-  }, [sessionId])
+  }, [sessionId, selectedIdeaId, availableIdeas])
 
   // Handle file removal
   const handleFileRemove = useCallback(async (index: number) => {
@@ -877,6 +895,14 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
   const handleFileUpload = useCallback(async (fileList: File[]) => {
     if (!sessionId) {
       setError('Upload session not ready')
+      return
+    }
+
+    // Validate idea selection if ideas are available
+    console.log('Upload validation - availableIdeas.length:', availableIdeas.length, 'selectedIdeaId:', selectedIdeaId, 'truthy check:', !!selectedIdeaId);
+    if (availableIdeas.length > 0 && !selectedIdeaId) {
+      console.log('Validation failed - setting error');
+      setError('Please select an idea before uploading documents')
       return
     }
 
@@ -946,7 +972,7 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
         file.progress === 0 ? { ...file, error: 'Upload failed' } : file
       ))
     }
-  }, [sessionId, onFileAdd, startStatusPolling])
+  }, [sessionId, onFileAdd, startStatusPolling, selectedIdeaId, availableIdeas])
 
   // Link submission
   const handleLinkSubmit = useCallback(async () => {
@@ -1009,7 +1035,7 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
 
     try {
       // Start AI analysis
-      const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId, 'claude-opus-4')
+const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
       
       console.log('Analysis result:', analysisResult)
 
@@ -1059,7 +1085,7 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
       setError('Failed to generate PRD. Please try again.')
       setStatus('idle')
     }
-  }, [sessionId, files.length, onAnalyze])
+  }, [sessionId, files.length, onAnalyze, availableIdeas, selectedIdeaId])
 
   // Handle freeze PRD
   const handleFreezePRD = useCallback(async () => {
@@ -1330,9 +1356,49 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
               </motion.div>
             )}
 
+            {/* Idea Selection */}
+            {availableIdeas.length > 0 && (
+              <div className="mb-6">
+                <label 
+                  className="block text-sm font-medium mb-3"
+                  style={{ color: 'var(--text-strong)' }}
+                >
+                  📋 Attach documents to idea:
+                </label>
+                <select
+                  value={selectedIdeaId || ''}
+                  onChange={(e) => onIdeaSelect?.(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl text-sm transition-all duration-200 focus:outline-none focus:ring-2"
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid var(--stroke-dim)',
+                    color: 'var(--text-strong)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)'
+                  }}
+                >
+                  <option value="" disabled>Select an idea for this PRD...</option>
+                  {availableIdeas.map((idea) => (
+                    <option key={idea.id} value={idea.id}>
+                      {idea.title} {idea.stage !== 'think' && `(${idea.stage})`}
+                    </option>
+                  ))}
+                </select>
+                {selectedIdeaId && (
+                  <div className="mt-2 p-3 rounded-lg" style={{ background: 'rgba(21,241,204,0.1)', border: '1px solid rgba(21,241,204,0.2)' }}>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-teal-400 text-sm">🎯</span>
+                      <span className="text-teal-300 text-sm">
+                        Documents will be attached to: <strong>{availableIdeas.find(i => i.id === selectedIdeaId)?.title}</strong>
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Drop Zone */}
             <div
-              className={`relative w-full h-[120px] rounded-2xl mb-6 flex items-center justify-center transition-all duration-300`}
+              className={`relative w-full h-[120px] rounded-2xl mb-6 flex items-center justify-center transition-all duration-300 ${!selectedIdeaId && availableIdeas.length > 0 ? 'opacity-50 pointer-events-none' : ''}`}
               style={{
                 background: 'rgba(255,255,255,0.015)',
                 border: '1px dashed',
@@ -1348,7 +1414,12 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
                 className="text-sm text-center px-4"
                 style={{ color: 'var(--text-dim)' }}
               >
-                {isDragOver ? 'Drop to add to PRD' : 'Drop PDFs, decks, Zoom links, webpages, Figma, screenshots…'}
+                {!selectedIdeaId && availableIdeas.length > 0 
+                  ? 'Select an idea above to enable document upload'
+                  : isDragOver 
+                    ? 'Drop to add to PRD' 
+                    : 'Drop PDFs, decks, Zoom links, webpages, Figma, screenshots…'
+                }
               </p>
               
               {/* Hidden file input */}

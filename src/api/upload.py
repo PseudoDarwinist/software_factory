@@ -109,6 +109,7 @@ def create_session():
         
         project_id = data['project_id']
         description = data.get('description', '')
+        feed_item_id = data.get('feed_item_id')  # NEW: Optional idea linking
         
         # Verify project exists
         project = MissionControlProject.query.get(project_id)
@@ -120,6 +121,15 @@ def create_session():
             project_id=project_id,
             description=description
         )
+        
+        # Store feed_item_id in session metadata if provided
+        if feed_item_id:
+            session.metadata = session.metadata or {}
+            session.metadata['feed_item_id'] = feed_item_id
+            current_app.logger.info(f"Linked upload session {session.id} to idea {feed_item_id}")
+            print(f"🔗 [LINK] Session {session.id} linked to idea {feed_item_id}")
+        else:
+            print(f"⚠️ [LINK] No feed_item_id provided for session {session.id}")
         
         db.session.commit()
         
@@ -237,9 +247,20 @@ def update_ai_analysis(session_id):
         
         # Update status to ready if not already
         if session.status != 'ready':
-            session.update_status('ready')
+            print(f"✅ [ANALYZE] Stage: READY - {session_id}")
+        session.update_status('ready')
         
         current_app.logger.info(f"Updated AI analysis for session {session_id}")
+        
+        # Enhance idea summary if this session is linked to a specific idea
+        try:
+            if hasattr(session, 'metadata') and session.metadata and 'feed_item_id' in session.metadata:
+                feed_item_id = session.metadata['feed_item_id']
+                from ..services.idea_enhancement import enhance_idea_summary
+                enhance_idea_summary(feed_item_id)
+                current_app.logger.info(f"Enhanced summary for idea {feed_item_id}")
+        except Exception as e:
+            current_app.logger.warning(f"Failed to enhance idea summary: {e}")
         
         return jsonify({
             'session_id': str(session.id),
@@ -1291,6 +1312,8 @@ def test_logging():
 def analyze_session_files(session_id):
     """Trigger AI analysis of all files in a session"""
     try:
+        print(f"🚀 [ANALYZE] Starting analysis for session {session_id}")
+        print(f"🚀 [ANALYZE] Starting analysis for session {session_id}")
         current_app.logger.info(f"Starting analysis for session {session_id}")
         
         # Verify session exists
@@ -1306,6 +1329,7 @@ def analyze_session_files(session_id):
             return jsonify({'error': 'No files to analyze'}), 400
         
         # Update session status to indicate analysis is starting
+        print(f"📊 [ANALYZE] Stage: EXTRACTING - {session_id}")
         session.update_status('extracting')
         
         # Prepare file data for AI analysis
@@ -1331,6 +1355,7 @@ def analyze_session_files(session_id):
         preferred_model = data.get('preferred_model', 'claude-opus-4')
         
         # Analyze files
+        print(f"🤖 [ANALYZE] Calling AI broker for {session_id} with {len(file_data)} files using {preferred_model}")
         current_app.logger.info(f"Starting AI analysis with {len(file_data)} files using {preferred_model}")
         analysis_result = ai_broker.analyze_uploaded_files(
             session_id=session_id,
@@ -1338,12 +1363,16 @@ def analyze_session_files(session_id):
             preferred_model=preferred_model
         )
         
+        print(f"🎯 [ANALYZE] AI analysis result: success={analysis_result.get('success', 'unknown')} for {session_id}")
+        if analysis_result.get('error'):
+            print(f"❌ [ANALYZE] AI Error: {analysis_result['error']}")
         if analysis_result['success']:
             current_app.logger.info(f"AI analysis successful for session {session_id}")
             
             # Update session with analysis results
             session.update_ai_analysis(analysis_result['analysis'])
             session.update_ai_model_used(analysis_result['model_used'])
+            print(f"✅ [ANALYZE] Stage: READY - {session_id}")
             session.update_status('ready')
             
             # Generate structured PRD summary using the PRD model
@@ -1378,16 +1407,38 @@ def analyze_session_files(session_id):
                 
                 # Ensure we're in the Flask app context
                 with current_app.app_context():
+                    # Get feed_item_id from session metadata if available
+                    feed_item_id = None
+                    if session.metadata and 'feed_item_id' in session.metadata:
+                        feed_item_id = session.metadata['feed_item_id']
+                        current_app.logger.info(f"Creating idea-specific PRD for feed_item {feed_item_id}")
+                    
                     prd_record = PRD.create_draft(
                         project_id=str(session.project_id),  # Ensure string conversion
                         draft_id=str(session.id),
+                        feed_item_id=feed_item_id,  # NEW: Link to specific idea
                         md_content=analysis_result['analysis'],  # Store full markdown content
                         json_summary=prd_summary,  # Store structured JSON summary
                         sources=source_ids,  # Link to source files for traceability
+                        source_files=[{'filename': f.filename, 'id': str(f.id)} for f in session.files],  # NEW: Detailed file metadata
                         created_by=data.get('created_by', 'system')  # Track who created it
                     )
                     
                     current_app.logger.info(f"Created PRD record {prd_record.id} for session {session_id}")
+                    
+                    # Enhance idea summary if this is an idea-specific PRD
+                    if feed_item_id:
+                        try:
+                            from ..services.idea_enhancement import enhance_idea_summary
+                            success = enhance_idea_summary(feed_item_id)
+                            if success:
+                                current_app.logger.info(f"✅ Enhanced summary for idea {feed_item_id}")
+                                print(f"✅ [ENHANCE] Enhanced summary for idea: {feed_item_id}")
+                            else:
+                                current_app.logger.warning(f"❌ Failed to enhance summary for idea {feed_item_id}")
+                                print(f"❌ [ENHANCE] Failed to enhance summary for idea: {feed_item_id}")
+                        except Exception as e:
+                            current_app.logger.warning(f"Failed to enhance idea summary: {e}")
                 
             except Exception as prd_error:
                 current_app.logger.error(f"Failed to create PRD record for session {session_id}: {str(prd_error)}")
@@ -1464,6 +1515,7 @@ def analyze_session_files(session_id):
             return jsonify({'data': response_data})
         else:
             # Analysis failed - mark files as error
+            print(f"❌ [ANALYZE] Stage: ERROR - {session_id}")
             session.update_status('error')
             
             for file in files:
@@ -1492,6 +1544,7 @@ def analyze_session_files(session_id):
         try:
             session = UploadSession.query.get(session_id)
             if session:
+                print(f"❌ [ANALYZE] Stage: ERROR - {session_id}")
                 session.update_status('error')
                 # Mark all files in session as error
                 files = [f for f in session.files if f.processing_status in ['pending', 'processing']]

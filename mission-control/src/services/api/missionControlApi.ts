@@ -31,6 +31,8 @@ import type {
 
 class MissionControlApi {
   private client: AxiosInstance
+// Simple lock to prevent concurrent analysis calls
+  private analysisLock = new Set<string>()
   private baseURL: string
 
   constructor(baseURL?: string) {
@@ -243,6 +245,41 @@ class MissionControlApi {
     } catch (error) {
       console.error('Failed to fetch stage data:', error)
       throw new Error('Failed to fetch stage data')
+    }
+  }
+
+  async getProjectPrdStatus(projectId: string): Promise<{
+    has_frozen_prd: boolean
+    prd_status: 'missing' | 'draft' | 'frozen'
+    prd_type: 'idea' | 'session' | 'missing'
+    latest_prd: any | null
+    upload_sessions: Array<{ id: string; description: string }>
+    context_level: string
+    can_move_to_define: boolean
+  }> {
+    try {
+      const response = await this.client.get<ApiResponse<any>>(`/project/${projectId}/prd-status`)
+      return response.data.data
+    } catch (error) {
+      console.error('Failed to fetch PRD status:', error)
+      throw new Error('Failed to fetch PRD status')
+    }
+  }
+
+  async createIdeaSpecificPrd(itemId: string, projectId: string, uploadSessionId?: string): Promise<{
+    prd: any
+    upload_session_id: string
+    message: string
+  }> {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(`/idea/${itemId}/create-prd`, {
+        projectId,
+        uploadSessionId
+      })
+      return response.data.data
+    } catch (error) {
+      console.error('Failed to create idea-specific PRD:', error)
+      throw new Error('Failed to create idea-specific PRD')
     }
   }
 
@@ -972,7 +1009,7 @@ class MissionControlApi {
   }
 
   // Upload session endpoints
-  async createUploadSession(projectId: string, description?: string): Promise<{
+  async createUploadSession(projectId: string, description?: string, feedItemId?: string): Promise<{
     session_id: string
     project_id: string
     description: string
@@ -992,7 +1029,8 @@ class MissionControlApi {
         completeness_score: any
       }>>('/upload/session', {
         project_id: projectId,
-        description: description || ''
+        description: description || '',
+        feed_item_id: feedItemId  // NEW: Link session to specific idea
       })
       // Some backend endpoints respond directly without a wrapper, others wrap in { data, success }
       const payload: any = (response.data as any)
@@ -1067,6 +1105,7 @@ class MissionControlApi {
     last_updated: string
   }> {
     try {
+      // Use shorter timeout for status polling calls
       const response = await this.client.get<ApiResponse<{
         session_id: string
         overall_status: string
@@ -1078,7 +1117,9 @@ class MissionControlApi {
         pending_files: number
         files: any[]
         last_updated: string
-      }>>(`/upload/status/${sessionId}`)
+      }>>(`/upload/status/${sessionId}`, {
+        timeout: 30000  // 30 seconds for status calls
+      })
       return response.data.data!
     } catch (error) {
       console.error('Failed to get upload status:', error)
@@ -1121,7 +1162,16 @@ class MissionControlApi {
     session_status?: string
     error?: string
   }> {
+    // Prevent concurrent analysis calls for the same session
+    if (this.analysisLock.has(sessionId)) {
+      console.log(`⏳ Analysis already in progress for session ${sessionId}`)
+      throw new Error('Analysis already in progress for this session')
+    }
+    
+    this.analysisLock.add(sessionId)
+    
     try {
+      console.log(`🚀 Starting analysis for session ${sessionId}`)
       const response = await this.client.post<ApiResponse<{
         session_id: string
         status: string
@@ -1135,10 +1185,14 @@ class MissionControlApi {
       }>>(`/upload/session/${sessionId}/analyze`, {
         preferred_model: preferredModel || 'claude-opus-4'
       })
+      console.log(`✅ Analysis completed for session ${sessionId}`)
       return response.data.data!
     } catch (error) {
       console.error('Failed to analyze session files:', error)
       throw new Error('Failed to analyze session files')
+    } finally {
+      // Always remove the lock
+      this.analysisLock.delete(sessionId)
     }
   }
 
