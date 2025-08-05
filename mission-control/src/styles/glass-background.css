@@ -1,0 +1,71 @@
+/* Glass Background Effect - Extracted from SourcesTrayCard */
+/* This provides the exact same styling as SourcesTrayCard for consistent UI across all stages */
+
+/* CSS Variables for glass effect */
+.glass-effect {
+  --card-bg: rgba(0,0,0,0.35);
+  --text-strong: #FFD84D;
+  --text-medium: rgba(255,255,255,0.85);
+  --text-subtle: rgba(255,255,255,0.65);
+  --chip-gray: #2A3342;
+  --progress-idle: rgba(255,255,255,0.14);
+  --progress-active: #37B7F7;
+  --source-tag: #48E0D8;
+  --ring-glow: 0 0 0 1px rgba(255,255,255,0.08), 0 0 18px rgba(21,241,204,0.18);
+  --btn-glow: 0 0 0 1px rgba(255,216,77,0.35), 0 0 36px rgba(255,216,77,0.45);
+  --grad-stroke: linear-gradient(90deg, rgba(21,241,204,0.35) 0%, rgba(73,201,255,0.28) 45%, rgba(143,107,255,0.28) 100%);
+  
+  /* Apply the glass background directly */
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid transparent;
+  background: linear-gradient(var(--card-bg), var(--card-bg)) padding-box, var(--grad-stroke) border-box;
+  box-shadow: var(--ring-glow);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Background overlay */
+.glass-effect::before {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(120% 100% at 50% -10%, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 50%), linear-gradient(180deg, rgba(0,0,0,0.10), rgba(0,0,0,0.22));
+}
+
+/* Corner auras */
+.glass-effect::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: 
+    radial-gradient(280px 140px at 6% 6%, rgba(21,241,204,0.14), transparent 60%),
+    radial-gradient(300px 140px at 94% 10%, rgba(73,201,255,0.14), transparent 60%),
+    radial-gradient(340px 200px at 10% 92%, rgba(255,60,180,0.12), transparent 60%),
+    radial-gradient(340px 200px at 92% 92%, rgba(143,107,255,0.14), transparent 60%);
+  mix-blend-mode: screen;
+}
+
+/* Neon sweep - needs to be added as a separate element */
+.glass-effect-neon::before {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  left: 2rem;
+  right: 2rem;
+  bottom: 1rem;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255,0,200,0) 0%, rgba(255,0,200,0.55) 40%, rgba(255,0,200,0.28) 70%, rgba(255,0,200,0) 100%);
+  box-shadow: 0 0 24px rgba(255,0,200,0.35);
+  opacity: 0.65;
+  z-index: 1;
+}
+
+/* Content should be positioned above the effects */
+.glass-effect > * {
+  position: relative;
+  z-index: 10;
+}

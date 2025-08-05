@@ -18,6 +18,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import { io, Socket } from 'socket.io-client'
 import { LiquidCard } from '@/components/core/LiquidCard'
+import { GlassBackground } from '@/components/core/GlassBackground'
 import missionControlApi from '@/services/api/missionControlApi'
 import type { Task } from '@/types'
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels"
@@ -256,8 +257,9 @@ export const BuildStage: React.FC<BuildStageProps> = ({
   }
 
   return (
-    <div className="h-full bg-gray-900 text-white">
-      <PanelGroup direction="horizontal">
+    <GlassBackground variant="stage" className="h-full">
+      <div className="h-full text-white">
+        <PanelGroup direction="horizontal">
         {/* Left Sidebar - Task Categories */}
         <Panel defaultSize={25} minSize={20} maxSize={40}>
           <div className="h-full bg-gray-800/50 border-r border-white/10 flex flex-col">
@@ -466,7 +468,8 @@ export const BuildStage: React.FC<BuildStageProps> = ({
           </>
         )}
       </PanelGroup>
-    </div>
+      </div>
+    </GlassBackground>
   )
 }
 

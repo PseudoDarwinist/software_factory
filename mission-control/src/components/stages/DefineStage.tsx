@@ -507,7 +507,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
         initial={{ x: -300, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="bg-black/20 backdrop-blur-md border-r border-white/10 flex flex-col flex-shrink-0"
+        className="glass-effect glass-effect-neon flex flex-col flex-shrink-0 border-r border-white/10"
         style={{ width: `${leftPaneWidth}px` }}
       >
         <div className="p-4 border-b border-white/10">
@@ -602,7 +602,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
         initial={{ x: 300, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: 'easeOut', delay: 0.1 }}
-        className="flex-1 bg-black/10 backdrop-blur-sm flex flex-col min-w-0"
+        className="glass-effect glass-effect-neon flex-1 flex flex-col min-w-0"
       >
         {currentSpec && (
           <>
@@ -722,7 +722,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                       animate={{ width: rightPaneWidth, opacity: 1 }}
                       exit={{ width: 0, opacity: 0 }}
                       transition={{ duration: 0.3, ease: 'easeOut' }}
-                      className="bg-black/20 backdrop-blur-md flex-shrink-0"
+                      className="glass-effect glass-effect-neon flex-shrink-0 border-l border-white/10"
                       style={{ width: `${rightPaneWidth}px` }}
                     >
                       <AIAssistantPanel

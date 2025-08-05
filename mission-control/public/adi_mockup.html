@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADI Engine - Field Review Interface</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #ffffff;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .project-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .case-id {
+            font-family: 'SF Mono', Monaco, monospace;
+            color: #888;
+            font-size: 14px;
+        }
+
+        .metrics-pills {
+            display: flex;
+            gap: 8px;
+        }
+
+        .metric-pill {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-size: 11px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .metric-pill.warning {
+            background: rgba(255, 193, 7, 0.2);
+            border-color: rgba(255, 193, 7, 0.4);
+            color: #ffc107;
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 1fr 1.5fr 1fr;
+            height: calc(100vh - 60px);
+            gap: 1px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .pane {
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(20px);
+            overflow-y: auto;
+        }
+
+        .pane-header {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-weight: 600;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .pane-content {
+            padding: 20px;
+        }
+
+        /* Left Pane - AI Decision */
+        .decision-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-badge.approved {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .decision-reasoning {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+            border-left: 3px solid #667eea;
+        }
+
+        .reasoning-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #667eea;
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .btn {
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-success {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .btn-warning {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Center Pane - Evidence */
+        .evidence-section {
+            margin-bottom: 24px;
+        }
+
+        .evidence-title {
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #888;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .evidence-content {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .flight-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .detail-label {
+            color: #888;
+            font-size: 12px;
+        }
+
+        .detail-value {
+            font-weight: 600;
+        }
+
+        .delay-highlight {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 4px;
+            padding: 2px 6px;
+            color: #ef4444;
+        }
+
+        /* Right Pane - Context */
+        .context-section {
+            margin-bottom: 24px;
+        }
+
+        .policy-rule {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-left: 3px solid #22c55e;
+        }
+
+        .rule-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #22c55e;
+        }
+
+        .similar-cases {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .case-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .case-item:last-child {
+            border-bottom: none;
+        }
+
+        .case-outcome {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
+
+        .case-outcome.correct {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+
+        .case-outcome.incorrect {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal {
+            background: rgba(20, 20, 20, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-header {
+            font-weight: 600;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #888;
+        }
+
+        .form-input, .form-select, .form-textarea {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            font-family: inherit;
+        }
+
+        .form-textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }
+
+        .failure-mode-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .failure-tag {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .toggle-buttons {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .toggle-btn {
+            flex: 1;
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .toggle-btn.active.correct {
+            background: rgba(34, 197, 94, 0.3);
+            border-color: #22c55e;
+            color: #22c55e;
+        }
+
+        .toggle-btn.active.incorrect {
+            background: rgba(239, 68, 68, 0.3);
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <div class="project-badge">IROPS</div>
+            <div class="case-id">Case #FL-2024-001847</div>
+        </div>
+        <div class="metrics-pills">
+            <div class="metric-pill">Latency: 2.3s</div>
+            <div class="metric-pill warning">SLA: 4.2s</div>
+            <div class="metric-pill">Accuracy: 94%</div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- Left Pane: AI Decision & Actions -->
+        <div class="pane">
+            <div class="pane-header">
+                <span>AI Decision</span>
+                <span style="font-size: 12px; color: #888;">v1.14.2</span>
+            </div>
+            <div class="pane-content">
+                <div class="decision-status">
+                    <div class="status-badge approved">APPROVED</div>
+                    <span style="font-size: 12px; color: #888;">Hotel Voucher Issued</span>
+                </div>
+
+                <div class="decision-reasoning">
+                    <div class="reasoning-title">AI Reasoning</div>
+                    <p style="line-height: 1.5; font-size: 14px;">
+                        Flight UA1847 delayed 6+ hours due to mechanical issues. Overnight delay detected. 
+                        Policy EU261 requires hotel accommodation for delays >4hrs. Template HV-02 selected 
+                        for 127 affected passengers.
+                    </p>
+                </div>
+
+                <div class="toggle-buttons">
+                    <button class="toggle-btn active correct" onclick="setCorrectness(true)">✓ Correct</button>
+                    <button class="toggle-btn" onclick="setCorrectness(false)">✗ Incorrect</button>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn btn-warning" onclick="showTagModal()">
+                        🏷️ Tag Failure Mode
+                    </button>
+                    <button class="btn btn-success" onclick="showKnowledgeModal()">
+                        + Domain Knowledge
+                    </button>
+                    <button class="btn btn-secondary" onclick="createWorkIdea()">
+                        💡 Open as Idea
+                    </button>
+                    <button class="btn btn-primary" onclick="runEval()">
+                        🧪 Run Eval
+                    </button>
+                </div>
+
+                <div class="failure-mode-tags">
+                    <div class="failure-tag">Time.SLA</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Pane: Evidence & Data -->
+        <div class="pane">
+            <div class="pane-header">
+                <span>Flight Evidence</span>
+                <span style="font-size: 12px; color: #888;">2024-08-03 14:23 UTC</span>
+            </div>
+            <div class="pane-content">
+                <div class="evidence-section">
+                    <div class="evidence-title">Flight Details</div>
+                    <div class="flight-details">
+                        <div class="detail-item">
+                            <span class="detail-label">Flight</span>
+                            <span class="detail-value">UA1847</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Route</span>
+                            <span class="detail-value">SFO → LHR</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Scheduled</span>
+                            <span class="detail-value">14:30 UTC</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Actual</span>
+                            <span class="detail-value delay-highlight">21:45 UTC (+7h 15m)</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Passengers</span>
+                            <span class="detail-value">127</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Reason</span>
+                            <span class="detail-value">Mechanical</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="evidence-section">
+                    <div class="evidence-title">Event Data</div>
+                    <div class="evidence-content">
+{
+  "event": {
+    "type": "FlightDelay",
+    "ts": "2024-08-03T14:23:35Z",
+    "scope": "UA1847",
+    "attrs": {
+      "delay_minutes": 435,
+      "reason": "mechanical",
+      "overnight": true,
+      "passenger_count": 127,
+      "origin": "SFO",
+      "destination": "LHR"
+    }
+  },
+  "decision": {
+    "action": "IssueHotelVoucher",
+    "template_id": "HV-02",
+    "status": "OK",
+    "latency_ms": 2300
+  }
+}
+                    </div>
+                </div>
+
+                <div class="evidence-section">
+                    <div class="evidence-title">Message Sent</div>
+                    <div class="evidence-content">
+Dear Passenger,
+
+Due to the mechanical delay of flight UA1847, we are providing hotel accommodation for tonight. Please proceed to the United desk in Terminal 3 to collect your hotel voucher.
+
+Hotel: Hilton London Heathrow
+Shuttle: Every 15 minutes from Terminal 3
+Check-in: Available now
+Meals: Dinner and breakfast included
+
+We apologize for the inconvenience.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Pane: Domain Context -->
+        <div class="pane">
+            <div class="pane-header">
+                <span>Domain Context</span>
+                <span style="font-size: 12px; color: #888;">IROPS Pack v2.1</span>
+            </div>
+            <div class="pane-content">
+                <div class="context-section">
+                    <div class="evidence-title">Applicable Policies</div>
+                    <div class="policy-rule">
+                        <div class="rule-title">EU261 - Hotel Accommodation</div>
+                        <p style="font-size: 13px; line-height: 1.4;">
+                            For delays >4 hours that result in overnight stay, airline must provide hotel accommodation and meals at no cost to passenger.
+                        </p>
+                    </div>
+                    <div class="policy-rule">
+                        <div class="rule-title">Template Mapping</div>
+                        <p style="font-size: 13px; line-height: 1.4;">
+                            Mechanical delays + overnight = HV-02 (Hotel Voucher with meals)
+                        </p>
+                    </div>
+                </div>
+
+                <div class="context-section">
+                    <div class="evidence-title">Similar Cases (Last 7 Days)</div>
+                    <div class="similar-cases">
+                        <div class="case-item">
+                            <span style="font-size: 13px;">UA2156 - Weather delay 5h</span>
+                            <span class="case-outcome correct">Correct</span>
+                        </div>
+                        <div class="case-item">
+                            <span style="font-size: 13px;">DL891 - Mechanical 3h</span>
+                            <span class="case-outcome incorrect">Incorrect</span>
+                        </div>
+                        <div class="case-item">
+                            <span style="font-size: 13px;">AA445 - Crew timeout 6h</span>
+                            <span class="case-outcome correct">Correct</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="context-section">
+                    <div class="evidence-title">Performance Trends</div>
+                    <div class="similar-cases">
+                        <div class="case-item">
+                            <span style="font-size: 13px;">On-time Rate</span>
+                            <span style="color: #22c55e; font-weight: 600;">94.2%</span>
+                        </div>
+                        <div class="case-item">
+                            <span style="font-size: 13px;">False Approvals</span>
+                            <span style="color: #ef4444; font-weight: 600;">2.1%</span>
+                        </div>
+                        <div class="case-item">
+                            <span style="font-size: 13px;">Avg Latency</span>
+                            <span style="color: #ffc107; font-weight: 600;">2.8s</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tag Failure Mode Modal -->
+    <div class="modal-overlay" id="tagModal">
+        <div class="modal">
+            <div class="modal-header">Tag Failure Mode</div>
+            <div class="form-group">
+                <label class="form-label">Failure Category</label>
+                <select class="form-select">
+                    <option>Select failure mode...</option>
+                    <option>Time.SLA - Late or missed send</option>
+                    <option>Template.Wrong - Wrong template selected</option>
+                    <option>Policy.Misapplied - Policy misapplied</option>
+                    <option>Target.Scope - Wrong/missed audience</option>
+                    <option>Delivery.Fail - Delivery failure</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Notes (Optional)</label>
+                <textarea class="form-textarea" placeholder="Additional context about this failure..."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('tagModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="tagFailureMode()">Tag Failure</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Domain Knowledge Modal -->
+    <div class="modal-overlay" id="knowledgeModal">
+        <div class="modal">
+            <div class="modal-header">Add Domain Knowledge</div>
+            <div class="form-group">
+                <label class="form-label">Rule Title</label>
+                <input type="text" class="form-input" placeholder="e.g., Overnight Mechanical Delay Protocol">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Rule Description</label>
+                <textarea class="form-textarea" placeholder="Describe the domain rule or knowledge that should be applied..."></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Structured Rule (YAML - Optional)</label>
+                <textarea class="form-textarea" placeholder="applies_when:
+  event.type: 'FlightDelay'
+  event.attrs.overnight: true
+expect:
+  actions_include: ['IssueHotelVoucher']"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('knowledgeModal')">Cancel</button>
+                <button class="btn btn-success" onclick="addDomainKnowledge()">Add Knowledge</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function setCorrectness(isCorrect) {
+            const buttons = document.querySelectorAll('.toggle-btn');
+            buttons.forEach(btn => {
+                btn.classList.remove('active', 'correct', 'incorrect');
+            });
+            
+            if (isCorrect) {
+                buttons[0].classList.add('active', 'correct');
+            } else {
+                buttons[1].classList.add('active', 'incorrect');
+            }
+        }
+
+        function showTagModal() {
+            document.getElementById('tagModal').style.display = 'flex';
+        }
+
+        function showKnowledgeModal() {
+            document.getElementById('knowledgeModal').style.display = 'flex';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function tagFailureMode() {
+            // Simulate tagging
+            alert('Failure mode tagged! Re-scoring similar cases...');
+            closeModal('tagModal');
+        }
+
+        function addDomainKnowledge() {
+            // Simulate adding knowledge
+            alert('Domain knowledge added! Re-scoring recent cases...');
+            closeModal('knowledgeModal');
+        }
+
+        function createWorkIdea() {
+            alert('Converting to Work Idea in Think stage...');
+        }
+
+        function runEval() {
+            alert('Running eval set for Time.SLA failure mode...');
+        }
+
+        // Close modals when clicking outside
+        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    overlay.style.display = 'none';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

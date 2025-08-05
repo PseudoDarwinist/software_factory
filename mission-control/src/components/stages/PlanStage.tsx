@@ -20,6 +20,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import { io, Socket } from 'socket.io-client';
 import { LiquidCard } from '@/components/core/LiquidCard'
+import { GlassBackground } from '@/components/core/GlassBackground'
 import missionControlApi from '@/services/api/missionControlApi'
 import type { Task, TaskContext, Agent } from '@/types'
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
@@ -395,7 +396,8 @@ export const PlanStage: React.FC<PlanStageProps> = ({
   }
 
   return (
-    <div className="h-full flex flex-col p-6 space-y-4">
+    <GlassBackground variant="stage" className="h-full">
+      <div className="flex flex-col p-6 space-y-4 h-full">
       {/* Header */}
       <div className="flex-shrink-0">
         <h1 className="text-2xl font-bold text-yellow-400 mb-2">Plan</h1>
@@ -497,7 +499,8 @@ export const PlanStage: React.FC<PlanStageProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+      </div>
+    </GlassBackground>
   )
 }
 

@@ -8,6 +8,10 @@
  * - Provides global styling foundation
  * - Implements design system tokens as CSS variables
  * - Ensures consistent visual language
+ */
+
+/* Import glass background styles */
+@import './styles/glass-background.css';
  * - Provides accessibility and performance optimizations
  * 
  * For AI agents: This file contains all the global styles.

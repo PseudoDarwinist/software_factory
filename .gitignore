@@ -49,4 +49,5 @@ websocket-api-client.js
 .kiro/steering/
 *_STATUS.md
 *_IMPLEMENTATION.md
-*.ini 
+*.ini
+*.kiro

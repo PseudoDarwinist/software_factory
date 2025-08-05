@@ -110,6 +110,8 @@ def create_session():
         project_id = data['project_id']
         description = data.get('description', '')
         feed_item_id = data.get('feed_item_id')  # NEW: Optional idea linking
+        print(f"🔍 [DEBUG] Received data: {data}")
+        print(f"🔍 [DEBUG] feed_item_id from request: {feed_item_id}")
         
         # Verify project exists
         project = MissionControlProject.query.get(project_id)
