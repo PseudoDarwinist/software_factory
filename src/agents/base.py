@@ -425,7 +425,7 @@ class BaseAgent(ABC):
             return ProjectContext(
                 project_id=str(actual_project_id),
                 system_map=system_map_data,
-                git_repository=project.repo_url,
+                repo_url=project.repo_url,
                 external_integrations={}
             )
             

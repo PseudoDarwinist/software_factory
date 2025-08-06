@@ -32,6 +32,69 @@ logger = logging.getLogger(__name__)
 stages_bp = Blueprint('stages', __name__)
 
 
+def _generate_design_document_core(spec_id, project_id, requirements_artifact, define_agent, provider='claude'):
+    """Core design document generation logic - reusable for sync and async"""
+    logger.info(f"🚀 Starting design document generation...")
+    logger.info(f"   🤖 Calling DefineAgent.generate_design_document()")
+    logger.info(f"   📋 Input: Requirements content ({len(requirements_artifact.content)} chars)")
+    
+    start_time = time.time()
+    design_content = define_agent.generate_design_document(
+        spec_id=spec_id,
+        project_id=project_id,
+        requirements_content=requirements_artifact.content,
+        provider=provider
+    )
+    end_time = time.time()
+    
+    logger.info(f"✅ DefineAgent.generate_design_document() completed")
+    logger.info(f"   ⏱️  Generation Time: {end_time - start_time:.2f} seconds")
+    
+    if not design_content:
+        logger.error(f"❌ DefineAgent returned None for design content")
+        raise Exception("Failed to generate design document")
+    
+    logger.info(f"✅ Design document generated successfully")
+    if hasattr(design_content, 'content'):
+        logger.info(f"   📄 Generated Content Length: {len(design_content.content)} characters")
+    else:
+        logger.info(f"   📄 Generated Content Type: {type(design_content)}")
+    
+    return design_content
+
+
+def _generate_tasks_document_core(spec_id, project_id, requirements_artifact, design_artifact, define_agent, provider='claude'):
+    """Core tasks document generation logic - reusable for sync and async"""
+    logger.info(f"🚀 Starting tasks document generation...")
+    logger.info(f"   🤖 Calling DefineAgent.generate_tasks_document()")
+    logger.info(f"   📋 Input: Requirements ({len(requirements_artifact.content)} chars) + Design ({len(design_artifact.content)} chars)")
+    
+    start_time = time.time()
+    tasks_content = define_agent.generate_tasks_document(
+        spec_id=spec_id,
+        project_id=project_id,
+        requirements_content=requirements_artifact.content,
+        design_content=design_artifact.content,
+        provider=provider
+    )
+    end_time = time.time()
+    
+    logger.info(f"✅ DefineAgent.generate_tasks_document() completed")
+    logger.info(f"   ⏱️  Generation Time: {end_time - start_time:.2f} seconds")
+    
+    if not tasks_content:
+        logger.error(f"❌ DefineAgent returned None for tasks content")
+        raise Exception("Failed to generate tasks document")
+    
+    logger.info(f"✅ Tasks document generated successfully")
+    if hasattr(tasks_content, 'content'):
+        logger.info(f"   📄 Generated Content Length: {len(tasks_content.content)} characters")
+    else:
+        logger.info(f"   📄 Generated Content Type: {type(tasks_content)}")
+    
+    return tasks_content
+
+
 def _validate_prd_requirement(project_id, item_id):
     """
     Idea-specific PRD requirement validation.
@@ -878,6 +941,10 @@ def create_specification_with_model_garden(item_id):
 def generate_design_document(spec_id):
     """Generate design document based on approved requirements"""
     try:
+        logger.info(f"🎨 DESIGN GENERATION REQUESTED")
+        logger.info(f"   📋 Spec ID: {spec_id}")
+        logger.info(f"   🔗 Endpoint: POST /api/specification/{spec_id}/generate-design")
+        
         data = request.get_json()
         if not data:
             return jsonify({
@@ -888,6 +955,8 @@ def generate_design_document(spec_id):
             }), 400
         
         project_id = data.get('projectId')
+        provider = data.get('provider', 'claude')  # Default to claude for backward compatibility
+        
         if not project_id:
             return jsonify({
                 'success': False,
@@ -895,6 +964,9 @@ def generate_design_document(spec_id):
                 'timestamp': datetime.utcnow().isoformat(),
                 'version': '1.0.0',
             }), 400
+        
+        logger.info(f"   🏗️  Project ID: {project_id}")
+        logger.info(f"   🤖 AI Provider: {provider.upper()} (synchronous call)")
         
         # Import required modules
         try:
@@ -909,18 +981,25 @@ def generate_design_document(spec_id):
             from events.event_router import EventBus
         
         # Get requirements artifact to use as context
+        logger.info(f"🔍 Looking for requirements artifact...")
         requirements_artifact = SpecificationArtifact.query.filter_by(
             spec_id=spec_id,
             artifact_type=ArtifactType.REQUIREMENTS
         ).first()
         
         if not requirements_artifact:
+            logger.error(f"❌ Requirements artifact not found for spec {spec_id}")
             return jsonify({
                 'success': False,
                 'error': 'Requirements document not found. Generate requirements first.',
                 'timestamp': datetime.utcnow().isoformat(),
                 'version': '1.0.0',
             }), 400
+        
+        logger.info(f"✅ Requirements artifact found")
+        logger.info(f"   📄 Content Length: {len(requirements_artifact.content)} characters")
+        logger.info(f"   📅 Created: {requirements_artifact.created_at}")
+        logger.info(f"   👤 Created By: {requirements_artifact.created_by}")
         
         # Initialize DefineAgent
         from flask import current_app
@@ -934,48 +1013,17 @@ def generate_design_document(spec_id):
         
         # Generate design document
         try:
-            logger.info(f"Generating design document for spec {spec_id}")
-            design_content = define_agent.generate_design_document(
-                spec_id=spec_id,
-                project_id=project_id,
-                requirements_content=requirements_artifact.content
-            )
-            
-            if not design_content:
-                return jsonify({
-                    'success': False,
-                    'error': 'Failed to generate design document',
-                    'timestamp': datetime.utcnow().isoformat(),
-                    'version': '1.0.0',
-                }), 500
-            
-            # Create or update design artifact
-            design_artifact_id = f"{spec_id}_design"
-            design_artifact = SpecificationArtifact.query.get(design_artifact_id)
-            
-            if design_artifact:
-                design_artifact.update_content(design_content, 'define_agent')
-            else:
-                design_artifact = SpecificationArtifact.create_artifact(
-                    spec_id=spec_id,
-                    project_id=project_id,
-                    artifact_type=ArtifactType.DESIGN,
-                    content=design_content,
-                    created_by='define_agent'
-                )
-                db.session.commit()
-            
-            logger.info(f"Design document generated successfully for spec {spec_id}")
+            design_content = _generate_design_document_core(spec_id, project_id, requirements_artifact, define_agent, provider)
             
             return jsonify({
                 'success': True,
-                'data': design_artifact.to_dict(),
+                'data': design_content.to_dict() if hasattr(design_content, 'to_dict') else design_content,
                 'timestamp': datetime.utcnow().isoformat(),
                 'version': '1.0.0',
             })
             
-        except Exception as agent_error:
-            logger.error(f"Error generating design document for spec {spec_id}: {agent_error}")
+        except Exception as e:
+            logger.error(f"Error generating design document for spec {spec_id}: {e}")
             return jsonify({
                 'success': False,
                 'error': 'Failed to generate design document',
@@ -1000,10 +1048,20 @@ def generate_tasks_document(spec_id):
     frontend can render the document in real-time.
     """
     try:
+        logger.info(f"📋 TASKS GENERATION REQUESTED")
+        logger.info(f"   📋 Spec ID: {spec_id}")
+        logger.info(f"   🔗 Endpoint: POST /api/specification/{spec_id}/generate-tasks")
+        logger.info(f"   🌊 Mode: Streaming via WebSocket")
+        
         data = request.get_json() or {}
         project_id = data.get('projectId')
+        provider = data.get('provider', 'claude')  # Default to claude for backward compatibility
+        
         if not project_id:
             return jsonify({'success': False, 'error': 'Project ID is required'}), 400
+        
+        logger.info(f"   🏗️  Project ID: {project_id}")
+        logger.info(f"   🤖 AI Provider: {provider.upper()} (streaming)")
 
         from flask import current_app as _cur_app
         app_obj = _cur_app._get_current_object()
@@ -1027,6 +1085,8 @@ def generate_tasks_document(spec_id):
             return jsonify({'success': False, 'error': 'WebSocket unavailable'}), 500
 
         # Fetch artifacts (same logic as before)
+        logger.info(f"🔍 Looking for requirements and design artifacts...")
+        
         requirements_artifact = SpecificationArtifact.query.filter_by(
             spec_id=spec_id,
             artifact_type=ArtifactType.REQUIREMENTS
@@ -1038,7 +1098,12 @@ def generate_tasks_document(spec_id):
         ).first()
 
         if not requirements_artifact or not design_artifact:
+            logger.error(f"❌ Missing artifacts - Requirements: {bool(requirements_artifact)}, Design: {bool(design_artifact)}")
             return jsonify({'success': False, 'error': 'Requirements and design docs required'}), 400
+        
+        logger.info(f"✅ Both artifacts found")
+        logger.info(f"   📄 Requirements Length: {len(requirements_artifact.content)} characters")
+        logger.info(f"   📄 Design Length: {len(design_artifact.content)} characters")
 
         def _bg_generate():
             try:
@@ -1118,7 +1183,8 @@ Ensure the top-level items are the user stories, and the sub-tasks are the speci
                             spec_id=spec_id,
                             project_id=project_id,
                             requirements_content=requirements_artifact.content,
-                            design_content=design_artifact.content
+                            design_content=design_artifact.content,
+                            provider=provider
                         ) or ''
 
                     # Store result (streamed or fallback)
@@ -1549,3 +1615,363 @@ def stage_database_error(error):
         'timestamp': datetime.utcnow().isoformat(),
         'version': '1.0.0',
     }), 500
+
+
+@stages_bp.route('/api/idea/<item_id>/create-spec-async', methods=['POST'])
+def create_specification_async(item_id):
+    """Create specification from an idea using asynchronous background job"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body must be JSON',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        project_id = data.get('projectId')
+        provider = data.get('provider', 'claude')
+        
+        if not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Project ID is required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Check if feed item exists
+        feed_item = FeedItem.query.get(item_id)
+        if not feed_item:
+            return jsonify({
+                'success': False,
+                'error': 'Feed item not found',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 404
+        
+        # Import spec generation service
+        try:
+            from ..services.spec_generation_service import get_spec_generation_service
+        except ImportError:
+            from services.spec_generation_service import get_spec_generation_service
+        
+        # Start async spec generation
+        spec_service = get_spec_generation_service()
+        result = spec_service.start_spec_generation(
+            item_id=item_id,
+            project_id=project_id,
+            provider=provider
+        )
+        
+        logger.info(f"Started async spec generation for idea {item_id}: job {result['job_id']}")
+        
+        return jsonify({
+            'success': True,
+            'data': result,
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting async spec generation for idea {item_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to start spec generation',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/jobs/<int:job_id>/status', methods=['GET'])
+def get_job_status(job_id):
+    """Get status of a background job"""
+    try:
+        # Import spec generation service
+        try:
+            from ..services.spec_generation_service import get_spec_generation_service
+        except ImportError:
+            from services.spec_generation_service import get_spec_generation_service
+        
+        spec_service = get_spec_generation_service()
+        status = spec_service.get_generation_status(job_id)
+        
+        if status is None:
+            return jsonify({
+                'success': False,
+                'error': 'Job not found',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'data': status,
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting job status for {job_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to get job status',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/jobs/<int:job_id>/cancel', methods=['POST'])
+def cancel_job(job_id):
+    """Cancel a background job"""
+    try:
+        # Import spec generation service
+        try:
+            from ..services.spec_generation_service import get_spec_generation_service
+        except ImportError:
+            from services.spec_generation_service import get_spec_generation_service
+        
+        spec_service = get_spec_generation_service()
+        success = spec_service.cancel_generation(job_id)
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to cancel job or job not found',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'job_id': job_id,
+                'status': 'cancelled',
+                'cancelled_at': datetime.utcnow().isoformat()
+            },
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Error cancelling job {job_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to cancel job',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/async-spec-status', methods=['GET'])
+def async_spec_status():
+    """Debug endpoint to check async spec generation system status"""
+    try:
+        # Import spec generation service
+        try:
+            from ..services.spec_generation_service import get_spec_generation_service
+            from ..services.background import get_job_manager
+        except ImportError:
+            from services.spec_generation_service import get_spec_generation_service
+            from services.background import get_job_manager
+        
+        # Check if services are available
+        try:
+            spec_service = get_spec_generation_service()
+            job_manager = get_job_manager()
+            
+            # Get system stats
+            stats = job_manager.get_system_stats()
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'spec_service_available': True,
+                    'job_manager_available': True,
+                    'system_stats': stats,
+                    'socketio_available': 'socketio' in current_app.extensions,
+                    'timestamp': datetime.utcnow().isoformat()
+                },
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            })
+            
+        except Exception as service_error:
+            return jsonify({
+                'success': False,
+                'error': f'Service initialization error: {str(service_error)}',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error checking async spec status: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to check system status',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/jobs/active', methods=['GET'])
+def get_active_jobs():
+    """Get all active background jobs"""
+    try:
+        # Import required modules
+        try:
+            from ..models.background_job import BackgroundJob
+        except ImportError:
+            from models.background_job import BackgroundJob
+        
+        # Get all running jobs
+        active_jobs = BackgroundJob.query.filter_by(status=BackgroundJob.STATUS_RUNNING).all()
+        
+        jobs_data = []
+        for job in active_jobs:
+            jobs_data.append({
+                'id': job.id,
+                'job_type': job.job_type,
+                'status': job.status,
+                'progress': job.progress or 0,
+                'job_metadata': job.job_metadata or {},
+                'created_at': job.created_at.isoformat() if job.created_at else None,
+                'started_at': job.started_at.isoformat() if job.started_at else None
+            })
+        
+        return jsonify({
+            'success': True,
+            'data': jobs_data,
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting active jobs: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to get active jobs',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/specification/<spec_id>/generate-design-async', methods=['POST'])
+def generate_design_document_async(spec_id):
+    """Generate design document asynchronously using background job"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body must be JSON',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        project_id = data.get('projectId')
+        provider = data.get('provider', 'claude')
+        
+        if not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Project ID is required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Import spec generation service
+        try:
+            from ..services.spec_generation_service import get_spec_generation_service
+        except ImportError:
+            from services.spec_generation_service import get_spec_generation_service
+        
+        # Start async design generation
+        spec_service = get_spec_generation_service()
+        result = spec_service.start_design_generation(
+            spec_id=spec_id,
+            project_id=project_id,
+            provider=provider
+        )
+        
+        logger.info(f"Started async design generation for spec {spec_id}: job {result['job_id']}")
+        
+        return jsonify({
+            'success': True,
+            'data': result,
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting async design generation for spec {spec_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to start design generation',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/specification/<spec_id>/generate-tasks-async', methods=['POST'])
+def generate_tasks_document_async(spec_id):
+    """Generate tasks document asynchronously using background job"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body must be JSON',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        project_id = data.get('projectId')
+        provider = data.get('provider', 'claude')
+        
+        if not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Project ID is required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Import spec generation service
+        try:
+            from ..services.spec_generation_service import get_spec_generation_service
+        except ImportError:
+            from services.spec_generation_service import get_spec_generation_service
+        
+        # Start async tasks generation
+        spec_service = get_spec_generation_service()
+        result = spec_service.start_tasks_generation(
+            spec_id=spec_id,
+            project_id=project_id,
+            provider=provider
+        )
+        
+        logger.info(f"Started async tasks generation for spec {spec_id}: job {result['job_id']}")
+        
+        return jsonify({
+            'success': True,
+            'data': result,
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting async tasks generation for spec {spec_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to start tasks generation',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500

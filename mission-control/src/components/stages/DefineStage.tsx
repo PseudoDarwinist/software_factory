@@ -25,6 +25,8 @@ import { missionControlApi } from '@/services/api/missionControlApi'
 import { SpecWorkflowEditor } from './SpecWorkflowEditor'
 import { AssistantSelector, type AssistantType } from '@/components/AssistantSelector'
 import { KiroWorkflowManager, type GeneratedSpecs } from '@/components/KiroWorkflowManager'
+import { SpecGenerationProgress } from '@/components/SpecGenerationProgress'
+import { useSpecGeneration } from '@/hooks/useSpecGeneration'
 import type { FeedItem, SDLCStage } from '@/types'
 import { io as socketIOClient } from 'socket.io-client'
 
@@ -98,6 +100,9 @@ export const DefineStage: React.FC<DefineStageProps> = ({
   const [tasksStreamingContent, setTasksStreamingContent] = useState<string>('')
   const [tasksGenerating, setTasksGenerating] = useState(false)
 
+  // Async spec generation state
+  const specGeneration = useSpecGeneration(selectedProject || '')
+
   // Filter ideas that are in definition stage
   useEffect(() => {
     const definitionItems = feedItems.filter(item => 
@@ -133,7 +138,24 @@ export const DefineStage: React.FC<DefineStageProps> = ({
     }
   }, [selectedFeedItem, selectedProject, ideasInDefinition, onFeedItemSelect])
 
-  const loadSpecification = async (itemId: string, projectId: string) => {
+  // Add debouncing to prevent rapid successive calls
+  const loadSpecificationRef = useRef<{ itemId: string; projectId: string; timestamp: number } | null>(null)
+  
+  const loadSpecification = useCallback(async (itemId: string, projectId: string) => {
+    const now = Date.now()
+    const key = `${itemId}-${projectId}`
+    
+    // Prevent duplicate calls within 500ms
+    if (loadSpecificationRef.current && 
+        loadSpecificationRef.current.itemId === itemId && 
+        loadSpecificationRef.current.projectId === projectId &&
+        now - loadSpecificationRef.current.timestamp < 500) {
+      console.log('🔍 DEBUG: Skipping duplicate loadSpecification call')
+      return
+    }
+    
+    loadSpecificationRef.current = { itemId, projectId, timestamp: now }
+    
     console.log('🔍 DEBUG: loadSpecification called with:', { itemId, projectId })
     try {
       setSpecLoading(true)
@@ -144,11 +166,105 @@ export const DefineStage: React.FC<DefineStageProps> = ({
       console.log('🔍 DEBUG: Got spec response:', spec)
       setCurrentSpec(spec)
       console.log('🔍 DEBUG: Set currentSpec to:', spec)
+      
+      // Check for active generation jobs for this spec
+      if (spec && spec.spec_id) {
+        await checkActiveGenerationJobs(spec.spec_id)
+      }
     } catch (error) {
       setSpecError('Failed to load specification')
       console.error('❌ Error loading specification:', error)
     } finally {
       setSpecLoading(false)
+    }
+  }, [])
+
+  const checkActiveGenerationJobs = async (specId: string) => {
+    try {
+      // Check localStorage for recent progress first
+      const checkLocalProgress = (generationType: 'design' | 'tasks') => {
+        const storageKey = `generation_progress_${specId}_${generationType}`
+        const stored = localStorage.getItem(storageKey)
+        if (stored) {
+          try {
+            const progress = JSON.parse(stored)
+            // Only use if less than 5 minutes old
+            if (Date.now() - progress.timestamp < 5 * 60 * 1000) {
+              return progress
+            } else {
+              localStorage.removeItem(storageKey)
+            }
+          } catch (e) {
+            localStorage.removeItem(storageKey)
+          }
+        }
+        return null
+      }
+
+      // Get all active background jobs
+      const response = await fetch('/api/jobs/active')
+      if (response.ok) {
+        const jobs = await response.json()
+        
+        // Find jobs related to this spec
+        const activeJobs = jobs.data?.filter((job: any) => 
+          job.job_metadata?.spec_id === specId && 
+          job.status === 'running' &&
+          (job.job_type === 'design_generation' || job.job_type === 'tasks_generation')
+        ) || []
+        
+        // Update UI to show active generation states
+        activeJobs.forEach((job: any) => {
+          const generationType = job.job_metadata?.generation_type
+          if (generationType === 'design' || generationType === 'tasks') {
+            console.log(`Found active ${generationType} generation job:`, job.id)
+            
+            // Check for more recent progress in localStorage
+            const localProgress = checkLocalProgress(generationType)
+            const progress = localProgress?.progress || job.progress || 0
+            const message = localProgress?.message || `${generationType === 'design' ? 'Design' : 'Tasks'} generation in progress...`
+            
+            // Update the spec to show generation in progress
+            setCurrentSpec(prev => {
+              if (!prev) return null
+              
+              return {
+                ...prev,
+                [generationType]: {
+                  ...prev[generationType],
+                  content: `⏳ ${message}\n\nProgress: ${progress}%\n\nThis is running in the background. You can navigate freely while it processes.`,
+                  status: 'ai_draft'
+                }
+              }
+            })
+          }
+        })
+        
+        // Also check for localStorage progress even if no active jobs (in case of race conditions)
+        if (activeJobs.length === 0) {
+          ['design', 'tasks'].forEach(generationType => {
+            const localProgress = checkLocalProgress(generationType as 'design' | 'tasks')
+            if (localProgress && localProgress.progress < 100) {
+              console.log(`Found localStorage progress for ${generationType}:`, localProgress.progress)
+              
+              setCurrentSpec(prev => {
+                if (!prev) return null
+                
+                return {
+                  ...prev,
+                  [generationType]: {
+                    ...prev[generationType as 'design' | 'tasks'],
+                    content: `⏳ ${localProgress.message}\n\nProgress: ${localProgress.progress}%\n\nThis is running in the background. You can navigate freely while it processes.`,
+                    status: 'ai_draft'
+                  }
+                }
+              })
+            }
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Error checking active generation jobs:', error)
     }
   }
 
@@ -194,10 +310,44 @@ export const DefineStage: React.FC<DefineStageProps> = ({
       
       setCurrentSpec(prev => {
         if (!prev) return null
-        return {
+        
+        // Update the artifact
+        const updatedSpec = {
           ...prev,
           [artifactType]: updatedArtifact
         }
+        
+        // Recalculate completion status
+        const artifacts = [updatedSpec.requirements, updatedSpec.design, updatedSpec.tasks].filter(Boolean)
+        const statusCounts = {
+          ai_draft: 0,
+          human_reviewed: 0,
+          frozen: 0
+        }
+        
+        artifacts.forEach(artifact => {
+          if (artifact) {
+            statusCounts[artifact.status as keyof typeof statusCounts]++
+          }
+        })
+        
+        const total = artifacts.length
+        const expectedArtifacts = 3 // requirements, design, tasks
+        
+        updatedSpec.completion_status = {
+          complete: total === expectedArtifacts,
+          total_artifacts: total,
+          ai_draft: statusCounts.ai_draft,
+          human_reviewed: statusCounts.human_reviewed,
+          frozen: statusCounts.frozen,
+          ready_to_freeze: (
+            total === expectedArtifacts && 
+            statusCounts.ai_draft === 0 && 
+            statusCounts.frozen === 0
+          )
+        }
+        
+        return updatedSpec
       })
     } catch (error) {
       console.error('Error marking artifact as reviewed:', error)
@@ -240,35 +390,51 @@ export const DefineStage: React.FC<DefineStageProps> = ({
     if (!currentSpec || !selectedProject) return
 
     try {
-      setSpecLoading(true)
-      setSpecError(null)
+      // Switch to design tab immediately
+      setActiveTab('design')
       
-      console.log('Generating design document for spec:', currentSpec.spec_id)
+      console.log('Starting async design generation for spec:', currentSpec.spec_id)
       
-      const designArtifact = await missionControlApi.generateDesignDocument(
-        currentSpec.spec_id,
-        selectedProject
-      )
-      
-      // Update the current spec with the new design artifact
+      // Show immediate loading state
       setCurrentSpec(prev => {
         if (!prev) return null
         return {
           ...prev,
-          design: designArtifact
+          design: {
+            ...prev.design,
+            content: '⏳ Starting design generation...\n\nThis is running in the background. You can navigate freely while it processes.',
+            status: 'ai_draft'
+          }
         }
       })
       
-      // Switch to design tab to show the generated content
-      setActiveTab('design')
+      // Start async design generation using the proper async API
+      const result = await missionControlApi.generateDesignDocumentAsync(
+        currentSpec.spec_id,
+        selectedProject,
+        'claude'
+      )
       
-      console.log('Design document generated successfully')
+      console.log('Design generation job started:', result.job_id)
+      
+      // WebSocket events will handle the progress updates and completion
       
     } catch (error) {
-      console.error('Error generating design document:', error)
-      setSpecError('Failed to generate design document')
-    } finally {
-      setSpecLoading(false)
+      console.error('Error starting design generation:', error)
+      setSpecError('Failed to start design generation')
+      
+      // Reset the design content on error
+      setCurrentSpec(prev => {
+        if (!prev) return null
+        return {
+          ...prev,
+          design: {
+            ...prev.design,
+            content: `❌ Failed to start design generation: ${error.message}\n\nPlease try again or contact support if the issue persists.`,
+            status: 'ai_draft'
+          }
+        }
+      })
     }
   }, [currentSpec, selectedProject])
 
@@ -276,87 +442,77 @@ export const DefineStage: React.FC<DefineStageProps> = ({
     if (!currentSpec || !selectedProject) return
 
     try {
-      setTasksGenerating(true)
-      setTasksStreamingContent('')
-      // create placeholder artifact
-      setCurrentSpec(prev => prev ? { ...prev, tasks: { ...(prev.tasks || {} as any), content: '', status: 'ai_draft' } } : prev)
-      // switch to tasks tab immediately
+      console.log('Starting async tasks generation for spec:', currentSpec.spec_id)
+      
+      // Switch to tasks tab immediately
       setActiveTab('tasks')
-      await missionControlApi.generateTasksDocument(
+      
+      // Show immediate loading state
+      setCurrentSpec(prev => {
+        if (!prev) return null
+        return {
+          ...prev,
+          tasks: {
+            ...prev.tasks,
+            content: '⏳ Starting tasks generation...\n\nThis is running in the background. You can navigate freely while it processes.',
+            status: 'ai_draft'
+          }
+        }
+      })
+      
+      // Start async tasks generation using the proper async API
+      const result = await missionControlApi.generateTasksDocumentAsync(
         currentSpec.spec_id,
-        selectedProject
+        selectedProject,
+        'claude'
       )
-      // we rely on websocket for progress/done
+      
+      console.log('Tasks generation job started:', result.job_id)
+      
+      // WebSocket events will handle the progress updates and completion
+      
     } catch (error) {
-      console.error('Error generating tasks document:', error)
-      setSpecError('Failed to generate tasks document')
-      setTasksGenerating(false)
+      console.error('Error starting tasks generation:', error)
+      setSpecError('Failed to start tasks generation')
+      
+      // Reset the tasks content on error
+      setCurrentSpec(prev => {
+        if (!prev) return null
+        return {
+          ...prev,
+          tasks: {
+            ...prev.tasks,
+            content: `❌ Failed to start tasks generation: ${error.message}\n\nPlease try again or contact support if the issue persists.`,
+            status: 'ai_draft'
+          }
+        }
+      })
     }
   }, [currentSpec, selectedProject])
 
-  const createSpecification = async (feedItem: FeedItem) => {
-    if (!selectedProject) return
-    
-    try {
-      setSpecLoading(true)
-      setSpecError(null)
-      
-      // Call the new Create Spec API endpoint
-      const result = await missionControlApi.createSpecification(feedItem.id, selectedProject)
-      
-      console.log('Specification created:', result)
-      
-      // Load the newly created specification
-      await loadSpecification(feedItem.id, selectedProject)
-      
-      // Select this feed item
-      onFeedItemSelect(feedItem.id)
-      
-    } catch (error) {
-      console.error('Failed to create specification:', error)
-      setSpecError('Failed to create specification')
-    } finally {
-      setSpecLoading(false)
-    }
-  }
+  // Legacy sync functions removed - now using async spec generation
 
-  const createSpecificationWithModelGarden = async (feedItem: FeedItem) => {
-    if (!selectedProject) return
-    
-    try {
-      setSpecLoading(true)
-      setSpecError(null)
-      
-      console.log('Creating specification with AI Model Garden for:', feedItem.title)
-      
-      // Call the AI Model Garden Create Spec API endpoint
-      const result = await missionControlApi.createSpecificationWithModelGarden(feedItem.id, selectedProject)
-      
-      console.log('AI Model Garden specification created:', result)
-      
-      // Load the newly created specification
-      await loadSpecification(feedItem.id, selectedProject)
-      
-      // Select this feed item
-      onFeedItemSelect(feedItem.id)
-      
-    } catch (error) {
-      console.error('Failed to create specification with AI Model Garden:', error)
-      setSpecError('Failed to create specification with AI Model Garden')
-    } finally {
-      setSpecLoading(false)
-    }
-  }
-
-  const handleAssistantSelect = (assistant: AssistantType, feedItem: FeedItem) => {
+  const handleAssistantSelect = async (assistant: AssistantType, feedItem: FeedItem) => {
     setSelectedAssistant(assistant)
     
     if (assistant === 'claude') {
-      // Use existing Claude Code workflow
-      createSpecification(feedItem)
+      // Use async Claude Code workflow
+      try {
+        await specGeneration.startGeneration(feedItem.id, 'claude')
+        // Select this feed item to show progress
+        onFeedItemSelect(feedItem.id)
+      } catch (error) {
+        console.error('Failed to start Claude spec generation:', error)
+      }
     } else if (assistant === 'model-garden') {
-      // Use AI Model Garden workflow
-      createSpecificationWithModelGarden(feedItem)
+      // Use async AI Model Garden workflow
+      try {
+        await specGeneration.startGeneration(feedItem.id, 'model-garden')
+        // Select this feed item to show progress
+        onFeedItemSelect(feedItem.id)
+      } catch (error) {
+        console.error('Failed to start Model Garden spec generation:', error)
+      }
     } else if (assistant === 'kiro') {
       // Start Kiro step-by-step workflow (currently disabled)
       setKiroFeedItem(feedItem)
@@ -398,6 +554,147 @@ export const DefineStage: React.FC<DefineStageProps> = ({
       setSpecLoading(false)
     }
   }
+
+  // Handle async spec generation completion
+  const handleSpecGenerationComplete = useCallback(async (specId: string) => {
+    if (selectedProject && selectedFeedItem) {
+      // Reload the specification to show the generated content
+      await loadSpecification(selectedFeedItem, selectedProject)
+      // Clear the completed status
+      specGeneration.clearCompleted(selectedFeedItem)
+    }
+  }, [selectedProject, selectedFeedItem, specGeneration, loadSpecification])
+
+  // Handle async spec generation error
+  const handleSpecGenerationError = useCallback((error: string) => {
+    setSpecError(error)
+  }, [])
+
+  // Handle async spec generation cancellation
+  const handleSpecGenerationCancel = useCallback(() => {
+    // Just clear any loading states
+    setSpecLoading(false)
+  }, [])
+
+  // Use refs for values that change frequently to avoid recreating WebSocket
+  const selectedFeedItemRef = useRef(selectedFeedItem)
+  const selectedProjectRef = useRef(selectedProject)
+  const currentSpecRef = useRef(currentSpec)
+  
+  useEffect(() => {
+    selectedFeedItemRef.current = selectedFeedItem
+    selectedProjectRef.current = selectedProject
+    currentSpecRef.current = currentSpec
+  }, [selectedFeedItem, selectedProject, currentSpec])
+
+  // Listen for design and tasks generation completion
+  useEffect(() => {
+    const socketUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
+    const socket = socketIOClient(socketUrl, { 
+      transports: ['websocket'],
+      autoConnect: true
+    })
+
+    // Listen for design and tasks generation progress
+    socket.on('spec.generation.progress', (data: {
+      job_id: number
+      item_id: string
+      progress: number
+      stage: string
+      message: string
+      generation_type?: string
+    }) => {
+      if (data.generation_type === 'design' || data.generation_type === 'tasks') {
+        console.log(`${data.generation_type} generation progress:`, data.progress, data.message)
+        
+        // Update the spec with progress information if this is the current spec
+        if (currentSpecRef.current && currentSpecRef.current.spec_id === data.item_id) {
+          setCurrentSpec(prev => {
+            if (!prev) return null
+            
+            const artifactType = data.generation_type as 'design' | 'tasks'
+            return {
+              ...prev,
+              [artifactType]: {
+                ...prev[artifactType],
+                content: `⏳ ${data.message}\n\nProgress: ${data.progress}%\n\nThis is running in the background. You can navigate freely while it processes.`,
+                status: 'ai_draft'
+              }
+            }
+          })
+        }
+        
+        // Store progress in localStorage for persistence across navigation
+        const storageKey = `generation_progress_${data.item_id}_${data.generation_type}`
+        localStorage.setItem(storageKey, JSON.stringify({
+          progress: data.progress,
+          message: data.message,
+          timestamp: Date.now(),
+          generation_type: data.generation_type
+        }))
+      }
+    })
+
+    // Listen for design generation completion
+    socket.on('spec.generation.complete', (data: {
+      job_id: number
+      item_id: string
+      spec_id: string
+      generation_type?: string
+      artifact_data?: any
+    }) => {
+      console.log('🎉 Received spec.generation.complete event:', data)
+      console.log('🔍 Event matching check:')
+      console.log('  data.generation_type:', data.generation_type)
+      console.log('  data.item_id:', data.item_id)
+      console.log('  data.spec_id:', data.spec_id)
+      
+      if (data.generation_type === 'design' || data.generation_type === 'tasks') {
+        console.log(`${data.generation_type} generation completed for spec:`, data.spec_id)
+        console.log('Current state:', { selectedFeedItem, selectedProject, currentSpecId: currentSpec?.spec_id })
+        
+        // Clean up localStorage progress
+        const storageKey = `generation_progress_${data.item_id}_${data.generation_type}`
+        localStorage.removeItem(storageKey)
+        
+        // Always reload if this is the currently selected item
+        if (selectedFeedItemRef.current && selectedProjectRef.current && currentSpecRef.current && currentSpecRef.current.spec_id === data.spec_id) {
+          console.log('✅ Conditions met - reloading specification')
+          loadSpecification(selectedFeedItemRef.current, selectedProjectRef.current)
+        } else {
+          console.log('❌ Conditions not met for reloading specification')
+          console.log('  selectedFeedItem:', selectedFeedItemRef.current)
+          console.log('  selectedProject:', selectedProjectRef.current)
+          console.log('  currentSpec.spec_id:', currentSpecRef.current?.spec_id)
+          console.log('  data.spec_id:', data.spec_id)
+          
+          // Show a notification that generation completed for a different item
+          console.log(`🎉 ${data.generation_type} generation completed for a different item: ${data.item_id}`)
+          // TODO: Add toast notification here
+        }
+      }
+    })
+
+    // Listen for design and tasks generation failures
+    socket.on('spec.generation.failed', (data: {
+      job_id: number
+      item_id: string
+      error: string
+      generation_type?: string
+    }) => {
+      if (data.generation_type === 'design' || data.generation_type === 'tasks') {
+        console.error(`${data.generation_type} generation failed:`, data.error)
+        // Only show error if this is for the current item (use item_id since spec_id isn't in failed events)
+        if (selectedFeedItemRef.current === data.item_id) {
+          setSpecError(`Failed to generate ${data.generation_type}: ${data.error}`)
+        }
+      }
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, []) // Empty dependency array - create socket once and use refs for dynamic values
 
   const handleKiroWorkflowClose = () => {
     setShowKiroWorkflow(false)
@@ -469,6 +766,10 @@ export const DefineStage: React.FC<DefineStageProps> = ({
     }
   }, [isDraggingLeft, isDraggingRight, handleLeftResize, handleRightResize])
 
+  // Legacy WebSocket listener for synchronous tasks streaming (now disabled for async)
+  // This was causing infinite loops with the new async system
+  // TODO: Remove this completely once async system is fully stable
+  /*
   useEffect(() => {
     if (!currentSpec) return
     const socketUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
@@ -499,6 +800,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
       socket.disconnect()
     }
   }, [currentSpec?.spec_id])
+  */
 
   return (
     <div className="h-full flex">
@@ -511,9 +813,26 @@ export const DefineStage: React.FC<DefineStageProps> = ({
         style={{ width: `${leftPaneWidth}px` }}
       >
         <div className="p-4 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-yellow-400 mb-2">Ideas in Definition</h2>
-          <div className="text-xs text-white/60 bg-white/10 px-2 py-1 rounded-full inline-block">
-            {ideasInDefinition.length} items
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-lg font-semibold text-yellow-400">Ideas in Definition</h2>
+            {specGeneration.getActiveGenerationsCount() > 0 && (
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                <span className="text-xs text-blue-400">
+                  {specGeneration.getActiveGenerationsCount()} generating
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="text-xs text-white/60 bg-white/10 px-2 py-1 rounded-full">
+              {ideasInDefinition.length} items
+            </div>
+            {!specGeneration.isConnected && (
+              <div className="text-xs text-yellow-400 bg-yellow-500/10 px-2 py-1 rounded-full">
+                ⚠️ Reconnecting...
+              </div>
+            )}
           </div>
         </div>
 
@@ -537,7 +856,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                 onClick={() => onFeedItemSelect(item.id)}
                 className={clsx(
                   'cursor-pointer transition-all overflow-visible w-full',
-                  selectedFeedItem === item.id && 'ring-2 ring-blue-500/50'
+                  selectedFeedItem === item.id && 'ring-4 ring-yellow-400/80 border-yellow-400/60'
                 )}
                 style={{ overflow: 'visible' }}
               >
@@ -555,18 +874,79 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                         ? item.summary 
                         : 'Feature specification in progress...'}
                     </p>
+                    
+                    {/* Show progress indicator if generating */}
+                    {specGeneration.isGenerating(item.id) && (
+                      <div className="mt-2">
+                        <SpecGenerationProgress
+                          itemId={item.id}
+                          jobId={specGeneration.getGenerationStatus(item.id)?.jobId || 0}
+                          provider={specGeneration.getGenerationStatus(item.id)?.provider || 'claude'}
+                          onComplete={handleSpecGenerationComplete}
+                          onError={handleSpecGenerationError}
+                          onCancel={handleSpecGenerationCancel}
+                          className="text-xs"
+                        />
+                      </div>
+                    )}
+                    
+                    {/* Show error state if failed */}
+                    {specGeneration.hasError(item.id) && (
+                      <div className="mt-2 p-2 bg-red-500/10 border border-red-500/20 rounded text-xs">
+                        <div className="text-red-400 mb-1">
+                          ❌ Generation failed
+                        </div>
+                        <div className="text-red-300/80 mb-2">
+                          {specGeneration.errors.get(item.id)?.error}
+                        </div>
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => specGeneration.retryGeneration(item.id)}
+                            className="text-red-300 hover:text-red-200 underline"
+                          >
+                            Retry
+                          </button>
+                          <button
+                            onClick={() => specGeneration.clearError(item.id)}
+                            className="text-red-300/60 hover:text-red-300 underline"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Show completed state */}
+                    {specGeneration.isCompleted(item.id) && (
+                      <div className="mt-2 p-2 bg-green-500/10 border border-green-500/20 rounded text-xs">
+                        <div className="text-green-400 mb-1">
+                          ✅ Spec generated successfully!
+                        </div>
+                        <button
+                          onClick={() => {
+                            specGeneration.clearCompleted(item.id)
+                            onFeedItemSelect(item.id)
+                          }}
+                          className="text-green-300 hover:text-green-200 underline"
+                        >
+                          View Spec
+                        </button>
+                      </div>
+                    )}
+                    
                     <div className="flex items-center justify-between mt-3">
                       <div className="text-xs text-white/50">
                         {item.actor}
                       </div>
                       <div className="flex items-center space-x-2">
-                        <AssistantSelector
-                          onAssistantSelect={(assistant) => handleAssistantSelect(assistant, item)}
-                          onToggle={(isOpen) => setOpenAssistantSelector(isOpen ? item.id : null)}
-                          disabled={specLoading}
-                          className="min-w-[180px]"
-                        />
-
+                        {!specGeneration.isGenerating(item.id) && !specGeneration.hasError(item.id) && (
+                          <AssistantSelector
+                            onAssistantSelect={(assistant) => handleAssistantSelect(assistant, item)}
+                            onToggle={(isOpen) => setOpenAssistantSelector(isOpen ? item.id : null)}
+                            disabled={specLoading}
+                            className="min-w-[180px]"
+                          />
+                        )}
                       </div>
                     </div>
                   </div>
@@ -639,6 +1019,20 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                       alt="AI Assistant" 
                       className="h-32 w-auto object-contain"
                     />
+                  </motion.button>
+                  
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      if (selectedFeedItem && selectedProject) {
+                        console.log('🔄 Manual refresh triggered')
+                        loadSpecification(selectedFeedItem, selectedProject)
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg border border-blue-500/30 hover:bg-blue-500/30 transition-all text-sm"
+                  >
+                    🔄 Refresh
                   </motion.button>
                   
                   <motion.button
@@ -745,10 +1139,30 @@ export const DefineStage: React.FC<DefineStageProps> = ({
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
                 <span className="text-white/40 text-2xl font-medium">•</span>
               </div>
-              <h3 className="text-lg font-medium text-yellow-400 mb-2">Select an idea to define</h3>
-              <p className="text-sm">
-                Choose an idea from the left to start creating its specification
-              </p>
+              {selectedFeedItem && specGeneration.isGenerating(selectedFeedItem) ? (
+                <>
+                  <h3 className="text-lg font-medium text-yellow-400 mb-2">Generating specification...</h3>
+                  <p className="text-sm mb-4">
+                    AI is creating the specification for this idea. You can navigate freely while it processes.
+                  </p>
+                  <SpecGenerationProgress
+                    itemId={selectedFeedItem}
+                    jobId={specGeneration.getGenerationStatus(selectedFeedItem)?.jobId || 0}
+                    provider={specGeneration.getGenerationStatus(selectedFeedItem)?.provider || 'claude'}
+                    onComplete={handleSpecGenerationComplete}
+                    onError={handleSpecGenerationError}
+                    onCancel={handleSpecGenerationCancel}
+                    className="max-w-md mx-auto"
+                  />
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-medium text-yellow-400 mb-2">Select an idea to define</h3>
+                  <p className="text-sm">
+                    Choose an idea from the left to start creating its specification
+                  </p>
+                </>
+              )}
             </div>
           </div>
         )}

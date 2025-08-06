@@ -274,8 +274,16 @@ class DefineAgent(BaseAgent):
             
             # Strategy 2: Fallback to project-level PRDs (BACKWARD COMPATIBILITY)
             if not prd:
+                # Convert project_id to UUID format for database query
+                import uuid
+                try:
+                    project_uuid = uuid.UUID(project_id)
+                except ValueError:
+                    # If not a valid UUID, generate one based on the string
+                    project_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, project_id)
+                
                 # Get the latest frozen PRD for this project
-                project_prd = PRD.query.filter_by(project_id=project_id, status='frozen')\
+                project_prd = PRD.query.filter_by(project_id=project_uuid, status='frozen')\
                                      .order_by(PRD.created_at.desc())\
                                      .first()
                 
@@ -285,7 +293,7 @@ class DefineAgent(BaseAgent):
                     logger.info(f"Using project-level frozen PRD {prd.id}")
                 else:
                     # Try to find any PRD (including drafts) for this project
-                    draft_prd = PRD.query.filter_by(project_id=project_id)\
+                    draft_prd = PRD.query.filter_by(project_id=project_uuid)\
                                         .order_by(PRD.created_at.desc())\
                                         .first()
                     if draft_prd:
@@ -389,7 +397,7 @@ class DefineAgent(BaseAgent):
         return context_data
     
     def _generate_specifications(self, idea_content: str, project_context: ProjectContext,
-                               context_data: Dict[str, Any], promoted_by: str) -> Optional[Dict[str, str]]:
+                               context_data: Dict[str, Any], promoted_by: str, provider: str = 'claude') -> Optional[Dict[str, str]]:
         """Generate comprehensive specifications using AI"""
         if not self.ai_broker:
             logger.warning("AI broker not available, cannot generate specifications")
@@ -1021,12 +1029,17 @@ ORIGINAL IDEA:
             # Retrieve context using pgvector with idea-specific PRD support
             context_data = self._retrieve_context(idea_content, event.project_id, project_context, event.aggregate_id)
             
-            # Generate specifications using Kiro-style approach
+            # Get provider from event (default to 'claude' for backward compatibility)
+            provider = getattr(event, 'provider', 'claude')
+            logger.info(f"🎯 Using provider from event: {provider.upper()}")
+            
+            # Generate specifications using Kiro-style approach with provider
             specifications = self._generate_specifications(
                 idea_content=idea_content,
                 project_context=project_context,
                 context_data=context_data,
-                promoted_by=event.promoted_by
+                promoted_by=event.promoted_by,
+                provider=provider
             )
             
             if not specifications:
@@ -1135,8 +1148,14 @@ ORIGINAL IDEA:
         If it has been cloned before, the existing path will be returned.
         """
         if not project_context or not project_context.repo_url:
-            logger.error("CRITICAL: No repository URL found in project context. Cannot proceed.")
-            raise ValueError("Repository URL is missing from the project context.")
+            logger.warning("No repository URL found in project context. Using current working directory.")
+            return os.getcwd()
+
+        # Check if repo_url is a valid git URL
+        repo_url = project_context.repo_url.strip()
+        if not self._is_valid_git_url(repo_url):
+            logger.warning(f"Invalid git URL '{repo_url}'. Using current working directory.")
+            return os.getcwd()
 
         try:
             import tempfile
@@ -1144,7 +1163,7 @@ ORIGINAL IDEA:
             from git import Repo
 
             # Create a consistent directory name from a hash of the repo URL
-            repo_hash = hashlib.md5(project_context.repo_url.encode()).hexdigest()
+            repo_hash = hashlib.md5(repo_url.encode()).hexdigest()
             clone_dir = os.path.join(tempfile.gettempdir(), f"sf_project_clone_{repo_hash}")
 
             if os.path.exists(clone_dir):
@@ -1153,17 +1172,49 @@ ORIGINAL IDEA:
                 return clone_dir
             
             # If the directory doesn't exist, clone the repository
-            logger.info(f"Cloning repository {project_context.repo_url} into {clone_dir}")
-            Repo.clone_from(project_context.repo_url, clone_dir, depth=1)
+            logger.info(f"Cloning repository {repo_url} into {clone_dir}")
+            Repo.clone_from(repo_url, clone_dir, depth=1)
             logger.info(f"Successfully cloned repository.")
             return clone_dir
 
         except ImportError:
             logger.error("GitPython is not installed. Please install it with 'pip install GitPython'.")
-            raise
+            logger.warning("Falling back to current working directory.")
+            return os.getcwd()
         except Exception as e:
             logger.error(f"Failed to get project repository path: {e}")
-            raise
+            logger.warning("Falling back to current working directory.")
+            return os.getcwd()
+    
+    def _is_valid_git_url(self, url: str) -> bool:
+        """Check if the URL is a valid git repository URL"""
+        if not url:
+            return False
+        
+        # Check for common git URL patterns
+        git_patterns = [
+            r'^https?://github\.com/.+/.+\.git$',
+            r'^https?://github\.com/.+/.+$',
+            r'^git@github\.com:.+/.+\.git$',
+            r'^https?://gitlab\.com/.+/.+\.git$',
+            r'^https?://gitlab\.com/.+/.+$',
+            r'^https?://bitbucket\.org/.+/.+\.git$',
+            r'^https?://bitbucket\.org/.+/.+$',
+            r'^https?://.+\.git$',
+            r'^git@.+:.+/.+\.git$'
+        ]
+        
+        import re
+        for pattern in git_patterns:
+            if re.match(pattern, url):
+                return True
+        
+        # If it looks like a GitHub shorthand (owner/repo), convert it
+        if re.match(r'^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$', url):
+            logger.info(f"Converting GitHub shorthand '{url}' to full URL")
+            return False  # We'll handle this conversion elsewhere if needed
+        
+        return False
 
     def _generate_design(self, requirements_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
         """Generate design.md. Try Claude Code SDK first, then fall back to AI Broker"""
@@ -1366,7 +1417,7 @@ Ensure the top-level items are the user stories, and the sub-tasks are the speci
             logger.error(f"Error generating tasks document: {e}")
             return None
     
-    def generate_design_document(self, spec_id: str, project_id: str, requirements_content: str) -> Optional[str]:
+    def generate_design_document(self, spec_id: str, project_id: str, requirements_content: str, provider: str = 'claude') -> Optional[str]:
         """Generate design document based on approved requirements"""
         if not self.ai_broker:
             logger.warning("AI broker not available, cannot generate design document")
@@ -1379,8 +1430,9 @@ Ensure the top-level items are the user stories, and the sub-tasks are the speci
             # Prepare context for design generation
             ai_context = self._prepare_design_context(requirements_content, project_context)
             
-            # Generate design document
-            design_content = self._generate_design(requirements_content, ai_context, project_context)
+            # Generate design document using specified provider
+            logger.info(f"🎯 Using provider: {provider.upper()} for design generation")
+            design_content = self._generate_design(requirements_content, ai_context, project_context, provider)
             
             return design_content
             
@@ -1388,7 +1440,7 @@ Ensure the top-level items are the user stories, and the sub-tasks are the speci
             logger.error(f"Failed to generate design document: {e}")
             return None
     
-    def generate_tasks_document(self, spec_id: str, project_id: str, requirements_content: str, design_content: str) -> Optional[str]:
+    def generate_tasks_document(self, spec_id: str, project_id: str, requirements_content: str, design_content: str, provider: str = 'claude') -> Optional[str]:
         """Generate tasks document based on approved requirements and design"""
         if not self.ai_broker:
             logger.warning("AI broker not available, cannot generate tasks document")
@@ -1401,8 +1453,9 @@ Ensure the top-level items are the user stories, and the sub-tasks are the speci
             # Prepare context for tasks generation
             ai_context = self._prepare_tasks_context(requirements_content, design_content, project_context)
             
-            # Generate tasks document
-            tasks_content = self._generate_tasks(requirements_content, design_content, ai_context, project_context)
+            # Generate tasks document using specified provider
+            logger.info(f"🎯 Using provider: {provider.upper()} for tasks generation")
+            tasks_content = self._generate_tasks(requirements_content, design_content, ai_context, project_context, provider)
             
             return tasks_content
             
@@ -1464,10 +1517,66 @@ Ensure the top-level items are the user stories, and the sub-tasks are the speci
         
         return "\n".join(context_parts)
     
-    def _generate_design(self, requirements_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
-        """Generate design.md using Claude Code SDK first, then AI Broker fallback"""
+    def _generate_design_with_model_garden(self, requirements_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
+        """Generate design document using Model Garden"""
         try:
-            # Try Claude Code SDK first as primary option
+            logger.info("🌟 Using Model Garden for design generation")
+            
+            # Import AI service for Model Garden integration
+            try:
+                from ..services.ai_service import AIService
+            except ImportError:
+                from services.ai_service import AIService
+            
+            ai_service = AIService()
+            
+            # Create design-specific prompt for Model Garden
+            design_prompt = f"""Create a comprehensive design document based on these requirements:
+
+{requirements_content}
+
+Generate a detailed design.md with:
+1. System Architecture Overview
+2. Key Components and APIs
+3. Database Design
+4. Integration Points
+5. Security Considerations
+6. Performance Requirements
+
+Context:
+{ai_context}
+
+Keep it professional and implementation-focused."""
+            
+            # Use Model Garden with Claude Opus 4 for high-quality design
+            result = ai_service.execute_model_garden_task(
+                instruction=design_prompt,
+                product_context={'requirements': requirements_content},
+                model='claude-opus-4',
+                role='developer'
+            )
+            
+            if result.get('success'):
+                logger.info("✅ Model Garden successfully generated design document")
+                return result.get('output', '')
+            else:
+                logger.error(f"❌ Model Garden design generation failed: {result.get('error')}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Model Garden design generation failed: {e}")
+            return None
+    
+    def _generate_design(self, requirements_content: str, ai_context: str, project_context: ProjectContext = None, provider: str = 'claude') -> Optional[str]:
+        """Generate design.md using specified provider"""
+        try:
+            logger.info(f"🎯 Design generation using provider: {provider.upper()}")
+            
+            if provider == 'model-garden':
+                # Use Model Garden directly
+                return self._generate_design_with_model_garden(requirements_content, ai_context, project_context)
+            
+            # Default to Claude Code SDK for 'claude' provider
             logger.info("Trying Claude Code SDK for design generation")
             try:
                 try:
@@ -1545,10 +1654,74 @@ Generate a concise design.md with system architecture, components, and integrati
             logger.error(f"Error generating design document: {e}")
             return None
     
-    def _generate_tasks(self, requirements_content: str, design_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
-        """Generate tasks.md using Claude Code SDK first, then AI Broker fallback"""
+    def _generate_tasks_with_model_garden(self, requirements_content: str, design_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
+        """Generate tasks document using Model Garden"""
         try:
-            # Try Claude Code SDK first as primary option
+            logger.info("🌟 Using Model Garden for tasks generation")
+            
+            # Import AI service for Model Garden integration
+            try:
+                from ..services.ai_service import AIService
+            except ImportError:
+                from services.ai_service import AIService
+            
+            ai_service = AIService()
+            
+            # Create tasks-specific prompt for Model Garden
+            tasks_prompt = f"""Based on the approved requirements and design, create a comprehensive implementation plan with actionable coding tasks.
+
+APPROVED REQUIREMENTS:
+{requirements_content}
+
+APPROVED DESIGN:
+{design_content}
+
+CONTEXT:
+{ai_context}
+
+Generate a detailed tasks.md document with:
+1. Specific coding tasks that can be executed
+2. References to files that need to be created or modified
+3. Test-driven development approach
+4. Incremental implementation steps
+5. Integration with existing codebase patterns
+6. Acceptance criteria for each task
+7. Dependencies between tasks
+
+Make each task actionable and specific to the codebase."""
+            
+            # Use Model Garden with Claude Opus 4 for high-quality task planning
+            result = ai_service.execute_model_garden_task(
+                instruction=tasks_prompt,
+                product_context={
+                    'requirements': requirements_content,
+                    'design': design_content
+                },
+                model='claude-opus-4',
+                role='developer'
+            )
+            
+            if result.get('success'):
+                logger.info("✅ Model Garden successfully generated tasks document")
+                return result.get('output', '')
+            else:
+                logger.error(f"❌ Model Garden tasks generation failed: {result.get('error')}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Model Garden tasks generation failed: {e}")
+            return None
+    
+    def _generate_tasks(self, requirements_content: str, design_content: str, ai_context: str, project_context: ProjectContext = None, provider: str = 'claude') -> Optional[str]:
+        """Generate tasks.md using specified provider"""
+        try:
+            logger.info(f"🎯 Tasks generation using provider: {provider.upper()}")
+            
+            if provider == 'model-garden':
+                # Use Model Garden directly
+                return self._generate_tasks_with_model_garden(requirements_content, design_content, ai_context, project_context)
+            
+            # Default to Claude Code SDK for 'claude' provider
             logger.info("Trying Claude Code SDK for tasks generation")
             try:
                 try:

@@ -158,7 +158,13 @@ def create_app(config_class=Config):
         return response
 
     db.init_app(app)
-    migrate.init_app(app, db)
+    
+    # Initialize migrations but don't auto-upgrade to avoid startup issues
+    try:
+        migrate.init_app(app, db)
+        app.logger.info("Database migrations initialized")
+    except Exception as e:
+        app.logger.warning(f"Migration initialization failed: {e} - continuing without migrations")
 
     if app.config.get('SQLALCHEMY_ENGINE_OPTIONS'):
         with app.app_context():
@@ -166,16 +172,14 @@ def create_app(config_class=Config):
 
     database.init_database_system(app, db, migrate)
 
-    # Automatically apply any pending database migrations to keep the schema in sync with the models
+    # Skip automatic database migrations to avoid startup issues
     with app.app_context():
         try:
-            migration_result = database.run_database_migration()
-            if migration_result.get('success'):
-                app.logger.info("Database migrations applied successfully")
-            else:
-                app.logger.warning(f"Database migration issue: {migration_result.get('message')}")
-        except Exception as migration_error:
-            app.logger.warning(f"Automatic database migration failed: {migration_error}")
+            # Just ensure tables exist without running migrations
+            db.create_all()
+            app.logger.info("Database tables created/verified successfully")
+        except Exception as e:
+            app.logger.warning(f"Database table creation failed: {e} - continuing anyway")
 
     cache_redis_url = f"redis://localhost:6379/{app.config['REDIS_CACHE_DB']}"
     distributed_cache.init_distributed_cache(redis_url=cache_redis_url, default_ttl=app.config['CACHE_DEFAULT_TTL'])
@@ -246,6 +250,18 @@ def create_app(config_class=Config):
         app.logger.info("AI agents initialized and started successfully")
     except Exception as e:
         app.logger.warning(f"AI agents initialization failed: {e}")
+
+    # Initialize Spec Generation Service
+    try:
+        from .services.spec_generation_service import init_spec_generation_service
+        init_spec_generation_service(app)
+        app.logger.info("Spec generation service initialized successfully")
+    except ImportError:
+        from services.spec_generation_service import init_spec_generation_service
+        init_spec_generation_service(app)
+        app.logger.info("Spec generation service initialized successfully")
+    except Exception as e:
+        app.logger.warning(f"Spec generation service initialization failed: {e}")
 
     # Initialize DefineAgent bridge
     try:

@@ -51,6 +51,22 @@ def github_webhook():
             except Exception as pr_error:
                 logger.error(f"Error processing GitHub PR event: {pr_error}")
                 pr_result = {'error': str(pr_error)}
+        elif event_type == 'pull_request_review':
+            try:
+                pr_result = handle_github_pr_review_event(payload)
+                if pr_result:
+                    logger.info(f"GitHub PR review event processed: {pr_result}")
+            except Exception as pr_error:
+                logger.error(f"Error processing GitHub PR review event: {pr_error}")
+                pr_result = {'error': str(pr_error)}
+        elif event_type == 'issue_comment':
+            try:
+                pr_result = handle_github_issue_comment_event(payload)
+                if pr_result:
+                    logger.info(f"GitHub issue comment event processed: {pr_result}")
+            except Exception as pr_error:
+                logger.error(f"Error processing GitHub issue comment event: {pr_error}")
+                pr_result = {'error': str(pr_error)}
         
         # Skip webhook service for now to avoid hanging
         webhook_result = {'status': 'skipped', 'reason': 'webhook_service_bypassed_for_testing'}
@@ -291,6 +307,251 @@ def handle_github_pr_event(payload):
         
     except Exception as e:
         logger.error(f"❌ Error in GitHub PR event handler: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {'error': str(e)}
+
+
+def handle_github_pr_review_event(payload):
+    """Handle GitHub pull request review events."""
+    logger.info("=== Starting GitHub PR review event handler ===")
+    
+    try:
+        action = payload.get('action')
+        review = payload.get('review', {})
+        pull_request = payload.get('pull_request', {})
+        
+        logger.info(f"PR review event - action: {action}")
+        
+        if not pull_request or not review:
+            logger.warning("GitHub PR review webhook missing pull_request or review data")
+            return {'error': 'Missing pull_request or review data'}
+        
+        pr_number = pull_request.get('number')
+        review_state = review.get('state')  # 'approved', 'changes_requested', 'commented'
+        review_body = review.get('body', '')
+        reviewer = review.get('user', {}).get('login', 'unknown')
+        
+        logger.info(f"PR review details - number: {pr_number}, state: {review_state}, reviewer: {reviewer}")
+        
+        # Import models
+        try:
+            from ..models.task import Task, TaskStatus
+            from ..models.base import db
+            logger.info("✅ Successfully imported task models")
+        except ImportError:
+            try:
+                from models.task import Task, TaskStatus
+                from models.base import db
+                logger.info("✅ Successfully imported task models (fallback)")
+            except ImportError as e:
+                logger.error(f"❌ Failed to import task models: {e}")
+                return {'error': f'Import error: {e}'}
+        
+        # Find task by PR number
+        task = None
+        try:
+            if pr_number:
+                task = Task.query.filter_by(pr_number=pr_number).first()
+                logger.info(f"Task search by PR number result: {task.id if task else 'None'}")
+        except Exception as db_error:
+            logger.error(f"❌ Database error finding task: {db_error}")
+            return {'error': f'Database error: {db_error}'}
+        
+        if not task:
+            logger.info(f"No task found for PR #{pr_number}")
+            return {
+                'action': action,
+                'pr_number': pr_number,
+                'updated': False,
+                'reason': 'No matching task found'
+            }
+        
+        logger.info(f"✅ Found task {task.id} for PR #{pr_number}")
+        
+        # Update task based on review state
+        task_updated = False
+        
+        try:
+            if action == 'submitted':
+                if review_state == 'approved':
+                    # PR was approved
+                    task.add_progress_message(f"✅ PR #{pr_number} approved by {reviewer}")
+                    task_updated = True
+                    logger.info(f"Task {task.id} updated with PR approval from {reviewer}")
+                
+                elif review_state == 'changes_requested':
+                    # Changes requested - move task to needs rework
+                    task.status = TaskStatus.NEEDS_REWORK
+                    task.add_progress_message(f"🔄 Changes requested by {reviewer}: {review_body[:100]}...")
+                    task_updated = True
+                    logger.info(f"Task {task.id} moved to NEEDS_REWORK (changes requested by {reviewer})")
+                
+                elif review_state == 'commented':
+                    # Just a comment
+                    task.add_progress_message(f"💬 Comment from {reviewer}: {review_body[:100]}...")
+                    task_updated = True
+                    logger.info(f"Task {task.id} updated with comment from {reviewer}")
+            
+            if task_updated:
+                db.session.commit()
+                logger.info(f"✅ Task {task.id} updated successfully")
+                
+                # Broadcast real-time update via WebSocket
+                try:
+                    from ..services.websocket_server import get_websocket_server
+                    ws_server = get_websocket_server()
+                    if ws_server:
+                        task_data = task.to_dict()
+                        ws_server.broadcast_task_progress(task.id, task_data)
+                        logger.info(f"Broadcasted task update for {task.id} via WebSocket")
+                except Exception as ws_error:
+                    logger.warning(f"Failed to broadcast WebSocket update: {ws_error}")
+                
+                return {
+                    'task_id': task.id,
+                    'action': action,
+                    'pr_number': pr_number,
+                    'review_state': review_state,
+                    'reviewer': reviewer,
+                    'updated': True
+                }
+            
+            return {
+                'task_id': task.id,
+                'action': action,
+                'pr_number': pr_number,
+                'updated': False,
+                'reason': 'No status change needed'
+            }
+            
+        except Exception as update_error:
+            logger.error(f"Error updating task {task.id}: {update_error}")
+            try:
+                db.session.rollback()
+            except:
+                pass
+            return {'error': f'Update failed: {update_error}'}
+        
+    except Exception as e:
+        logger.error(f"❌ Error in GitHub PR review event handler: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return {'error': str(e)}
+
+
+def handle_github_issue_comment_event(payload):
+    """Handle GitHub issue comment events (includes PR comments)."""
+    logger.info("=== Starting GitHub issue comment event handler ===")
+    
+    try:
+        action = payload.get('action')
+        comment = payload.get('comment', {})
+        issue = payload.get('issue', {})
+        
+        logger.info(f"Issue comment event - action: {action}")
+        
+        # Only handle comments on pull requests
+        if not issue.get('pull_request'):
+            logger.info("Issue comment is not on a pull request, ignoring")
+            return {'action': action, 'updated': False, 'reason': 'Not a PR comment'}
+        
+        if not comment:
+            logger.warning("GitHub issue comment webhook missing comment data")
+            return {'error': 'Missing comment data'}
+        
+        pr_number = issue.get('number')
+        comment_body = comment.get('body', '')
+        commenter = comment.get('user', {}).get('login', 'unknown')
+        
+        logger.info(f"PR comment details - number: {pr_number}, commenter: {commenter}")
+        
+        # Import models
+        try:
+            from ..models.task import Task, TaskStatus
+            from ..models.base import db
+            logger.info("✅ Successfully imported task models")
+        except ImportError:
+            try:
+                from models.task import Task, TaskStatus
+                from models.base import db
+                logger.info("✅ Successfully imported task models (fallback)")
+            except ImportError as e:
+                logger.error(f"❌ Failed to import task models: {e}")
+                return {'error': f'Import error: {e}'}
+        
+        # Find task by PR number
+        task = None
+        try:
+            if pr_number:
+                task = Task.query.filter_by(pr_number=pr_number).first()
+                logger.info(f"Task search by PR number result: {task.id if task else 'None'}")
+        except Exception as db_error:
+            logger.error(f"❌ Database error finding task: {db_error}")
+            return {'error': f'Database error: {db_error}'}
+        
+        if not task:
+            logger.info(f"No task found for PR #{pr_number}")
+            return {
+                'action': action,
+                'pr_number': pr_number,
+                'updated': False,
+                'reason': 'No matching task found'
+            }
+        
+        logger.info(f"✅ Found task {task.id} for PR #{pr_number}")
+        
+        # Update task with comment
+        task_updated = False
+        
+        try:
+            if action in ['created', 'edited']:
+                # Add comment to task progress
+                task.add_progress_message(f"💬 {commenter}: {comment_body[:100]}...")
+                task_updated = True
+                logger.info(f"Task {task.id} updated with comment from {commenter}")
+            
+            if task_updated:
+                db.session.commit()
+                logger.info(f"✅ Task {task.id} updated successfully")
+                
+                # Broadcast real-time update via WebSocket
+                try:
+                    from ..services.websocket_server import get_websocket_server
+                    ws_server = get_websocket_server()
+                    if ws_server:
+                        task_data = task.to_dict()
+                        ws_server.broadcast_task_progress(task.id, task_data)
+                        logger.info(f"Broadcasted task update for {task.id} via WebSocket")
+                except Exception as ws_error:
+                    logger.warning(f"Failed to broadcast WebSocket update: {ws_error}")
+                
+                return {
+                    'task_id': task.id,
+                    'action': action,
+                    'pr_number': pr_number,
+                    'commenter': commenter,
+                    'updated': True
+                }
+            
+            return {
+                'task_id': task.id,
+                'action': action,
+                'pr_number': pr_number,
+                'updated': False,
+                'reason': 'No status change needed'
+            }
+            
+        except Exception as update_error:
+            logger.error(f"Error updating task {task.id}: {update_error}")
+            try:
+                db.session.rollback()
+            except:
+                pass
+            return {'error': f'Update failed: {update_error}'}
+        
+    except Exception as e:
+        logger.error(f"❌ Error in GitHub issue comment event handler: {e}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         return {'error': str(e)}

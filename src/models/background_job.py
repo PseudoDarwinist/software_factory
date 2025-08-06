@@ -18,6 +18,7 @@ class BackgroundJob(db.Model):
     status = db.Column(db.String(20), default='pending')
     progress = db.Column(db.Integer, default=0)
     result = db.Column(JSON)
+    job_metadata = db.Column(JSON)  # For storing job-specific metadata (renamed from metadata to avoid SQLAlchemy conflict)
     error_message = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     started_at = db.Column(db.DateTime)
@@ -36,6 +37,9 @@ class BackgroundJob(db.Model):
     TYPE_SYSTEM_MAP_GENERATION = 'system_map_generation'
     TYPE_AI_ANALYSIS = 'ai_analysis'
     TYPE_DATA_MIGRATION = 'data_migration'
+    TYPE_SPEC_GENERATION = 'spec_generation'
+    TYPE_DESIGN_GENERATION = 'design_generation'
+    TYPE_TASKS_GENERATION = 'tasks_generation'
     
     def __repr__(self):
         return f'<BackgroundJob {self.id}: {self.job_type} ({self.status})>'
@@ -49,6 +53,7 @@ class BackgroundJob(db.Model):
             'status': self.status,
             'progress': self.progress,
             'result': self.result,
+            'metadata': self.job_metadata,  # Expose as 'metadata' in API but store as 'job_metadata'
             'error_message': self.error_message,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'started_at': self.started_at.isoformat() if self.started_at else None,
@@ -61,7 +66,8 @@ class BackgroundJob(db.Model):
     def create(cls, job_type, project_id=None):
         """Create a new background job"""
         if job_type not in [cls.TYPE_REPOSITORY_PROCESSING, cls.TYPE_SYSTEM_MAP_GENERATION, 
-                           cls.TYPE_AI_ANALYSIS, cls.TYPE_DATA_MIGRATION]:
+                           cls.TYPE_AI_ANALYSIS, cls.TYPE_DATA_MIGRATION, cls.TYPE_SPEC_GENERATION,
+                           cls.TYPE_DESIGN_GENERATION, cls.TYPE_TASKS_GENERATION]:
             raise ValueError(f"Invalid job type: {job_type}")
         
         job = cls(

@@ -280,6 +280,126 @@ class GitHubPRService:
                 'success': False,
                 'error': error_msg
             }
+    
+    def merge_pull_request(self, repo_url: str, github_token: str, pr_number: int, 
+                          merge_method: str = "squash", commit_title: str = None, 
+                          commit_message: str = None) -> Dict[str, Any]:
+        """
+        Merge a pull request on GitHub
+        
+        Args:
+            repo_url: Repository URL
+            github_token: GitHub access token
+            pr_number: PR number to merge
+            merge_method: Merge method - 'merge', 'squash', or 'rebase' (default: squash)
+            commit_title: Custom commit title (optional)
+            commit_message: Custom commit message (optional)
+        
+        Returns:
+            Dict with merge result
+        """
+        logger.info(f"🔧 GITHUB SERVICE - merge_pull_request called")
+        logger.info(f"   - Repo URL: {repo_url}")
+        logger.info(f"   - PR Number: {pr_number}")
+        logger.info(f"   - Merge Method: {merge_method}")
+        logger.info(f"   - Token: {github_token[:10]}... (length: {len(github_token)})")
+        
+        try:
+            logger.info(f"🔍 Parsing repository URL...")
+            owner, repo = self._parse_repo_url(repo_url)
+            logger.info(f"   - Owner: {owner}")
+            logger.info(f"   - Repo: {repo}")
+            
+            # Prepare merge data
+            merge_data = {
+                "merge_method": merge_method
+            }
+            
+            if commit_title:
+                merge_data["commit_title"] = commit_title
+            if commit_message:
+                merge_data["commit_message"] = commit_message
+            
+            logger.info(f"📦 Prepared merge data: {merge_data}")
+            
+            # Make API request
+            headers = {
+                'Authorization': f'token {github_token}',
+                'Accept': 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json'
+            }
+            
+            url = f"{self.api_base}/repos/{owner}/{repo}/pulls/{pr_number}/merge"
+            logger.info(f"🌐 GitHub API URL: {url}")
+            logger.info(f"📋 Request headers: {dict(headers)}")
+            
+            logger.info(f"🚀 Making PUT request to GitHub API...")
+            response = requests.put(url, json=merge_data, headers=headers, timeout=30)
+            
+            logger.info(f"📨 GitHub API Response:")
+            logger.info(f"   - Status Code: {response.status_code}")
+            logger.info(f"   - Response Headers: {dict(response.headers)}")
+            logger.info(f"   - Response Text: {response.text[:500]}...")
+            
+            if response.status_code == 200:
+                merge_info = response.json()
+                logger.info(f"PR #{pr_number} merged successfully: {merge_info.get('sha', 'unknown sha')}")
+                
+                return {
+                    'success': True,
+                    'merged': True,
+                    'sha': merge_info.get('sha'),
+                    'message': merge_info.get('message', 'Pull request merged successfully'),
+                    'pr_number': pr_number
+                }
+            elif response.status_code == 405:
+                # PR cannot be merged (conflicts, checks failing, etc.)
+                error_data = response.json()
+                error_msg = error_data.get('message', 'Pull request cannot be merged')
+                logger.warning(f"PR #{pr_number} cannot be merged: {error_msg}")
+                
+                return {
+                    'success': False,
+                    'merged': False,
+                    'error': error_msg,
+                    'status_code': response.status_code,
+                    'pr_number': pr_number
+                }
+            elif response.status_code == 409:
+                # PR already merged or closed
+                error_data = response.json()
+                error_msg = error_data.get('message', 'Pull request is already merged or closed')
+                logger.info(f"PR #{pr_number} already merged or closed: {error_msg}")
+                
+                return {
+                    'success': False,
+                    'merged': False,
+                    'error': error_msg,
+                    'status_code': response.status_code,
+                    'pr_number': pr_number
+                }
+            else:
+                error_msg = f"Failed to merge PR: {response.status_code} - {response.text}"
+                logger.error(error_msg)
+                
+                return {
+                    'success': False,
+                    'merged': False,
+                    'error': error_msg,
+                    'status_code': response.status_code,
+                    'pr_number': pr_number
+                }
+                
+        except Exception as e:
+            error_msg = f"Error merging PR: {str(e)}"
+            logger.error(error_msg)
+            
+            return {
+                'success': False,
+                'merged': False,
+                'error': error_msg,
+                'pr_number': pr_number
+            }
 
 
 # Singleton instance

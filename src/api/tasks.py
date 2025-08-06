@@ -308,36 +308,148 @@ def start_task(task_id):
 @tasks_bp.route('/<task_id>/approve', methods=['POST'])
 def approve_task(task_id):
     """
-    Approve a task in review status
+    Approve a task in review status and merge its PR
     POST /api/tasks/:id/approve
     Body: { approvedBy: string }
     """
+    logger.info(f"🚀 APPROVE TASK STARTED - Task ID: {task_id}")
+    
     try:
         data = request.get_json()
         approved_by = data.get('approvedBy', 'api_user') if data else 'api_user'
+        logger.info(f"📝 Approval request by: {approved_by}")
         
         # Look up task
         task = Task.query.get(task_id)
         if not task:
+            logger.error(f"❌ Task not found: {task_id}")
             return jsonify({'error': 'Task not found'}), 404
+        
+        logger.info(f"✅ Task found: {task.title} (Status: {task.status.value})")
+        logger.info(f"📋 Task details - PR: #{task.pr_number}, Project: {task.project_id}")
         
         # Check if task can be approved
         if task.status != TaskStatus.REVIEW:
+            logger.warning(f"⚠️ Task cannot be approved - Current status: {task.status.value}")
             return jsonify({'error': f'Task cannot be approved. Current status: {task.status.value}'}), 400
         
+        # If task has a PR, try to merge it
+        merge_result = None
+        logger.info(f"🔍 Checking PR merge conditions...")
+        logger.info(f"   - PR Number: {task.pr_number}")
+        logger.info(f"   - Has Project: {task.project is not None}")
+        
+        if task.project:
+            logger.info(f"   - Project Name: {task.project.name}")
+            logger.info(f"   - Repo URL: {task.project.repo_url}")
+            logger.info(f"   - Has GitHub Token: {bool(task.project.github_token)}")
+            if task.project.github_token:
+                logger.info(f"   - GitHub Token Length: {len(task.project.github_token)} chars")
+        
+        if task.pr_number and task.project and task.project.github_token:
+            logger.info(f"🔄 All conditions met - Starting PR merge process...")
+            try:
+                try:
+                    from services.github_pr_service import get_github_pr_service
+                except ImportError:
+                    # Fallback to relative import for testing
+                    from ..services.github_pr_service import get_github_pr_service
+                logger.info(f"✅ GitHub PR service imported successfully")
+                
+                github_service = get_github_pr_service()
+                logger.info(f"✅ GitHub service instance created")
+                
+                # Get repository URL from project
+                repo_url = task.project.repo_url
+                if not repo_url:
+                    logger.warning(f"❌ Task {task_id} has PR but project has no repository URL")
+                else:
+                    logger.info(f"🔗 Repository URL: {repo_url}")
+                    logger.info(f"🔑 Using GitHub token: {task.project.github_token[:10]}...")
+                    
+                    task.add_progress_message("🔄 Merging pull request...", 90)
+                    
+                    logger.info(f"📞 Calling GitHub API to merge PR #{task.pr_number}")
+                    merge_result = github_service.merge_pull_request(
+                        repo_url=repo_url,
+                        github_token=task.project.github_token,
+                        pr_number=task.pr_number,
+                        merge_method="squash",  # Default to squash merge
+                        commit_title=f"Merge PR #{task.pr_number}: {task.title}",
+                        commit_message=f"Task {task.task_number} completed and approved by {approved_by}"
+                    )
+                    
+                    logger.info(f"📊 GitHub API Response: {merge_result}")
+                    
+                    if merge_result['success']:
+                        logger.info(f"🎉 SUCCESS - PR #{task.pr_number} merged successfully!")
+                        logger.info(f"   - Merge SHA: {merge_result.get('sha', 'N/A')}")
+                        task.add_progress_message(f"✅ Pull request #{task.pr_number} merged successfully!", 95)
+                    else:
+                        # PR merge failed, but we can still approve the task
+                        error_msg = merge_result.get('error', 'Unknown merge error')
+                        logger.error(f"❌ PR MERGE FAILED for task {task_id}")
+                        logger.error(f"   - Error: {error_msg}")
+                        logger.error(f"   - Status Code: {merge_result.get('status_code', 'N/A')}")
+                        logger.error(f"   - Full Response: {merge_result}")
+                        
+                        task.add_progress_message(f"⚠️ PR merge failed: {error_msg}", 90)
+                        
+                        # Return error if merge failed
+                        return jsonify({
+                            'error': f'Failed to merge PR: {error_msg}',
+                            'merge_result': merge_result
+                        }), 400
+                        
+            except ImportError as e:
+                logger.error(f"💥 IMPORT ERROR - Failed to import GitHub PR service: {e}")
+                logger.error(f"   - This means the GitHub service module is missing or broken")
+                task.add_progress_message("⚠️ GitHub service unavailable, task approved without PR merge", 90)
+            except Exception as e:
+                logger.error(f"💥 UNEXPECTED ERROR merging PR for task {task_id}: {e}")
+                logger.error(f"   - Exception Type: {type(e).__name__}")
+                logger.error(f"   - Exception Details: {str(e)}")
+                import traceback
+                logger.error(f"   - Full Traceback: {traceback.format_exc()}")
+                
+                task.add_progress_message(f"⚠️ PR merge error: {str(e)}", 90)
+                
+                # Return error if merge failed
+                return jsonify({
+                    'error': f'Failed to merge PR: {str(e)}',
+                    'details': str(e)
+                }), 500
+        else:
+            logger.warning(f"⚠️ SKIPPING PR MERGE - Missing requirements:")
+            if not task.pr_number:
+                logger.warning(f"   - No PR number found")
+            if not task.project:
+                logger.warning(f"   - No project found")
+            elif not task.project.github_token:
+                logger.warning(f"   - No GitHub token in project")
+        
         # Mark task as completed
+        logger.info(f"✅ Marking task as completed...")
         task.complete_task(completed_by=approved_by, pr_url=task.pr_url)
         
         # Add completion message
         task.add_progress_message("✅ Task approved and marked as complete!", 100)
         
-        logger.info(f"Task {task_id} approved by {approved_by}")
+        logger.info(f"🎯 TASK APPROVAL COMPLETE - Task {task_id} approved by {approved_by}")
         
-        return jsonify({
+        response_data = {
             'message': 'Task approved successfully',
             'status': 'done',
             'approvedBy': approved_by
-        }), 200
+        }
+        
+        # Include merge result if available
+        if merge_result:
+            response_data['merge_result'] = merge_result
+            logger.info(f"📊 Including merge result in response: {merge_result}")
+        
+        logger.info(f"📤 Sending success response: {response_data}")
+        return jsonify(response_data), 200
         
     except SQLAlchemyError as e:
         logger.error(f"Database error approving task {task_id}: {e}")

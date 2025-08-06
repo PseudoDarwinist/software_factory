@@ -58,7 +58,7 @@ class KiroIntegrationService:
         """
         # TEMPORARILY DISABLED DUE TO INFINITE LOOP ISSUE
         # TODO: Fix the frontend loop before re-enabling
-        logger.warning("Kiro integration temporarily disabled due to infinite loop issue")
+        # Silently return False to avoid log spam
         return False
         
         # Original code commented out:

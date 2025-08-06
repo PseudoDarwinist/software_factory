@@ -33,7 +33,8 @@ export const BuildStage: React.FC<BuildStageProps> = ({
   onStageChange
 }) => {
   const [tasks, setTasks] = useState<Task[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [socket, setSocket] = useState<Socket | null>(null)
@@ -47,7 +48,6 @@ export const BuildStage: React.FC<BuildStageProps> = ({
     if (!selectedProject) return
 
     try {
-      setLoading(true)
       setError(null)
       
       const tasksData = await missionControlApi.getTasks(selectedProject)
@@ -65,7 +65,7 @@ export const BuildStage: React.FC<BuildStageProps> = ({
       console.error('Error fetching tasks:', err)
       setError(err instanceof Error ? err.message : 'Failed to fetch tasks')
     } finally {
-      setLoading(false)
+      setInitialLoading(false)
     }
   }, [selectedProject, selectedTask])
 
@@ -175,26 +175,80 @@ export const BuildStage: React.FC<BuildStageProps> = ({
   }, [])
 
   // Handle task approval
+  const [approvingTaskId, setApprovingTaskId] = useState<string | null>(null)
+  const [approveError, setApproveError] = useState<string | null>(null)
+  
   const handleApproveTask = useCallback(async (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId)
+    console.log('🚀 FRONTEND - Approve button clicked')
+    console.log(`   - Task ID: ${taskId}`)
+    console.log(`   - Task Title: ${task?.title}`)
+    console.log(`   - Task Status: ${task?.status}`)
+    console.log(`   - PR URL: ${task?.pr_url}`)
+    
     try {
-      console.log('Approving task:', taskId)
+      setApprovingTaskId(taskId)
+      setApproveError(null)
+      
+      console.log('📞 Calling API to approve task...')
+      const startTime = Date.now()
+      
       await missionControlApi.approveTask(taskId, 'user')
+      
+      const endTime = Date.now()
+      console.log(`✅ API call completed in ${endTime - startTime}ms`)
+      
+      // Show success message
+      if (task) {
+        console.log(`🎉 SUCCESS - Task "${task.title}" approved and PR merged successfully!`)
+      }
+      
+      console.log('🔄 Refreshing tasks...')
       await fetchTasks() // Refresh tasks
+      console.log('✅ Tasks refreshed')
+      
     } catch (err) {
-      console.error('Error approving task:', err)
+      console.error('💥 FRONTEND ERROR approving task:', err)
+      console.error('   - Error type:', typeof err)
+      console.error('   - Error message:', err instanceof Error ? err.message : 'Unknown error')
+      console.error('   - Full error object:', err)
+      
+      const errorMessage = err instanceof Error ? err.message : 'Failed to approve task'
+      setApproveError(errorMessage)
+      
+      // Show error to user
+      alert(`Failed to approve task: ${errorMessage}`)
+    } finally {
+      setApprovingTaskId(null)
+      console.log('🏁 Approve task process completed')
     }
-  }, [fetchTasks])
+  }, [fetchTasks, tasks])
 
   // Handle task retry
+  const [retryingTaskId, setRetryingTaskId] = useState<string | null>(null)
+  
   const handleRetryTask = useCallback(async (taskId: string) => {
     try {
+      setRetryingTaskId(taskId)
+      setApproveError(null) // Clear any previous errors
+      
       const task = tasks.find(t => t.id === taskId)
       if (task && task.agent) {
+        console.log('Retrying task:', taskId, 'with agent:', task.agent)
         await missionControlApi.retryTask(taskId, task.agent)
+        
+        console.log(`🔄 Task "${task.title}" retry initiated successfully!`)
         await fetchTasks() // Refresh tasks
       }
     } catch (err) {
       console.error('Error retrying task:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Failed to retry task'
+      setApproveError(errorMessage)
+      
+      // Show error to user
+      alert(`Failed to retry task: ${errorMessage}`)
+    } finally {
+      setRetryingTaskId(null)
     }
   }, [tasks, fetchTasks])
 
@@ -229,14 +283,22 @@ export const BuildStage: React.FC<BuildStageProps> = ({
     }
   }, [])
 
-  if (loading) {
+  if (initialLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-white/20 border-t-white/80 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white/60">Loading build tasks...</p>
+      <GlassBackground variant="stage" className="h-full">
+        <div className="flex flex-col p-6 space-y-4 h-full">
+          <div className="flex-shrink-0">
+            <h1 className="text-2xl font-bold text-yellow-400 mb-2">Build</h1>
+            <p className="text-white/60">Monitor & Review Dashboard</p>
+          </div>
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <div className="w-8 h-8 border-2 border-white/20 border-t-white/80 rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-white/60">Loading build tasks...</p>
+            </div>
+          </div>
         </div>
-      </div>
+      </GlassBackground>
     )
   }
 
@@ -434,20 +496,55 @@ export const BuildStage: React.FC<BuildStageProps> = ({
                       </a>
                     </div>
                     
+                    {/* Error Display */}
+                    {approveError && (
+                      <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg">
+                        <p className="text-red-300 text-sm">
+                          <strong>Approval Failed:</strong> {approveError}
+                        </p>
+                      </div>
+                    )}
+                    
                     <div className="flex space-x-2">
                       {selectedTask.status === 'review' && (
                         <>
                           <button
                             onClick={() => handleApproveTask(selectedTask.id)}
-                            className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                            disabled={approvingTaskId === selectedTask.id}
+                            className={clsx(
+                              "flex-1 px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center",
+                              approvingTaskId === selectedTask.id
+                                ? "bg-green-600/50 text-white/70 cursor-not-allowed"
+                                : "bg-green-600 hover:bg-green-700 text-white"
+                            )}
                           >
-                            Approve
+                            {approvingTaskId === selectedTask.id ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                                Merging PR...
+                              </>
+                            ) : (
+                              'Approve & Merge'
+                            )}
                           </button>
                           <button
                             onClick={() => handleRetryTask(selectedTask.id)}
-                            className="flex-1 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                            disabled={approvingTaskId === selectedTask.id || retryingTaskId === selectedTask.id}
+                            className={clsx(
+                              "flex-1 px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center",
+                              (approvingTaskId === selectedTask.id || retryingTaskId === selectedTask.id)
+                                ? "bg-orange-600/50 text-white/70 cursor-not-allowed"
+                                : "bg-orange-600 hover:bg-orange-700 text-white"
+                            )}
                           >
-                            Retry
+                            {retryingTaskId === selectedTask.id ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                                Retrying...
+                              </>
+                            ) : (
+                              'Retry'
+                            )}
                           </button>
                         </>
                       )}
@@ -455,9 +552,22 @@ export const BuildStage: React.FC<BuildStageProps> = ({
                       {selectedTask.status === 'failed' && (
                         <button
                           onClick={() => handleRetryTask(selectedTask.id)}
-                          className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                          disabled={retryingTaskId === selectedTask.id}
+                          className={clsx(
+                            "w-full px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center",
+                            retryingTaskId === selectedTask.id
+                              ? "bg-red-600/50 text-white/70 cursor-not-allowed"
+                              : "bg-red-600 hover:bg-red-700 text-white"
+                          )}
                         >
-                          Retry
+                          {retryingTaskId === selectedTask.id ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                              Retrying...
+                            </>
+                          ) : (
+                            'Retry'
+                          )}
                         </button>
                       )}
                     </div>

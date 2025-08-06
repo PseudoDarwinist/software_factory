@@ -123,6 +123,7 @@ class BackgroundJobManager:
         self.job_handlers[BackgroundJob.TYPE_SYSTEM_MAP_GENERATION] = self._handle_system_map_generation
         self.job_handlers[BackgroundJob.TYPE_AI_ANALYSIS] = self._handle_ai_analysis
         self.job_handlers[BackgroundJob.TYPE_DATA_MIGRATION] = self._handle_data_migration
+        # Spec generation will be registered by SpecGenerationService
     
     def submit_job(self, job_type: str, project_id: int = None, **kwargs) -> int:
         """

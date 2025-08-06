@@ -23,6 +23,7 @@ class TaskStatus(Enum):
     REVIEW = "review"
     DONE = "done"
     FAILED = "failed"
+    NEEDS_REWORK = "needs_rework"
 
 
 class TaskPriority(Enum):
@@ -244,7 +245,13 @@ class Task(db.Model):
         self._broadcast_progress_update()
         
         # Check for tasks that were blocked by this task and notify them
-        self._check_and_notify_dependent_tasks()
+        try:
+            self._check_and_notify_dependent_tasks()
+        except Exception as e:
+            # Log but don't fail the completion
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to notify dependent tasks: {e}")
     
     def assign_to_user(self, user_id: str, assigned_by: str):
         """Assign task to a user"""
@@ -337,10 +344,13 @@ class Task(db.Model):
     def _check_and_notify_dependent_tasks(self):
         """Check for tasks that depend on this task and notify them of status change"""
         try:
-            # Find tasks that depend on this task
-            dependent_tasks = Task.query.filter(
-                Task.depends_on.contains([self.id])
-            ).all()
+            # Get all tasks in the same project and check their dependencies manually
+            all_tasks = Task.query.filter_by(project_id=self.project_id).all()
+            dependent_tasks = []
+            
+            for task in all_tasks:
+                if task.depends_on and self.id in task.depends_on:
+                    dependent_tasks.append(task)
             
             # Import here to avoid circular imports
             try:
@@ -549,3 +559,16 @@ class Task(db.Model):
             'blocked_tasks': blocked_count,
             'unblocked_tasks': unblocked_count
         }
+    
+    @property
+    def project(self):
+        """Get the associated MissionControlProject"""
+        if not hasattr(self, '_project'):
+            from .mission_control_project import MissionControlProject
+            self._project = MissionControlProject.query.get(self.project_id)
+        return self._project
+    
+    @property 
+    def repository_url(self):
+        """Get the repository URL from the associated project"""
+        return self.project.repo_url if self.project else None
