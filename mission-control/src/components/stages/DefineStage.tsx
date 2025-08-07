@@ -24,7 +24,7 @@ import { LiquidCard } from '@/components/core/LiquidCard'
 import { missionControlApi } from '@/services/api/missionControlApi'
 import { SpecWorkflowEditor } from './SpecWorkflowEditor'
 import { AssistantSelector, type AssistantType } from '@/components/AssistantSelector'
-import { KiroWorkflowManager, type GeneratedSpecs } from '@/components/KiroWorkflowManager'
+
 import { SpecGenerationProgress } from '@/components/SpecGenerationProgress'
 import { useSpecGeneration } from '@/hooks/useSpecGeneration'
 import type { FeedItem, SDLCStage } from '@/types'
@@ -95,8 +95,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
   const [showProgressiveEditor, setShowProgressiveEditor] = useState(false)
   const [selectedFeedItemForSpec, setSelectedFeedItemForSpec] = useState<FeedItem | null>(null)
   const [selectedAssistant, setSelectedAssistant] = useState<AssistantType>('claude')
-  const [showKiroWorkflow, setShowKiroWorkflow] = useState(false)
-  const [kiroFeedItem, setKiroFeedItem] = useState<FeedItem | null>(null)
+
   const [tasksStreamingContent, setTasksStreamingContent] = useState<string>('')
   const [tasksGenerating, setTasksGenerating] = useState(false)
 
@@ -140,6 +139,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
 
   // Add debouncing to prevent rapid successive calls
   const loadSpecificationRef = useRef<{ itemId: string; projectId: string; timestamp: number } | null>(null)
+  const reloadTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
   const loadSpecification = useCallback(async (itemId: string, projectId: string) => {
     const now = Date.now()
@@ -513,47 +513,10 @@ export const DefineStage: React.FC<DefineStageProps> = ({
       } catch (error) {
         console.error('Failed to start Model Garden spec generation:', error)
       }
-    } else if (assistant === 'kiro') {
-      // Start Kiro step-by-step workflow (currently disabled)
-      setKiroFeedItem(feedItem)
-      setShowKiroWorkflow(true)
     }
   }
 
-  const handleKiroWorkflowComplete = async (specs: GeneratedSpecs) => {
-    if (!kiroFeedItem || !selectedProject) return
 
-    try {
-      setSpecLoading(true)
-      setSpecError(null)
-
-      // Create specification with Kiro-generated content
-      const result = await missionControlApi.createSpecification(kiroFeedItem.id, selectedProject)
-      
-      // Update each artifact with the generated content
-      await Promise.all([
-        missionControlApi.updateSpecificationArtifact(result.spec_id, selectedProject, 'requirements', specs.requirements),
-        missionControlApi.updateSpecificationArtifact(result.spec_id, selectedProject, 'design', specs.design),
-        missionControlApi.updateSpecificationArtifact(result.spec_id, selectedProject, 'tasks', specs.tasks)
-      ])
-
-      // Load the newly created specification
-      await loadSpecification(kiroFeedItem.id, selectedProject)
-      
-      // Select this feed item
-      onFeedItemSelect(kiroFeedItem.id)
-      
-      // Close Kiro workflow
-      setShowKiroWorkflow(false)
-      setKiroFeedItem(null)
-      
-    } catch (error) {
-      console.error('Failed to save Kiro specifications:', error)
-      setSpecError('Failed to save Kiro specifications')
-    } finally {
-      setSpecLoading(false)
-    }
-  }
 
   // Handle async spec generation completion
   const handleSpecGenerationComplete = useCallback(async (specId: string) => {
@@ -635,7 +598,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
       }
     })
 
-    // Listen for design generation completion
+    // Listen for design and tasks generation completion (requirements handled by useSpecGeneration)
     socket.on('spec.generation.complete', (data: {
       job_id: number
       item_id: string
@@ -643,36 +606,30 @@ export const DefineStage: React.FC<DefineStageProps> = ({
       generation_type?: string
       artifact_data?: any
     }) => {
-      console.log('🎉 Received spec.generation.complete event:', data)
-      console.log('🔍 Event matching check:')
-      console.log('  data.generation_type:', data.generation_type)
-      console.log('  data.item_id:', data.item_id)
-      console.log('  data.spec_id:', data.spec_id)
-      
+      // Only handle design and tasks completion here (requirements handled by useSpecGeneration hook)
       if (data.generation_type === 'design' || data.generation_type === 'tasks') {
         console.log(`${data.generation_type} generation completed for spec:`, data.spec_id)
-        console.log('Current state:', { selectedFeedItem, selectedProject, currentSpecId: currentSpec?.spec_id })
         
         // Clean up localStorage progress
         const storageKey = `generation_progress_${data.item_id}_${data.generation_type}`
         localStorage.removeItem(storageKey)
         
-        // Always reload if this is the currently selected item
+        // Reload specification if this is the currently selected item (with debouncing)
         if (selectedFeedItemRef.current && selectedProjectRef.current && currentSpecRef.current && currentSpecRef.current.spec_id === data.spec_id) {
-          console.log('✅ Conditions met - reloading specification')
-          loadSpecification(selectedFeedItemRef.current, selectedProjectRef.current)
-        } else {
-          console.log('❌ Conditions not met for reloading specification')
-          console.log('  selectedFeedItem:', selectedFeedItemRef.current)
-          console.log('  selectedProject:', selectedProjectRef.current)
-          console.log('  currentSpec.spec_id:', currentSpecRef.current?.spec_id)
-          console.log('  data.spec_id:', data.spec_id)
+          console.log('✅ Scheduling specification reload after design/tasks completion')
           
-          // Show a notification that generation completed for a different item
-          console.log(`🎉 ${data.generation_type} generation completed for a different item: ${data.item_id}`)
-          // TODO: Add toast notification here
+          // Clear any existing timeout
+          if (reloadTimeoutRef.current) {
+            clearTimeout(reloadTimeoutRef.current)
+          }
+          
+          // Debounce the reload to prevent flickering
+          reloadTimeoutRef.current = setTimeout(() => {
+            loadSpecification(selectedFeedItemRef.current!, selectedProjectRef.current!)
+          }, 500) // 500ms debounce
         }
       }
+      // Ignore requirements completion - handled by useSpecGeneration hook
     })
 
     // Listen for design and tasks generation failures
@@ -696,10 +653,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
     }
   }, []) // Empty dependency array - create socket once and use refs for dynamic values
 
-  const handleKiroWorkflowClose = () => {
-    setShowKiroWorkflow(false)
-    setKiroFeedItem(null)
-  }
+
 
   const openProgressiveEditor = (feedItem: FeedItem) => {
     setSelectedFeedItemForSpec(feedItem)
@@ -1193,18 +1147,7 @@ export const DefineStage: React.FC<DefineStageProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Kiro Workflow Manager */}
-      <AnimatePresence>
-        {showKiroWorkflow && kiroFeedItem && selectedProject && (
-          <KiroWorkflowManager
-            projectId={selectedProject}
-            ideaContent={kiroFeedItem.summary || kiroFeedItem.title}
-            feedItem={kiroFeedItem}
-            onComplete={handleKiroWorkflowComplete}
-            onClose={handleKiroWorkflowClose}
-          />
-        )}
-      </AnimatePresence>
+
     </div>
   )
 }

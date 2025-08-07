@@ -28,6 +28,62 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
     psutil = None
+
+# Redis-based event queue for phase transitions
+PENDING_EVENTS_KEY = 'phase_transition_events'
+
+def add_pending_event(event_data):
+    """Add an event to the pending events queue using Redis"""
+    try:
+        import redis
+        import json
+        
+        # Connect to Redis
+        r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        
+        # Add timestamp
+        event_data['timestamp'] = datetime.utcnow().isoformat()
+        
+        # Add event to Redis list
+        r.lpush(PENDING_EVENTS_KEY, json.dumps(event_data))
+        
+        # Keep only last 10 events to prevent memory issues
+        r.ltrim(PENDING_EVENTS_KEY, 0, 9)
+        
+    except Exception as e:
+        # Fallback to logging if Redis fails
+        logger.warning(f"Failed to add event to Redis queue: {e}")
+
+def get_and_clear_pending_events():
+    """Get all pending events and clear the queue using Redis"""
+    try:
+        import redis
+        import json
+        
+        # Connect to Redis
+        r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        
+        # Get all events and clear the list atomically
+        pipe = r.pipeline()
+        pipe.lrange(PENDING_EVENTS_KEY, 0, -1)
+        pipe.delete(PENDING_EVENTS_KEY)
+        results = pipe.execute()
+        
+        # Parse JSON events
+        events = []
+        for event_json in results[0]:
+            try:
+                events.append(json.loads(event_json))
+            except json.JSONDecodeError:
+                continue
+        
+        # Return events in chronological order (reverse since we used lpush)
+        return list(reversed(events))
+        
+    except Exception as e:
+        # Fallback to empty list if Redis fails
+        logger.warning(f"Failed to get events from Redis queue: {e}")
+        return []
 import traceback
 
 logger = logging.getLogger(__name__)
@@ -136,6 +192,9 @@ def _generate_comprehensive_status():
         FeedItem.created_at >= recent_cutoff
     ).count()
     
+    # Get pending events for polling system
+    pending_events = get_and_clear_pending_events()
+    
     return {
         'timestamp': datetime.utcnow().isoformat(),
         'status': overall_status,
@@ -145,6 +204,7 @@ def _generate_comprehensive_status():
         'feed_updated': feed_updated,
         'active_jobs': len(active_jobs),
         'system_health': overall_status,
+        'events': pending_events,  # Add pending events
         # Detailed status data
         'jobs': {
             'active': [job.to_dict() for job in active_jobs],

@@ -112,7 +112,7 @@ class SpecGenerationService:
             logger.info(f"🔧 Submitting background job to ThreadPoolExecutor...")
             job_id = self.job_manager.submit_job(
                 job_type='spec_generation',
-                project_id=int(project_id) if project_id.isdigit() else None,
+                project_id=project_id,  # Keep as string - don't convert to int
                 item_id=item_id,
                 provider=provider
             )
@@ -200,7 +200,7 @@ class SpecGenerationService:
             logger.error(f"Failed to cancel job {job_id}: {e}")
             return False
     
-    def _handle_spec_generation_job(self, context: JobContext, project_id: int, **kwargs) -> JobResult:
+    def _handle_spec_generation_job(self, context: JobContext, project_id: str, **kwargs) -> JobResult:
         """Background job handler for spec generation"""
         item_id = kwargs.get('item_id')
         provider = kwargs.get('provider', 'claude')
@@ -251,15 +251,15 @@ class SpecGenerationService:
             
             logger.info(f"📡 Emitted progress event: 10% - Creating promotion event")
             
-            # Create IdeaPromotedEvent with provider information
+            # Create IdeaPromotedEvent
             idea_promoted_event = IdeaPromotedEvent(
                 idea_id=item_id,
                 project_id=str(project_id),
-                promoted_by='async_spec_generation',
-                provider=provider  # Pass provider to the event
+                promoted_by='async_spec_generation'
             )
             
-            # Add idea content to event for DefineAgent
+            # Add provider and idea content to event for DefineAgent
+            idea_promoted_event.provider = provider  # Store provider as attribute
             idea_promoted_event.idea_content = f"Title: {feed_item.title}\n\nDescription: {feed_item.summary or 'No description provided'}"
             
             # Update progress: Initializing DefineAgent
@@ -402,7 +402,7 @@ class SpecGenerationService:
             
             return JobResult(success=False, error=error_message)
     
-    def _handle_design_generation_job(self, context: JobContext, project_id: int, **kwargs) -> JobResult:
+    def _handle_design_generation_job(self, context: JobContext, project_id: str, **kwargs) -> JobResult:
         """Background job handler for design generation"""
         spec_id = kwargs.get('spec_id')
         provider = kwargs.get('provider', 'claude')
@@ -588,7 +588,7 @@ class SpecGenerationService:
             
             return JobResult(success=False, error=error_message)
     
-    def _handle_tasks_generation_job(self, context: JobContext, project_id: int, **kwargs) -> JobResult:
+    def _handle_tasks_generation_job(self, context: JobContext, project_id: str, **kwargs) -> JobResult:
         """Background job handler for tasks generation"""
         spec_id = kwargs.get('spec_id')
         provider = kwargs.get('provider', 'claude')
@@ -826,7 +826,7 @@ class SpecGenerationService:
             # Submit background job
             job_id = self.job_manager.submit_job(
                 job_type='design_generation',
-                project_id=int(project_id) if project_id.isdigit() else None,
+                project_id=project_id,  # Keep as string - don't convert to int
                 spec_id=spec_id,
                 provider=provider
             )
@@ -877,7 +877,7 @@ class SpecGenerationService:
             # Submit background job
             job_id = self.job_manager.submit_job(
                 job_type='tasks_generation',
-                project_id=int(project_id) if project_id.isdigit() else None,
+                project_id=project_id,  # Keep as string - don't convert to int
                 spec_id=spec_id,
                 provider=provider
             )

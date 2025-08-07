@@ -89,7 +89,7 @@ except ImportError as e:
     import services.context_aware_ai as context_aware_ai
     import services.ai_agents as ai_agents
     import services.auth_service as auth_service
-    from api import system, ai, mission_control, mcp_external, conversations, stages, events, graph, vector, webhooks, cache, intelligence, monitoring, github, kiro_endpoints, tasks, upload
+    from api import system, ai, mission_control, mcp_external, conversations, stages, events, graph, vector, webhooks, cache, intelligence, monitoring, github, kiro_endpoints, tasks, upload, validation
     from api import ai_broker as ai_broker_api
 
 migrate = Migrate()
@@ -346,6 +346,7 @@ def register_blueprints(app):
     app.register_blueprint(tasks.tasks_bp)
     app.register_blueprint(github.github_bp)
     app.register_blueprint(upload.upload_bp)
+    app.register_blueprint(validation.validation_bp)
     app.logger.info("API blueprints registered successfully")
 
 

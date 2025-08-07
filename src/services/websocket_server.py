@@ -912,6 +912,36 @@ class WebSocketServer:
             logger.error(f"Error broadcasting task progress for {task_id}: {e}")
             self.stats['errors'] += 1
     
+    def broadcast_phase_transition(self, project_id: str, transition_data: Dict[str, Any]):
+        """Broadcast phase transition event to project subscribers"""
+        try:
+            # Broadcast to project room
+            project_room = f'project:{project_id}'
+            
+            # Also broadcast to all authenticated clients in the project
+            authorized_clients = []
+            for client_id, client_info in self.connected_clients.items():
+                if not client_info.get('authenticated'):
+                    continue
+                
+                permissions = client_info.get('permissions')
+                if permissions and (permissions.is_admin or permissions.has_project_access(project_id)):
+                    authorized_clients.append(client_id)
+            
+            # Broadcast to authorized clients
+            for client_id in authorized_clients:
+                self.socketio.emit('phase_transition', {
+                    'timestamp': datetime.utcnow().isoformat(),
+                    **transition_data
+                }, room=client_id)
+            
+            self.stats['messages_sent'] += len(authorized_clients)
+            logger.info(f"Broadcasted phase transition to {len(authorized_clients)} clients in project {project_id}")
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting phase transition for project {project_id}: {e}")
+            self.stats['errors'] += 1
+    
     def health_check(self) -> bool:
         """Check if WebSocket server is healthy"""
         try:

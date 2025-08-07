@@ -25,6 +25,7 @@ from .monitoring_metrics import (
 from .upload_session import UploadSession
 from .uploaded_file import UploadedFile
 from .prd import PRD, extract_prd_summary
+from .validation_run import ValidationRun, ValidationStatus
 
 __all__ = [
     'db', 
@@ -54,5 +55,7 @@ __all__ = [
     'UploadSession',
     'UploadedFile',
     'PRD',
-    'extract_prd_summary'
+    'extract_prd_summary',
+    'ValidationRun',
+    'ValidationStatus'
 ]

@@ -191,6 +191,34 @@ export const MissionControl: React.FC = () => {
         }
         break
         
+      case 'phase.transition':
+        // Handle automatic phase transitions
+        console.log('[Phase Transition] Event received:', event)
+        console.log('[Phase Transition] Current selected project:', ui.selectedProject)
+        console.log('[Phase Transition] Event project ID:', event.payload.project_id)
+        console.log('[Phase Transition] To phase:', event.payload.to_phase)
+        
+        if (event.payload.to_phase === 'validate' && event.payload.project_id === ui.selectedProject) {
+          console.log('[Phase Transition] Conditions met - switching to validate phase')
+          actions.setActiveStage('validate')
+          actions.addNotification({
+            id: `phase-transition-${Date.now()}`,
+            type: 'success',
+            title: 'Phase Transition',
+            message: `Automatically switched to Validate phase for PR #${event.payload.pr_number}`,
+            timestamp: new Date().toISOString()
+          })
+        } else {
+          console.log('[Phase Transition] Conditions not met - ignoring event')
+          if (event.payload.to_phase !== 'validate') {
+            console.log('  - Wrong target phase:', event.payload.to_phase)
+          }
+          if (event.payload.project_id !== ui.selectedProject) {
+            console.log('  - Project ID mismatch. Expected:', ui.selectedProject, 'Got:', event.payload.project_id)
+          }
+        }
+        break
+        
       default:
         console.log('Unhandled polling event:', event)
     }

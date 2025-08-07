@@ -236,12 +236,59 @@ def handle_github_pr_event(payload):
             
             elif action == 'closed':
                 if merged:
-                    # PR was merged - mark task as done
+                    # PR was merged - mark task as done and create validation run
                     task.status = TaskStatus.DONE
                     task.completed_at = datetime.utcnow()
                     task.add_progress_message(f"Pull request #{pr_number} merged - task completed")
                     task_updated = True
                     logger.info(f"Task {task.id} marked as DONE (PR #{pr_number} merged)")
+                    
+                    # Create validation run for the merged PR
+                    try:
+                        from ..models.validation_run import ValidationRun
+                        
+                        commit_sha = pull_request.get('merge_commit_sha', '')
+                        merged_by = pull_request.get('merged_by', {}).get('login', 'unknown')
+                        
+                        validation_run = ValidationRun.create_from_pr_merge(
+                            project_id=task.project_id,
+                            pr_number=pr_number,
+                            commit_sha=commit_sha,
+                            branch=branch_name,
+                            started_by=merged_by,
+                            task_id=task.id
+                        )
+                        
+                        db.session.commit()
+                        logger.info(f"✅ Created validation run {validation_run.id} for merged PR #{pr_number}")
+                        
+                        # Trigger phase transition to Validate via polling system
+                        try:
+                            try:
+                                from ..api.system import add_pending_event
+                            except ImportError:
+                                from api.system import add_pending_event
+                            
+                            # Add phase transition event to polling queue
+                            transition_event = {
+                                'type': 'phase.transition',
+                                'payload': {
+                                    'from_phase': 'build',
+                                    'to_phase': 'validate',
+                                    'validation_run_id': validation_run.id,
+                                    'project_id': task.project_id,
+                                    'pr_number': pr_number,
+                                    'task_id': task.id
+                                }
+                            }
+                            add_pending_event(transition_event)
+                            logger.info(f"✅ Added phase transition event to polling queue for project {task.project_id}")
+                        except Exception as transition_error:
+                            logger.warning(f"Failed to add phase transition event: {transition_error}")
+                        
+                    except Exception as validation_error:
+                        logger.error(f"Failed to create validation run for PR #{pr_number}: {validation_error}")
+                        # Don't fail the webhook processing if validation run creation fails
                 else:
                     # PR was closed without merging - mark task as failed
                     task.status = TaskStatus.FAILED

@@ -21,7 +21,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import { missionControlApi } from '@/services/api/missionControlApi'
 
-export type AssistantType = 'claude' | 'kiro' | 'model-garden'
+export type AssistantType = 'claude' | 'model-garden'
 
 export interface AssistantOption {
   id: AssistantType
@@ -30,7 +30,7 @@ export interface AssistantOption {
   available: boolean
   unavailableReason?: string
   logo: string
-  gradient?: string
+  provider: 'claude-code' | 'model-garden'
 }
 
 export interface AssistantSelectorProps {
@@ -50,29 +50,23 @@ export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [selectedAssistant, setSelectedAssistant] = useState<AssistantType>(defaultAssistant)
-  // Minimal assistant definitions (logo images are placed in mission-control/public)
+  // Assistant definitions (logo images are placed in mission-control/public)
   const [assistants, setAssistants] = useState<AssistantOption[]>([
     {
       id: 'claude',
       name: 'Claude Code',
-      description: '', // description removed in minimalist UI
+      description: 'Repository-aware AI using Claude Code SDK',
       available: true,
-      logo: 'goose.png'
+      logo: 'goose.png',
+      provider: 'claude-code'
     },
     {
       id: 'model-garden',
       name: 'Model Garden',
-      description: '',
+      description: 'Enterprise AI models via Model Garden',
       available: true,
-      logo: 'coforge.png'
-    },
-    {
-      id: 'kiro',
-      name: 'Kiro',
-      description: '',
-      available: false,
-      unavailableReason: 'Checking availability...',
-      logo: 'kiro.png'
+      logo: 'coforge.png',
+      provider: 'model-garden'
     }
   ])
   const [loading, setLoading] = useState(true)
@@ -83,11 +77,6 @@ export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
     setIsOpen(newIsOpen)
     onToggle?.(newIsOpen)
   }, [isOpen, onToggle])
-
-  // Check Kiro availability on mount
-  useEffect(() => {
-    checkKiroAvailability()
-  }, [])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -102,49 +91,6 @@ export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isOpen, toggleDropdown])
-
-  const checkKiroAvailability = async () => {
-    try {
-      setLoading(true)
-      
-      // Call the Kiro status endpoint
-      const response = await fetch('/api/kiro/status')
-      const data = await response.json()
-      
-      console.log('Kiro status response:', data) // Debug log
-      
-      setAssistants(prev => {
-        const updated = prev.map(assistant => {
-          if (assistant.id === 'kiro') {
-            return {
-              ...assistant,
-              available: data.available || false,
-              unavailableReason: data.available 
-                ? undefined 
-                : 'Kiro IDE not found. Please install Kiro to use this option.'
-            }
-          }
-          return assistant
-        })
-        console.log('Updated assistants:', updated) // Debug log
-        return updated
-      })
-    } catch (error) {
-      console.error('Failed to check Kiro availability:', error)
-      setAssistants(prev => prev.map(assistant => {
-        if (assistant.id === 'kiro') {
-          return {
-            ...assistant,
-            available: false,
-            unavailableReason: 'Unable to check Kiro availability. Please ensure Kiro is installed.'
-          }
-        }
-        return assistant
-      }))
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const handleAssistantSelect = (assistantId: AssistantType) => {
     const assistant = assistants.find(a => a.id === assistantId)
@@ -187,9 +133,6 @@ export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
             />
           )}
           <span className="font-medium text-sm text-white">{selectedAssistantData?.name || 'Select'}</span>
-          {loading && (
-            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          )}
         </div>
         
         <motion.svg
@@ -215,9 +158,7 @@ export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
             className="absolute top-full left-0 right-0 mt-2 z-[100] min-w-[200px]"
           >
             <div className="bg-black/90 backdrop-blur-md border border-white/30 rounded-lg shadow-2xl overflow-hidden">
-              {assistants.map((assistant) => {
-                console.log('Rendering assistant:', assistant) // Debug log
-                return (
+              {assistants.map((assistant) => (
                 <div key={assistant.id} className="relative">
                   <motion.button
                     whileHover={assistant.available ? { backgroundColor: 'rgba(255, 255, 255, 0.08)' } : {}}
@@ -233,18 +174,18 @@ export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
                     )}
                   >
                     <div className="flex items-center space-x-3">
-                      {/* Logo + Name */}
-                      <div className="flex items-center space-x-3">
-                        <img
-                          src={assistant.logo}
-                          alt={assistant.name}
-                          className="w-12 h-12 object-contain"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                          }}
-                        />
+                      <img
+                        src={assistant.logo}
+                        alt={assistant.name}
+                        className="w-8 h-8 object-contain"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                        }}
+                      />
+                      <div className="flex flex-col">
                         <span className="text-sm text-white font-medium">{assistant.name}</span>
+                        <span className="text-xs text-white/60">{assistant.description}</span>
                       </div>
                     </div>
                     
@@ -259,16 +200,8 @@ export const AssistantSelector: React.FC<AssistantSelectorProps> = ({
                       )}
                     </div>
                   </motion.button>
-                  
-                  {/* Tooltip for unavailable assistants */}
-                  {!assistant.available && assistant.unavailableReason && (
-                    <div className="absolute left-0 top-full mt-1 px-3 py-2 bg-black/90 text-white text-xs rounded-md shadow-lg z-10 max-w-xs opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity">
-                      {assistant.unavailableReason}
-                    </div>
-                  )}
                 </div>
-              )
-              })}
+              ))}
             </div>
           </motion.div>
         )}

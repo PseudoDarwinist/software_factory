@@ -104,115 +104,6 @@ class DefineAgent(BaseAgent):
 {tasks_content}
 """
     
-    def process_event(self, event: BaseEvent) -> EventProcessingResult:
-        """Process idea.promoted events and generate specifications"""
-        start_time = datetime.utcnow()
-        
-        try:
-            if not isinstance(event, IdeaPromotedEvent):
-                return EventProcessingResult(
-                    success=False,
-                    agent_id=self.config.agent_id,
-                    event_id=event.metadata.event_id,
-                    event_type=event.get_event_type(),
-                    processing_time_seconds=0.0,
-                    error_message="Event is not an IdeaPromotedEvent"
-                )
-            
-            logger.info(f"Processing idea promotion for idea {event.aggregate_id} in project {event.project_id}")
-            
-            # Get project context
-            project_context = self.get_project_context(event.project_id)
-            
-            # Get the original idea content from the event or retrieve it
-            idea_content = self._get_idea_content(event)
-            if not idea_content:
-                return EventProcessingResult(
-                    success=False,
-                    agent_id=self.config.agent_id,
-                    event_id=event.metadata.event_id,
-                    event_type=event.get_event_type(),
-                    processing_time_seconds=(datetime.utcnow() - start_time).total_seconds(),
-                    error_message="Could not retrieve idea content"
-                )
-            
-            # Retrieve context using pgvector with idea-specific PRD support
-            context_data = self._retrieve_context(idea_content, event.project_id, project_context, event.aggregate_id)
-            
-            # Generate specifications using AI
-            specifications = self._generate_specifications(
-                idea_content=idea_content,
-                project_context=project_context,
-                context_data=context_data,
-                promoted_by=event.promoted_by
-            )
-            
-            if not specifications:
-                return EventProcessingResult(
-                    success=False,
-                    agent_id=self.config.agent_id,
-                    event_id=event.metadata.event_id,
-                    event_type=event.get_event_type(),
-                    processing_time_seconds=(datetime.utcnow() - start_time).total_seconds(),
-                    error_message="Failed to generate specifications"
-                )
-            
-            # Create spec ID based on the idea ID
-            spec_id = f"spec_{event.aggregate_id}"
-            
-            # Store specifications with context sources
-            self._store_specifications(spec_id, event.project_id, specifications, context_data)
-            
-            # Create spec.frozen event
-            spec_frozen_event = SpecFrozenEvent(
-                spec_id=spec_id,
-                project_id=event.project_id,
-                frozen_by=f"define_agent:{event.promoted_by}"
-            )
-            
-            # Add metadata about the generation process
-            spec_frozen_event.original_idea_id = event.aggregate_id
-            spec_frozen_event.promoted_by = event.promoted_by
-            spec_frozen_event.ai_generated = True
-            spec_frozen_event.human_reviewed = False  # Initially AI-generated, not human_reviewed
-            spec_frozen_event.context_sources = context_data.get('sources', [])
-            spec_frozen_event.generation_agent = self.config.agent_id
-            
-            processing_time = (datetime.utcnow() - start_time).total_seconds()
-            
-            logger.info(f"Generated specifications for idea {event.aggregate_id} as spec {spec_id}")
-            
-            # Optional: Sync to Notion if configured
-            self._notion_sync_if_configured(spec_id, event.project_id, specifications)
-            
-            return EventProcessingResult(
-                success=True,
-                agent_id=self.config.agent_id,
-                event_id=event.metadata.event_id,
-                event_type=event.get_event_type(),
-                processing_time_seconds=processing_time,
-                result_data={
-                    'spec_id': spec_id,
-                    'idea_id': event.aggregate_id,
-                    'specifications_generated': list(specifications.keys()),
-                    'context_sources_count': len(context_data.get('sources', [])),
-                    'ai_generated': True
-                },
-                generated_events=[spec_frozen_event]
-            )
-            
-        except Exception as e:
-            processing_time = (datetime.utcnow() - start_time).total_seconds()
-            logger.error(f"Failed to process idea promotion: {e}")
-            
-            return EventProcessingResult(
-                success=False,
-                agent_id=self.config.agent_id,
-                event_id=event.metadata.event_id,
-                event_type=event.get_event_type(),
-                processing_time_seconds=processing_time,
-                error_message=str(e)
-            )
     
     def _get_idea_content(self, event: IdeaPromotedEvent) -> Optional[str]:
         """Retrieve the original idea content"""
@@ -408,7 +299,7 @@ class DefineAgent(BaseAgent):
             ai_context = self._prepare_ai_context(idea_content, project_context, context_data)
             
             # Generate only requirements.md first (sequential workflow like Kiro)
-            requirements_md = self._generate_requirements(idea_content, ai_context, project_context)
+            requirements_md = self._generate_requirements(idea_content, ai_context, project_context, provider)
             if not requirements_md:
                 return None
             
@@ -544,21 +435,20 @@ class DefineAgent(BaseAgent):
                 context_parts.append(code.get('content', '')[:200] + "...")
                 context_parts.append("")
         
-        # Add repository discovery context
-        context_parts.append("=== REPOSITORY CONTEXT DISCOVERY ===")
-        context_parts.append("Use your filesystem access to discover and reference:")
-        context_parts.append("- package.json/requirements.txt (technology stack)")
-        context_parts.append("- Database migrations and models")
-        context_parts.append("- API routes and middleware patterns")
-        context_parts.append("- Component structures and design patterns")
-        context_parts.append("- Testing patterns and infrastructure")
-        context_parts.append("- Documentation and README files")
+        # Add project-specific guidance
+        context_parts.append("=== PROJECT-SPECIFIC GUIDANCE ===")
+        context_parts.append("Focus on creating industry-standard requirements that:")
+        context_parts.append("- Address the business needs outlined in the PRD (if provided)")
+        context_parts.append("- Follow established requirements engineering frameworks (IEEE 830, EARS)")
+        context_parts.append("- Are technology-agnostic and focus on WHAT, not HOW")
+        context_parts.append("- Can be implemented in any suitable technology stack")
+        context_parts.append("- Are verifiable, testable, and traceable")
         context_parts.append("")
         
         return "\n".join(context_parts)
     
-    def _generate_requirements(self, idea_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
-        """Generate requirements.md using AI Broker with enhanced repository-aware context"""
+    def _generate_requirements(self, idea_content: str, ai_context: str, project_context: ProjectContext = None, provider: str = 'claude') -> Optional[str]:
+        """Generate requirements.md using specified provider"""
         try:
             # Enhanced Kiro-style prompt that leverages repository access and PRD context
             prd_instruction = ""
@@ -673,7 +563,14 @@ List 8-12 numbered requirements using EARS format:
 Generate a comprehensive, repository-aware requirements document that demonstrates deep understanding of the existing codebase and seamlessly integrates with established patterns."""
             
             # Use the full enhanced prompt for better context awareness
-            # Try Claude Code SDK first as primary option
+            logger.info(f"🎯 Requirements generation using provider: {provider.upper()}")
+            
+            if provider == 'model-garden':
+                # Use Model Garden directly
+                logger.info("🌟 Using Model Garden for requirements generation")
+                return self._generate_requirements_with_model_garden(idea_content, ai_context, project_context)
+            
+            # Default to Claude Code SDK for 'claude' provider
             logger.info("Trying Claude Code SDK as primary AI provider")
             try:
                 try:
@@ -691,7 +588,16 @@ Generate a comprehensive, repository-aware requirements document that demonstrat
                 if claude_service.is_available():
                     logger.info("✅ Claude Code SDK is available, using as primary provider")
                     
-                    result = claude_service.create_specification(idea_content, ai_context)
+                    # Pass full context to Claude Code SDK
+                    result = claude_service.create_specification(
+                        idea_content=idea_content, 
+                        system_context=ai_context,
+                        project_context={
+                            'repository_url': project_context.repo_url if project_context else None,
+                            'system_map': project_context.system_map if project_context else None,
+                            'project_name': project_context.project_name if project_context else None
+                        }
+                    )
                     logger.info(f"Claude Code SDK result: success={result.get('success')}")
                     
                     if result.get('success'):
@@ -1055,8 +961,8 @@ ORIGINAL IDEA:
             # Create spec ID based on the idea ID
             spec_id = f"spec_{event.aggregate_id}"
             
-            # Store specifications
-            self._store_specifications(spec_id, event.project_id, specifications)
+            # Store specifications with context sources
+            self._store_specifications(spec_id, event.project_id, specifications, context_data)
             
             # Create spec.frozen event
             spec_frozen_event = SpecFrozenEvent(
@@ -1517,6 +1423,103 @@ Ensure the top-level items are the user stories, and the sub-tasks are the speci
         
         return "\n".join(context_parts)
     
+    def _generate_requirements_with_model_garden(self, idea_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
+        """Generate requirements document using Model Garden"""
+        try:
+            logger.info("🌟 Using Model Garden for requirements generation")
+            
+            # Import Model Garden integration
+            try:
+                from ..services.ai_service import ModelGardenIntegration
+            except ImportError:
+                from services.ai_service import ModelGardenIntegration
+            
+            # Create Model Garden instance
+            model_garden = ModelGardenIntegration()
+            
+            # Use the same improved prompt as Claude Code for consistency
+            prompt = f"""You are helping guide the user through the process of transforming a rough idea for a feature into a detailed design document with an implementation plan and todo list. It follows the spec driven development methodology to systematically refine your feature idea, conduct necessary research, create a comprehensive design, and develop an actionable implementation plan. The process is designed to be iterative, allowing movement between requirements clarification and research as needed.
+
+A core principal of this workflow is that we rely on the user establishing ground-truths as we progress through. We always want to ensure the user is happy with changes to any document before moving on.
+
+{ai_context}
+
+FEATURE IDEA:
+{idea_content}
+
+TASK: Generate an initial set of requirements in EARS format based on the feature idea.
+
+CONSTRAINTS:
+- Generate an initial version of the requirements document based on the user's rough idea WITHOUT asking sequential questions first
+- Format the requirements.md document with proper structure
+- Focus on writing requirements which will later be turned into a design
+- Don't focus on code exploration in this phase
+- Consider edge cases, user experience, technical constraints, and success criteria
+
+FORMAT REQUIREMENTS:
+The requirements.md document MUST have:
+- A clear introduction section that summarizes the feature
+- A hierarchical numbered list of requirements where each contains:
+  - A user story in the format "As a [role], I want [feature], so that [benefit]"
+  - A numbered list of acceptance criteria in EARS format (Easy Approach to Requirements Syntax)
+
+# Requirements Document
+
+## Introduction
+
+[Provide a clear introduction that summarizes the feature, its purpose, and business value]
+
+## Requirements
+
+### Requirement 1
+
+**User Story:** As a [role], I want [feature], so that [benefit]
+
+#### Acceptance Criteria
+
+1. WHEN [event] THEN [system] SHALL [response]
+2. IF [precondition] THEN [system] SHALL [response]
+3. WHEN [event] AND [condition] THEN [system] SHALL [response]
+
+### Requirement 2
+
+**User Story:** As a [role], I want [feature], so that [benefit]
+
+#### Acceptance Criteria
+
+1. WHEN [event] THEN [system] SHALL [response]
+2. WHEN [event] AND [condition] THEN [system] SHALL [response]
+3. IF [precondition] THEN [system] SHALL [response]
+
+[Continue with additional requirements as needed]
+
+IMPORTANT:
+- Use proper EARS syntax (WHEN/IF/THEN/SHALL)
+- Each acceptance criterion must be verifiable and testable
+- Focus on user needs and business value
+- Consider different user roles and their specific needs
+- Include edge cases and error conditions
+- Make requirements specific and unambiguous"""
+            
+            # Execute with Model Garden using Claude Opus 4 (best for requirements analysis)
+            result = model_garden.execute_task(
+                instruction=prompt,
+                product_context=None,  # Context is already in the prompt
+                model='claude-opus-4',  # Best model for comprehensive analysis
+                role='po'  # Product Owner role for requirements
+            )
+            
+            if result.get('success'):
+                logger.info("✅ Model Garden successfully generated requirements")
+                return result.get('output', '')
+            else:
+                logger.error(f"❌ Model Garden failed: {result.get('error')}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Model Garden requirements generation failed: {e}")
+            return None
+    
     def _generate_design_with_model_garden(self, requirements_content: str, ai_context: str, project_context: ProjectContext = None) -> Optional[str]:
         """Generate design document using Model Garden"""
         try:
@@ -1679,14 +1682,28 @@ APPROVED DESIGN:
 CONTEXT:
 {ai_context}
 
-Generate a detailed tasks.md document with:
-1. Specific coding tasks that can be executed
-2. References to files that need to be created or modified
-3. Test-driven development approach
-4. Incremental implementation steps
-5. Integration with existing codebase patterns
-6. Acceptance criteria for each task
-7. Dependencies between tasks
+TASK:
+Create a markdown checklist of all user stories from the requirements document. For each user story, create a set of small, one-story-point sub-tasks (with unchecked checkboxes) that break down the story into concrete implementation steps.
+
+Follow this exact format:
+
+# Implementation Plan
+
+- [ ] **User Story: As a user, I want to [specific functionality], so that [benefit].**
+  - [ ] Implement [specific backend task] in `src/path/to/file.py`.
+  - [ ] Create API endpoint `/api/endpoint` for [specific purpose].
+  - [ ] Build frontend component in `mission-control/src/components/` for [specific UI].
+  - [ ] Write unit tests for [specific functionality].
+  - [ ] Add integration tests for [specific workflow].
+
+- [ ] **User Story: As a user, I want to [another functionality], so that [benefit].**
+  - [ ] Create database model in `src/models/model_name.py`.
+  - [ ] Implement service layer in `src/services/service_name.py`.
+  - [ ] Add API endpoints in `src/api/blueprint_name.py`.
+  - [ ] Build React components with TypeScript.
+  - [ ] Write comprehensive tests.
+
+CRITICAL: Use ONLY unchecked checkboxes (- [ ]) for all tasks. Do not use conversational text or explanations. Each line must be a checkbox item that can be parsed as an actionable task. Generate specific file paths and concrete implementation steps.
 
 Make each task actionable and specific to the codebase."""
             
@@ -1750,12 +1767,28 @@ APPROVED DESIGN:
 CONTEXT:
 {ai_context}
 
-Generate a tasks.md document with:
-- Specific coding tasks that can be executed
-- References to files that need to be created or modified
-- Test-driven development approach
-- Incremental implementation steps
-- Integration with existing codebase patterns"""
+TASK:
+Create a markdown checklist of all user stories from the requirements document. For each user story, create a set of small, one-story-point sub-tasks (with unchecked checkboxes) that break down the story into concrete implementation steps.
+
+Follow this exact format:
+
+# Implementation Plan
+
+- [ ] **User Story: As a user, I want to [specific functionality], so that [benefit].**
+  - [ ] Implement [specific backend task] in `src/path/to/file.py`.
+  - [ ] Create API endpoint `/api/endpoint` for [specific purpose].
+  - [ ] Build frontend component in `mission-control/src/components/` for [specific UI].
+  - [ ] Write unit tests for [specific functionality].
+  - [ ] Add integration tests for [specific workflow].
+
+- [ ] **User Story: As a user, I want to [another functionality], so that [benefit].**
+  - [ ] Create database model in `src/models/model_name.py`.
+  - [ ] Implement service layer in `src/services/service_name.py`.
+  - [ ] Add API endpoints in `src/api/blueprint_name.py`.
+  - [ ] Build React components with TypeScript.
+  - [ ] Write comprehensive tests.
+
+CRITICAL: Use ONLY unchecked checkboxes (- [ ]) for all tasks. Do not use conversational text or explanations. Each line must be a checkbox item that can be parsed as an actionable task."""
                     
                     result = claude_service.create_specification(tasks_prompt, ai_context)
                     

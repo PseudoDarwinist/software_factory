@@ -13,6 +13,7 @@ try:
     from ..models.task import Task, TaskStatus
     from ..models.base import db
     from ..models.mission_control_project import MissionControlProject
+    from ..models.validation_run import ValidationRun
     from ..services.background import get_job_manager
     from ..services.websocket_server import get_websocket_server
     from ..services.github_branch_service import get_github_branch_service
@@ -21,6 +22,7 @@ except ImportError:
     from models.task import Task, TaskStatus
     from models.base import db
     from models.mission_control_project import MissionControlProject
+    from models.validation_run import ValidationRun
     from services.background import get_job_manager
     from services.websocket_server import get_websocket_server
     from services.github_branch_service import get_github_branch_service
@@ -385,6 +387,50 @@ def approve_task(task_id):
                         logger.info(f"🎉 SUCCESS - PR #{task.pr_number} merged successfully!")
                         logger.info(f"   - Merge SHA: {merge_result.get('sha', 'N/A')}")
                         task.add_progress_message(f"✅ Pull request #{task.pr_number} merged successfully!", 95)
+                        
+                        # Create validation run and trigger phase transition
+                        try:
+                            commit_sha = merge_result.get('sha', '')
+                            
+                            validation_run = ValidationRun.create_from_pr_merge(
+                                project_id=task.project_id,
+                                pr_number=task.pr_number,
+                                commit_sha=commit_sha,
+                                branch=task.branch_name or 'main',
+                                started_by=approved_by,
+                                task_id=task.id
+                            )
+                            
+                            db.session.commit()
+                            logger.info(f"✅ Created validation run {validation_run.id} for merged PR #{task.pr_number}")
+                            
+                            # Trigger phase transition to Validate via polling system
+                            try:
+                                try:
+                                    from ..api.system import add_pending_event
+                                except ImportError:
+                                    from api.system import add_pending_event
+                                
+                                # Add phase transition event to polling queue
+                                transition_event = {
+                                    'type': 'phase.transition',
+                                    'payload': {
+                                        'from_phase': 'build',
+                                        'to_phase': 'validate',
+                                        'validation_run_id': validation_run.id,
+                                        'project_id': task.project_id,
+                                        'pr_number': task.pr_number,
+                                        'task_id': task.id
+                                    }
+                                }
+                                add_pending_event(transition_event)
+                                logger.info(f"✅ Added phase transition event to polling queue for project {task.project_id}")
+                            except Exception as transition_error:
+                                logger.warning(f"Failed to add phase transition event: {transition_error}")
+                            
+                        except Exception as validation_error:
+                            logger.error(f"Failed to create validation run for PR #{task.pr_number}: {validation_error}")
+                            # Don't fail the task approval if validation run creation fails
                     else:
                         # PR merge failed, but we can still approve the task
                         error_msg = merge_result.get('error', 'Unknown merge error')

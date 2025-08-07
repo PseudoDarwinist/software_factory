@@ -956,6 +956,13 @@ class MissionControlApi {
           payload: { status: status.system_health },
         });
       }
+
+      // Process pending events
+      if ((status as any).events && Array.isArray((status as any).events)) {
+        (status as any).events.forEach((event: any) => {
+          this.notifyCallbacks(event);
+        });
+      }
     } catch (error) {
       console.error("Polling error:", error);
       // Don't notify callbacks about polling errors unless it's persistent
@@ -1676,6 +1683,69 @@ class MissionControlApi {
     } catch (error) {
       console.error("Failed to get project sessions:", error);
       throw new Error("Failed to get project sessions");
+    }
+  }
+
+  // Validation endpoints
+  async getValidationRuns(projectId: string, params?: { limit?: number; status?: string }): Promise<{
+    validation_runs: any[];
+    total: number;
+  }> {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      if (params?.status) queryParams.append('status', params.status);
+      
+      const response = await this.client.get<ApiResponse<{
+        validation_runs: any[];
+        total: number;
+      }>>(`/validation/runs/${projectId}?${queryParams.toString()}`);
+      
+      return response.data.data || { validation_runs: [], total: 0 };
+    } catch (error) {
+      console.error("Failed to get validation runs:", error);
+      throw new Error("Failed to get validation runs");
+    }
+  }
+
+  async getValidationRun(validationRunId: string): Promise<any> {
+    try {
+      const response = await this.client.get<ApiResponse<any>>(
+        `/validation/runs/${validationRunId}`
+      );
+      return response.data.data;
+    } catch (error) {
+      console.error("Failed to get validation run:", error);
+      throw new Error("Failed to get validation run");
+    }
+  }
+
+  async getActiveValidationRuns(projectId: string): Promise<{
+    active_validation_runs: any[];
+    count: number;
+  }> {
+    try {
+      const response = await this.client.get<ApiResponse<{
+        active_validation_runs: any[];
+        count: number;
+      }>>(`/validation/projects/${projectId}/active`);
+      
+      return response.data.data || { active_validation_runs: [], count: 0 };
+    } catch (error) {
+      console.error("Failed to get active validation runs:", error);
+      throw new Error("Failed to get active validation runs");
+    }
+  }
+
+  async getLatestValidationRun(projectId: string): Promise<any> {
+    try {
+      const response = await this.client.get<ApiResponse<any>>(
+        `/validation/projects/${projectId}/latest`
+      );
+      return response.data.data;
+    } catch (error) {
+      console.error("Failed to get latest validation run:", error);
+      throw new Error("Failed to get latest validation run");
     }
   }
 }

@@ -51,55 +51,45 @@ class ClaudeCodeService:
         return True
     
     def execute_task_cli(self, instruction: str, context: Dict = None) -> Dict[str, Any]:
-        """Execute task using Claude Code CLI directly"""
+        """Execute task using Claude Code CLI directly via stdin - no temp files"""
         try:
             import subprocess
-            import tempfile
             
-            # Create temporary file for instruction
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-                f.write(instruction)
-                instruction_file = f.name
-
-            try:
-                # Use JSON output so we can parse / log easily
-                result = subprocess.run(
-                    [self.claude_cli_path, '--print', instruction_file, '--output-format', 'text'],
-                    cwd=str(self.project_path),
-                    capture_output=True,
-                    text=True,
-                    timeout=300  # 5-minute safety timeout (CLI should normally finish sooner)
-                )
-                
-                # Cleanup temp file
-                os.unlink(instruction_file)
-                
-                if result.returncode == 0:
-                    return {
-                        'success': True,
-                        'output': result.stdout,
-                        'error': None,
-                        'returncode': 0,
-                        'provider': 'claude-code-cli'
-                    }
-                else:
-                    return {
-                        'success': False,
-                        'output': result.stdout,
-                        'error': result.stderr,
-                        'returncode': result.returncode,
-                        'provider': 'claude-code-cli-failed'
-                    }
-                    
-            except subprocess.TimeoutExpired:
-                os.unlink(instruction_file)
+            # Use Claude Code CLI with direct stdin input - no temporary files
+            result = subprocess.run(
+                [self.claude_cli_path],
+                cwd=str(self.project_path),
+                input=instruction,  # Pass instruction directly via stdin
+                capture_output=True,
+                text=True,
+                timeout=300  # 5-minute safety timeout
+            )
+            
+            if result.returncode == 0:
+                return {
+                    'success': True,
+                    'output': result.stdout,
+                    'error': None,
+                    'returncode': 0,
+                    'provider': 'claude-code-cli'
+                }
+            else:
                 return {
                     'success': False,
-                    'output': '',
-                    'error': 'Claude Code CLI timed out after 5 minutes',
-                    'returncode': -1,
-                    'provider': 'claude-code-cli-timeout'
+                    'output': result.stdout,
+                    'error': result.stderr,
+                    'returncode': result.returncode,
+                    'provider': 'claude-code-cli-failed'
                 }
+                
+        except subprocess.TimeoutExpired:
+            return {
+                'success': False,
+                'output': '',
+                'error': 'Claude Code CLI timed out after 5 minutes',
+                'returncode': -1,
+                'provider': 'claude-code-cli-timeout'
+            }
             
         except Exception as e:
             self.logger.error(f"Claude Code CLI execution failed: {e}")
@@ -159,26 +149,101 @@ class ClaudeCodeService:
 
     # NOTE: create_specification now uses execute_task which prefers SDK first.
 
-    def create_specification(self, idea_content: str, system_context: str = "") -> Dict[str, Any]:
-        """Create specification documents using Claude Code CLI"""
+    def create_specification(self, idea_content: str, system_context: str = "", project_context: Dict = None) -> Dict[str, Any]:
+        """Create specification documents using Claude Code CLI with full context"""
         
-        # Create focused prompt for Claude Code CLI
-        prompt = f"""I need you to analyze this repository and create a comprehensive requirements.md document.
+        # Build comprehensive context
+        context_parts = []
+        
+        # Add system context (includes PRD, system map, etc.)
+        if system_context:
+            context_parts.append("=== SYSTEM CONTEXT ===")
+            context_parts.append(system_context)
+            context_parts.append("")
+        
+        # Add project context if available
+        if project_context:
+            context_parts.append("=== PROJECT CONTEXT ===")
+            
+            # Add repository information
+            if project_context.get('repository_url'):
+                context_parts.append(f"Repository: {project_context['repository_url']}")
+            
+            # Add system map
+            if project_context.get('system_map'):
+                context_parts.append("System Map:")
+                context_parts.append(str(project_context['system_map']))
+            
+            # Add any other project metadata
+            if project_context.get('tech_stack'):
+                context_parts.append(f"Technology Stack: {project_context['tech_stack']}")
+            
+            context_parts.append("")
+        
+        # Create enhanced prompt for Claude Code CLI
+        full_context = "\n".join(context_parts)
+        
+        prompt = f"""You are helping guide the user through the process of transforming a rough idea for a feature into a detailed design document with an implementation plan and todo list. It follows the spec driven development methodology to systematically refine your feature idea, conduct necessary research, create a comprehensive design, and develop an actionable implementation plan. The process is designed to be iterative, allowing movement between requirements clarification and research as needed.
 
-{system_context}
+A core principal of this workflow is that we rely on the user establishing ground-truths as we progress through. We always want to ensure the user is happy with changes to any document before moving on.
 
-FEATURE REQUEST:
+{full_context}
+
+FEATURE IDEA:
 {idea_content}
 
-TASK: Create detailed requirements.md with repository analysis
+TASK: Generate an initial set of requirements in EARS format based on the feature idea.
 
-INSTRUCTIONS:
-1. First, analyze the existing codebase structure
-2. Understand the current architecture, patterns, and technologies  
-3. Generate requirements.md following the project's conventions
-4. Reference actual files and patterns from the repository
-5. Ensure integration with existing APIs and data models
+CONSTRAINTS:
+- Generate an initial version of the requirements document based on the user's rough idea WITHOUT asking sequential questions first
+- Format the requirements.md document with proper structure
+- Focus on writing requirements which will later be turned into a design
+- Don't focus on code exploration in this phase
+- Consider edge cases, user experience, technical constraints, and success criteria
 
-Please start by examining the repository structure, then generate the requirements.md document."""
+FORMAT REQUIREMENTS:
+The requirements.md document MUST have:
+- A clear introduction section that summarizes the feature
+- A hierarchical numbered list of requirements where each contains:
+  - A user story in the format "As a [role], I want [feature], so that [benefit]"
+  - A numbered list of acceptance criteria in EARS format (Easy Approach to Requirements Syntax)
+
+# Requirements Document
+
+## Introduction
+
+[Provide a clear introduction that summarizes the feature, its purpose, and business value]
+
+## Requirements
+
+### Requirement 1
+
+**User Story:** As a [role], I want [feature], so that [benefit]
+
+#### Acceptance Criteria
+
+1. WHEN [event] THEN [system] SHALL [response]
+2. IF [precondition] THEN [system] SHALL [response]
+3. WHEN [event] AND [condition] THEN [system] SHALL [response]
+
+### Requirement 2
+
+**User Story:** As a [role], I want [feature], so that [benefit]
+
+#### Acceptance Criteria
+
+1. WHEN [event] THEN [system] SHALL [response]
+2. WHEN [event] AND [condition] THEN [system] SHALL [response]
+3. IF [precondition] THEN [system] SHALL [response]
+
+[Continue with additional requirements as needed]
+
+IMPORTANT:
+- Use proper EARS syntax (WHEN/IF/THEN/SHALL)
+- Each acceptance criterion must be verifiable and testable
+- Focus on user needs and business value
+- Consider different user roles and their specific needs
+- Include edge cases and error conditions
+- Make requirements specific and unambiguous"""
 
         return self.execute_task(prompt)
