@@ -1,0 +1,164 @@
+rules:
+  - id: "EU261.Eligible.Delay.Overnight"
+    description: "EU261 requires hotel for overnight delays >= 240 minutes"
+    applies_when:
+      event.type: "Delay"
+      event.attrs.overnight: true
+      event.attrs.delay_minutes: ">= 240"
+    expect:
+      actions_include: ["IssueHotelVoucher"]
+
+
+  - id: "EU261.Delay.Entitlements"
+    description: "For EU261-eligible delays, ensure minimum entitlements applied (hotel for overnight, meals over thresholds)."
+    applies_when:
+      event.type: "Delay"
+      event.attrs.eu261_eligible: true
+    expect:
+      actions_include_any: ["IssueHotelVoucher","IssueMealVoucher","OfferRebooking"]
+
+
+  - id: "Cancel.Template.Allowed"
+    description: "Cancellation must use cancellation templates"
+    applies_when:
+      event.type: "Cancel"
+    expect:
+      template_id_in: ["irr_cancellation_email_01", "irr_cancellation_sms_01"]
+
+  - id: "Delay.Template.Allowed"
+    description: "Delay events must use delay templates"
+    applies_when:
+      event.type: "Delay"
+    expect:
+      template_id_in: ["irr_delay_sms_01", "irr_delay_sms_02"]
+
+  - id: "Rebook.Template.Allowed"
+    description: "Rebook events must use rebooking templates"
+    applies_when:
+      event.type: "Rebook"
+    expect:
+      template_id_in: ["irr_rebooking_email_01", "irr_rebooking_email_02", "irr_rebooking_sms_01", "irr_rebooking_sms_02"]
+
+  - id: "ScheduledChange.Template.Allowed"
+    description: "Scheduled change events must use schedule change templates"
+    applies_when:
+      event.type: "ScheduledChange"
+    expect:
+      template_id_in: ["irr_schedule_change_email_01", "irr_schedule_change_email_02", "irr_schedule_change_sms_01", "irr_schedule_change_sms_02"]
+
+  - id: "NewInfo.Template.Allowed"
+    description: "New info events must use new info templates"
+    applies_when:
+      event.type: "NewInfo"
+    expect:
+      template_id_in: ["irr_new_info_sms_01"]
+
+  - id: "LoungeAccess.Template.Allowed"
+    description: "Lounge access emails must use QR email template"
+    applies_when:
+      event.type: "LoungeAccess"
+    expect:
+      template_id_in: ["irr_lounge_access_QR_email"]
+
+  - id: "Delay.US.Template.Overrides"
+    description: "US-specific delay templates"
+    applies_when:
+      event.type: "Delay"
+      event.attrs.market: "US"
+    expect:
+      template_id_in: ["irr_delay_email_01_US", "irr_delay_sms_01_US", "irr_reset_email_US", "irr_reset_sms_US"]
+
+  - id: "Delay.iCoupon.Templates"
+    description: "iCoupon templates when vouchers are issued during delay"
+    applies_when:
+      event.type: "Delay"
+      event.attrs.issue_icoupon: true
+    expect:
+      template_id_in: ["irr_delay_icoupon_sms", "irr_delay_icoupon_email", "irr_delay_icoupon_sms_AMS", "irr_delay_icoupon_email_AMS"]
+
+  - id: "Phone.Market.Allowed"
+    description: "SMS only allowed for configured market prefixes"
+    applies_when:
+      decision.channel: "SMS"
+      event.attrs.phone_e164_prefix: "@in:allowed_prefixes"
+    expect:
+      pass: true
+
+  - id: "Phone.Market.Blocked"
+    description: "Block SMS when phone prefix not in allowed market list"
+    applies_when:
+      decision.channel: "SMS"
+      event.attrs.phone_e164_prefix: "@not_in:allowed_prefixes"
+    expect:
+      actions_include: ["DoNotSendSMS"]
+
+  - id: "Consent.Required"
+    description: "Messaging requires valid GDPR consent"
+    applies_when:
+      decision.channel_in: ["SMS","Email"]
+    expect:
+      fields_present: ["event.attrs.gdpr_consent"]
+
+  - id: "Sandbox.Recipient.Whitelist"
+    description: "Sandbox sends must use whitelisted recipients"
+    applies_when:
+      event.attrs.environment: "SANDBOX"
+    expect:
+      recipient_in_mapping: "recipient_whitelist"
+
+  - id: "Duplicate.WithinWindow.Block"
+    description: "Block duplicate sends to same recipient and action within 60 minutes"
+    applies_when:
+      decision.action_present: true
+    expect:
+      not_duplicate_within_minutes: 60
+
+
+  - id: "Eligibility.Cancel.Within48h"
+    description: "Cancel messages only within 48 hours window except YYZ"
+    applies_when:
+      event.type: "Cancel"
+    expect:
+      all:
+        - "event.attrs.minutesToScheduledTime < 2880"
+        - "event.attrs.arrivalCity != 'YYZ'"
+        - "event.attrs.departureCity != 'YYZ'"
+
+  - id: "Eligibility.Delay.Close.NoCoupon"
+    description: "Close-to-departure delays (<=10m) only if no iCoupon batch present"
+    applies_when:
+      event.type: "Delay"
+    expect:
+      all:
+        - "event.attrs.minutesToScheduledTime <= 600"
+        - "event.attrs.hasCouponBatchId == false"
+
+  - id: "Eligibility.Delay.Boarding.Guardrails"
+    description: "For >=15m, >=30m, >=60m delay bands, passenger must not be boarded"
+    applies_when:
+      event.type: "Delay"
+    expect:
+      any:
+        - "event.attrs.delayDifference < 10"
+        - "(event.attrs.delayDifference >= 15 and event.attrs.hasBoarded == false)"
+        - "event.attrs.delayDifference < 30"
+        - "(event.attrs.delayDifference >= 30 and event.attrs.hasBoarded == false)"
+        - "event.attrs.delayDifference < 60"
+        - "(event.attrs.delayDifference >= 60 and event.attrs.hasBoarded == false)"
+
+  - id: "Eligibility.Delay.Canada.Block"
+    description: "Block Canada messages (YYZ) for iCoupon and standard branches per flow"
+    applies_when:
+      event.type: "Delay"
+    expect:
+      all:
+        - "event.attrs.stationArrival != 'YYZ'"
+        - "event.attrs.stationDeparture != 'YYZ'"
+
+  - id: "Eligibility.iCoupon.AMS.Override"
+    description: "If departure is AMS and coupon exists, use AMS iCoupon templates"
+    applies_when:
+      event.type: "Delay"
+      event.attrs.hasCouponBatchId: true
+    expect:
+      template_id_in: ["irr_delay_icoupon_sms_AMS", "irr_delay_icoupon_email_AMS"]

@@ -1,0 +1,38 @@
+id: "consent_compliance"
+tag: "Consent.Missing"
+description: "Consent compliance evaluation"
+
+select:
+  event_types: ["*"]
+  window_hours: 24
+  min_cases: 50
+  filters:
+    - "requires_consent = true"
+
+verify:
+  checks:
+    - name: "consent_present"
+      description: "Valid consent exists for recipient"
+      condition: "consent_status = 'valid'"
+      weight: 1.0
+    
+    - name: "consent_current"
+      description: "Consent is not expired"
+      condition: "consent_expiry > current_timestamp"
+      weight: 0.9
+    
+    - name: "consent_scope"
+      description: "Consent covers the communication type"
+      condition: "consent_scope_matches"
+      weight: 0.8
+
+expected_outcomes:
+  - metric: "consent_coverage_rate"
+    operator: ">="
+    value: 0.99
+  
+  - metric: "consent_violation_rate"
+    operator: "<="
+    value: 0.01
+
+min_pass_rate: 0.99

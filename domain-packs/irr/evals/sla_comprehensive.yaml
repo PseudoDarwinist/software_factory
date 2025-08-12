@@ -1,0 +1,18 @@
+id: "sla:irr-comprehensive"
+tag: "Time.SLA"
+select:
+  event.type_in: ["Delay","Cancel","Rebook","ScheduledChange","NewInfo"]
+  window_minutes: 1440
+verify:
+  pass_when_any:
+    - "event.type == 'Delay' and decision.channel == 'SMS' and decision.latency_ms <= override_or_default('Delay','by_channel','SMS')"
+    - "event.type == 'Delay' and decision.channel == 'Email' and decision.latency_ms <= override_or_default('Delay','by_channel','Email')"
+    - "event.type == 'Delay' and event.attrs.market == 'US' and decision.latency_ms <= override_or_default('Delay','by_market','US')"
+    - "event.type == 'Delay' and event.attrs.airport == 'AMS' and decision.latency_ms <= override_or_default('Delay','by_airport','AMS')"
+    - "event.type == 'Delay' and in_window(event.attrs.delay_minutes,'120-240') and decision.latency_ms <= override_or_default('Delay','by_delay_window_minutes','Delay:120-240')"
+    - "event.type == 'Delay' and in_window(event.attrs.delay_minutes,'241-*') and decision.latency_ms <= override_or_default('Delay','by_delay_window_minutes','Delay:241-*')"
+    - "event.type == 'Cancel' and decision.latency_ms <= default_sla('FlightCancellation')"
+    - "event.type == 'Rebook' and decision.latency_ms <= default_sla('Rebooking')"
+    - "event.type == 'ScheduledChange' and decision.latency_ms <= default_sla('ScheduledChange')"
+    - "event.type == 'NewInfo' and decision.latency_ms <= default_sla('NewInfo')"
+min_pass_rate: 0.97

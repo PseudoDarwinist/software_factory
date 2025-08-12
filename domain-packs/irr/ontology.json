@@ -1,0 +1,107 @@
+[
+  {
+    "code": "Time.SLA",
+    "label": "Late or missed send",
+    "group": "Time",
+    "color": "#ef4444",
+    "description": "Communication sent outside SLA timeframe"
+  },
+  {
+    "code": "Tpl.Select",
+    "label": "Wrong template selected",
+    "group": "Template",
+    "color": "#3b82f6",
+    "description": "Incorrect template chosen for event type/channel"
+  },
+  {
+    "code": "Policy.EU261",
+    "label": "EU261 policy misapplied",
+    "group": "Policy",
+    "color": "#22c55e",
+    "description": "EU261 rules not followed for delay/cancellation"
+  },
+  {
+    "code": "Delivery.Blocked",
+    "label": "Delivery blocked/failed",
+    "group": "Delivery",
+    "color": "#a855f7",
+    "description": "Message failed due to blocklist or invalid contact"
+  },
+  {
+    "code": "Audience.Wrong",
+    "label": "Wrong recipient audience",
+    "group": "Audience",
+    "color": "#f59e0b",
+    "description": "Message sent to wrong or partial audience"
+  },
+  {
+    "code": "Consent.Missing",
+    "label": "Missing consent",
+    "group": "Compliance",
+    "color": "#f97316",
+    "description": "Message sent without valid consent"
+  },
+  {
+    "code": "Consent.Invalid",
+    "label": "Invalid consent",
+    "group": "Compliance",
+    "color": "#fb923c",
+    "description": "Consent string invalid or cannot be parsed"
+  },
+  {
+    "code": "Delivery.Blocklisted",
+    "label": "Recipient blocklisted",
+    "group": "Delivery",
+    "color": "#a78bfa",
+    "description": "Phone/email is on blocklist"
+  },
+  {
+    "code": "Delivery.WhitelistedSandbox",
+    "label": "Non-whitelisted recipient in sandbox",
+    "group": "Delivery",
+    "color": "#8b5cf6",
+    "description": "Sandbox send to recipient not in whitelist"
+  },
+  {
+    "code": "Content.LocaleMismatch",
+    "label": "Template-locale mismatch",
+    "group": "Content",
+    "color": "#10b981",
+    "description": "Template locale does not match market/airport"
+  },
+  {
+    "code": "Audience.Duplicate",
+    "label": "Duplicate recipient",
+    "group": "Audience",
+    "color": "#f59e0b",
+    "description": "Same recipient messaged multiple times within window"
+  },
+  {
+    "code": "Policy.EU261.Missing",
+    "label": "EU261 eligibility missing",
+    "group": "Policy",
+    "color": "#22c55e",
+    "description": "Case lacks EU261 eligibility flag when expected"
+  },
+  {
+    "code": "Eligibility.TimeWindow",
+    "label": "Not in allowed time window",
+    "group": "Eligibility",
+    "color": "#ef4444",
+    "description": "Event not within flow-defined minute window"
+  },
+  {
+    "code": "Eligibility.MarketRoute",
+    "label": "Market/station not eligible",
+    "group": "Eligibility",
+    "color": "#f97316",
+    "description": "US/Canada or airport list conditions not met"
+  },
+  {
+    "code": "Eligibility.BoardingState",
+    "label": "Boarding state not eligible",
+    "group": "Eligibility",
+    "color": "#eab308",
+    "description": "Passenger boarded/boarding state incompatible with rule"
+  }
+]

@@ -1,0 +1,55 @@
+event_templates:
+  Notification:
+    default: "NOTIF-DEFAULT-01"
+    by_channel:
+      SMS: "NOTIF-SMS-01"
+      Email: "NOTIF-EMAIL-01"
+      Push: "NOTIF-PUSH-01"
+    by_priority:
+      High: "NOTIF-HIGH-01"
+      Medium: "NOTIF-MED-01"
+      Low: "NOTIF-LOW-01"
+  
+  Alert:
+    default: "ALERT-DEFAULT-01"
+    by_channel:
+      SMS: "ALERT-SMS-01"
+      Email: "ALERT-EMAIL-01"
+      Push: "ALERT-PUSH-01"
+    by_urgency:
+      Critical: "ALERT-CRIT-01"
+      Warning: "ALERT-WARN-01"
+  
+  Update:
+    default: "UPDATE-DEFAULT-01"
+    by_channel:
+      SMS: "UPDATE-SMS-01"
+      Email: "UPDATE-EMAIL-01"
+      Push: "UPDATE-PUSH-01"
+  
+  Reminder:
+    default: "REMIND-DEFAULT-01"
+    by_channel:
+      SMS: "REMIND-SMS-01"
+      Email: "REMIND-EMAIL-01"
+      Push: "REMIND-PUSH-01"
+    by_frequency:
+      First: "REMIND-FIRST-01"
+      Second: "REMIND-SECOND-01"
+      Final: "REMIND-FINAL-01"
+
+channel_defaults:
+  SMS:
+    max_length: 160
+    personalization: "minimal"
+    format: "plain_text"
+  
+  Email:
+    max_length: null
+    personalization: "full"
+    format: "html"
+  
+  Push:
+    max_length: 100
+    personalization: "basic"
+    format: "plain_text"

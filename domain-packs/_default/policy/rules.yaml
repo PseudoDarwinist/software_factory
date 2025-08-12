@@ -1,0 +1,80 @@
+rules:
+  - id: "sla.timing.default"
+    description: "All messages must be sent within SLA timeframe"
+    applies_when:
+      event.type: "*"
+    expect:
+      latency_ms: "<= sla_threshold"
+      status: "OK"
+  
+  - id: "template.selection.channel"
+    description: "Template must match event type and channel"
+    applies_when:
+      event.type: "*"
+      decision.channel: "*"
+    expect:
+      template_id_pattern: "{event_type}_{channel}_*"
+  
+  - id: "consent.required"
+    description: "Valid consent required for all communications"
+    applies_when:
+      event.type: "*"
+    expect:
+      consent_status: "valid"
+      consent_timestamp: "not_null"
+  
+  - id: "duplicate.suppression"
+    description: "Prevent duplicate messages within time window"
+    applies_when:
+      event.type: "*"
+    expect:
+      duplicate_check: "passed"
+      window_minutes: 60
+  
+  - id: "blocklist.check"
+    description: "Do not send to blocklisted recipients"
+    applies_when:
+      event.type: "*"
+    expect:
+      blocklist_status: "not_blocked"
+  
+  - id: "personalization.attempt"
+    description: "Attempt personalization when data available"
+    applies_when:
+      event.type: "*"
+      personalization_data: "available"
+    expect:
+      personalization_status: "success"
+  
+  - id: "locale.matching"
+    description: "Content locale should match recipient preference"
+    applies_when:
+      event.type: "*"
+      recipient.locale: "not_null"
+    expect:
+      content_locale: "matches_recipient"
+  
+  - id: "eligibility.check"
+    description: "Only send to eligible recipients"
+    applies_when:
+      event.type: "*"
+    expect:
+      eligibility_status: "eligible"
+      eligibility_reason: "not_null"
+  
+  - id: "system.error.handling"
+    description: "Handle system errors gracefully"
+    applies_when:
+      event.type: "*"
+      system_error: "occurred"
+    expect:
+      error_handling: "graceful"
+      retry_attempted: "true"
+  
+  - id: "data.validation"
+    description: "Required data fields must be present"
+    applies_when:
+      event.type: "*"
+    expect:
+      required_fields: "present"
+      data_validation: "passed"

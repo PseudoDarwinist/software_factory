@@ -1,0 +1,13 @@
+id: "sla:irr-core"
+tag: "Time.SLA"
+select:
+  event.type_in: ["Delay", "Cancel", "Rebook", "ScheduledChange", "NewInfo"]
+  window_minutes: 1440
+verify:
+  pass_when_any:
+    - "event.type == 'Delay' and decision.latency_ms <= pack.defaults.sla.FlightDelay"
+    - "event.type == 'Cancel' and decision.latency_ms <= pack.defaults.sla.FlightCancellation"
+    - "event.type == 'Rebook' and decision.latency_ms <= pack.defaults.sla.Rebooking"
+    - "event.type == 'ScheduledChange' and decision.latency_ms <= pack.defaults.sla.ScheduledChange"
+    - "event.type == 'NewInfo' and decision.latency_ms <= pack.defaults.sla.NewInfo"
+min_pass_rate: 0.95

@@ -45,7 +45,10 @@ class WebSocketServer:
             cors_allowed_origins="*",
             async_mode='eventlet',
             logger=True,
-            engineio_logger=True
+            engineio_logger=True,
+            max_http_buffer_size=10000000,  # 10MB (default is 1MB)
+            ping_timeout=60,
+            ping_interval=25
         )
         self.event_bus = get_event_bus() if get_event_bus else None
         self.auth_service = get_auth_service() if get_auth_service else None
@@ -77,7 +80,7 @@ class WebSocketServer:
         """Setup WebSocket event handlers"""
         
         @self.socketio.on('connect')
-        def handle_connect():
+        def handle_connect(auth=None):
             """Handle client connection"""
             client_id = request.sid
             client_info = {
@@ -105,6 +108,43 @@ class WebSocketServer:
                 'authentication_required': True,
                 'heartbeat_interval': self.heartbeat_interval
             })
+
+            # Attempt auto-authentication using Socket.IO 'auth' handshake payload
+            try:
+                token = None
+                if isinstance(auth, dict):
+                    token = auth.get('token') or auth.get('Authorization') or auth.get('authorization')
+                # Some clients pass Bearer prefix
+                if isinstance(token, str) and token.lower().startswith('bearer '):
+                    token = token.split(' ', 1)[1]
+                if token and self.auth_service is not None:
+                    permissions = self.auth_service.decode_token(token)
+                    if permissions:
+                        client_info['user_id'] = permissions.user_id
+                        client_info['permissions'] = permissions
+                        client_info['authenticated'] = True
+                        client_info['project_ids'] = permissions.project_ids
+                        # Track presence
+                        user_id = permissions.user_id
+                        if user_id not in self.user_presence:
+                            self.user_presence[user_id] = set()
+                        self.user_presence[user_id].add(client_id)
+                        self.stats['authenticated_connections'] += 1
+                        logger.info(f"Client {client_id} auto-authenticated on connect (user {permissions.user_id})")
+                        emit('authenticated', {
+                            'user_id': permissions.user_id,
+                            'username': permissions.username,
+                            'project_ids': list(permissions.project_ids),
+                            'roles': list(permissions.roles),
+                            'is_admin': permissions.is_admin,
+                            'expires_at': permissions.expires_at.isoformat() if permissions.expires_at else None
+                        })
+                    else:
+                        logger.warning(f"Client {client_id} provided invalid token in connect auth payload")
+                else:
+                    logger.debug(f"Client {client_id} connected without auth token; awaiting explicit authenticate event")
+            except Exception as e:
+                logger.warning(f"Auto-auth on connect failed for client {client_id}: {e}")
         
         @self.socketio.on('disconnect')
         def handle_disconnect():
@@ -470,7 +510,7 @@ class WebSocketServer:
             logger.error(f"Failed to setup event subscriptions: {e}")
             logger.info("WebSocket server will operate without event subscriptions")
     
-    def _handle_event_from_bus(self, event: Event):
+    def _handle_event_from_bus(self, event):
         """Handle event received from event bus"""
         try:
             self.stats['events_processed'] += 1
@@ -820,13 +860,20 @@ class WebSocketServer:
     def disconnect_client(self, client_id: str, reason: str = "Server initiated"):
         """Disconnect a specific client"""
         if client_id in self.connected_clients:
-            self.socketio.emit('disconnect_notice', {
-                'reason': reason,
-                'timestamp': datetime.utcnow().isoformat()
-            }, room=client_id)
-            
-            disconnect(client_id)
-            logger.info(f"Disconnected client {client_id}: {reason}")
+            try:
+                # Inform client first
+                self.socketio.emit('disconnect_notice', {
+                    'reason': reason,
+                    'timestamp': datetime.utcnow().isoformat()
+                }, room=client_id)
+
+                # Use server-side disconnect via SocketIO's server context to avoid
+                # relying on Flask request context in background threads.
+                # This matches the engineio server API for disconnecting a session.
+                self.socketio.server.disconnect(sid=client_id, namespace='/')
+                logger.info(f"Disconnected client {client_id}: {reason}")
+            except Exception as e:
+                logger.error(f"Failed to disconnect client {client_id}: {e}")
     
     def disconnect_user(self, user_id: str, reason: str = "Server initiated"):
         """Disconnect all connections for a specific user"""
@@ -928,18 +975,85 @@ class WebSocketServer:
                 if permissions and (permissions.is_admin or permissions.has_project_access(project_id)):
                     authorized_clients.append(client_id)
             
-            # Broadcast to authorized clients
-            for client_id in authorized_clients:
-                self.socketio.emit('phase_transition', {
+            # If no authorized clients (common in local dev without auth), fall back to all connected clients
+            target_clients = authorized_clients if authorized_clients else list(self.connected_clients.keys())
+
+            if not authorized_clients:
+                logger.info(
+                    f"No authorized clients for phase transition in project {project_id}; broadcasting to all {len(target_clients)} connected clients (dev fallback)."
+                )
+
+            # Broadcast to target clients
+            for client_id in target_clients:
+                payload = {
                     'timestamp': datetime.utcnow().isoformat(),
                     **transition_data
-                }, room=client_id)
+                }
+                # Legacy underscore event name (backend consumers)
+                self.socketio.emit('phase_transition', payload, room=client_id)
+                # New dot-style event name used by Mission Control frontend
+                self.socketio.emit('phase.transition', payload, room=client_id)
             
-            self.stats['messages_sent'] += len(authorized_clients)
+            self.stats['messages_sent'] += len(target_clients)
             logger.info(f"Broadcasted phase transition to {len(authorized_clients)} clients in project {project_id}")
             
         except Exception as e:
             logger.error(f"Error broadcasting phase transition for project {project_id}: {e}")
+            self.stats['errors'] += 1
+
+    def broadcast_validation_run(self, project_id: str, run_data: Dict[str, Any]):
+        """Broadcast a validation run update to authorized clients for a project.
+        Emits on topic 'validation.runs' which the Mission Control Validate UI listens to.
+        """
+        try:
+            # Determine which connected clients may receive this project's updates
+            authorized_clients = []
+            for client_id, client_info in self.connected_clients.items():
+                if not client_info.get('authenticated'):
+                    continue
+                permissions = client_info.get('permissions')
+                if permissions and (permissions.is_admin or permissions.has_project_access(project_id)):
+                    authorized_clients.append(client_id)
+
+            target_clients = authorized_clients if authorized_clients else list(self.connected_clients.keys())
+            if not authorized_clients:
+                logger.info(
+                    f"No authorized clients for validation.runs in project {project_id}; broadcasting to all {len(target_clients)} connected clients (dev fallback)."
+                )
+
+            for client_id in target_clients:
+                self.socketio.emit('validation.runs', run_data, room=client_id)
+
+            self.stats['messages_sent'] += len(target_clients)
+            logger.info(f"Broadcasted validation.runs to {len(authorized_clients)} clients in project {project_id}")
+        except Exception as e:
+            logger.error(f"Error broadcasting validation run for project {project_id}: {e}")
+            self.stats['errors'] += 1
+
+    def broadcast_validation_checks(self, project_id: str, checks_data: Any):
+        """Broadcast one or more validation check updates for a project on 'validation.checks'."""
+        try:
+            authorized_clients = []
+            for client_id, client_info in self.connected_clients.items():
+                if not client_info.get('authenticated'):
+                    continue
+                permissions = client_info.get('permissions')
+                if permissions and (permissions.is_admin or permissions.has_project_access(project_id)):
+                    authorized_clients.append(client_id)
+
+            target_clients = authorized_clients if authorized_clients else list(self.connected_clients.keys())
+            if not authorized_clients:
+                logger.info(
+                    f"No authorized clients for validation.checks in project {project_id}; broadcasting to all {len(target_clients)} connected clients (dev fallback)."
+                )
+
+            for client_id in target_clients:
+                self.socketio.emit('validation.checks', checks_data, room=client_id)
+
+            self.stats['messages_sent'] += len(target_clients)
+            logger.info(f"Broadcasted validation.checks to {len(authorized_clients)} clients in project {project_id}")
+        except Exception as e:
+            logger.error(f"Error broadcasting validation checks for project {project_id}: {e}")
             self.stats['errors'] += 1
     
     def health_check(self) -> bool:

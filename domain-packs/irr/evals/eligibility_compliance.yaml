@@ -1,0 +1,8 @@
+id: "eligibility:compliance"
+tag: "Eligibility.TimeWindow"
+select:
+  event.type_in: ["Delay","Cancel"]
+  window_minutes: 1440
+verify:
+  pass_when: "not finding_exists('Eligibility.TimeWindow') and not finding_exists('Eligibility.MarketRoute') and not finding_exists('Eligibility.BoardingState')"
+min_pass_rate: 0.995

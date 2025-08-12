@@ -20,6 +20,7 @@ import { tokens } from '@/styles/tokens'
 import { MonitoringDashboard } from '@/components/monitoring/MonitoringDashboard'
 import { HealthPill } from '@/components/monitoring/HealthPill'
 import type { SystemHealth } from '@/types/monitoring'
+import { AlertPreferences } from './AlertPreferences'
 
 interface SettingsProps {
   onBack?: () => void
@@ -72,7 +73,7 @@ export const Settings: React.FC<SettingsProps> = ({ onBack }) => {
     { id: 'monitoring', label: 'Monitoring', icon: '📊', available: true },
     { id: 'agents', label: 'Agents', icon: '🤖', available: false },
     { id: 'integrations', label: 'Integrations', icon: '🔗', available: false },
-    { id: 'alerts', label: 'Alerts', icon: '🚨', available: false },
+    { id: 'alerts', label: 'Alerts', icon: '🚨', available: true },
   ]
 
   return (
@@ -192,14 +193,11 @@ export const Settings: React.FC<SettingsProps> = ({ onBack }) => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.3 }}
-              className="h-full flex items-center justify-center"
+              className="h-full"
             >
-              <div className="text-center text-white/60">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
-                  <span className="text-white/40 text-2xl">🚨</span>
-                </div>
-                <h3 className="text-lg font-medium mb-2">Alert Configuration</h3>
-                <p className="text-sm">Coming soon - Alert thresholds and notifications</p>
+              <div className="max-w-3xl mx-auto p-6 space-y-6">
+                <h3 className="text-lg font-semibold">Alert & Notification Preferences</h3>
+                <AlertPreferences />
               </div>
             </motion.div>
           )}

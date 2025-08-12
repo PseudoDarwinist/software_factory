@@ -1,0 +1,8 @@
+id: "templates:event-alignment"
+tag: "Tpl.Select"
+select:
+  event.type_in: ["Delay","Cancel","Rebook","ScheduledChange","NewInfo","AirportChange","NoAlternativeUN"]
+  window_minutes: 10080
+verify:
+  pass_when: "not finding_exists('Tpl.Select')"
+min_pass_rate: 0.99

@@ -1,0 +1,39 @@
+id: "template_selection"
+tag: "Template.Selection"
+description: "Template selection accuracy evaluation"
+
+select:
+  event_types: ["*"]
+  window_hours: 24
+  min_cases: 100
+  filters:
+    - "template_id is not null"
+    - "event.type is not null"
+
+verify:
+  checks:
+    - name: "correct_template"
+      description: "Template matches event type and channel"
+      condition: "template_matches_event_and_channel"
+      weight: 1.0
+    
+    - name: "template_exists"
+      description: "Selected template exists and is valid"
+      condition: "template_validation_passed"
+      weight: 0.9
+    
+    - name: "channel_appropriate"
+      description: "Template is appropriate for delivery channel"
+      condition: "template_channel_compatible"
+      weight: 0.8
+
+expected_outcomes:
+  - metric: "template_accuracy_rate"
+    operator: ">="
+    value: 0.98
+  
+  - metric: "template_error_rate"
+    operator: "<="
+    value: 0.02
+
+min_pass_rate: 0.98

@@ -90,6 +90,19 @@ export const DefineStage: React.FC<DefineStageProps> = ({
   const [currentSpec, setCurrentSpec] = useState<SpecificationSet | null>(null)
   const [specLoading, setSpecLoading] = useState(false)
   const [specError, setSpecError] = useState<string | null>(null)
+
+  // Testing override: allow refreezing any time when enabled via URL or localStorage
+  const forceFreezeEnabled = (() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search)
+      return (
+        urlParams.get('forceFreeze') === '1' ||
+        localStorage.getItem('forceFreeze') === '1'
+      )
+    } catch {
+      return false
+    }
+  })()
   const [activeTab, setActiveTab] = useState<'requirements' | 'design' | 'tasks'>('requirements')
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false)
   const [showProgressiveEditor, setShowProgressiveEditor] = useState(false)
@@ -358,7 +371,16 @@ export const DefineStage: React.FC<DefineStageProps> = ({
     if (!currentSpec || !selectedProject) return
 
     try {
-      await missionControlApi.freezeSpecification(currentSpec.spec_id, selectedProject)
+      // Allow force refreeze when test flag is enabled via query or localStorage
+      const urlParams = new URLSearchParams(window.location.search)
+      const forceFreezeFlag = urlParams.get('forceFreeze') === '1' ||
+        localStorage.getItem('forceFreeze') === '1'
+
+      await missionControlApi.freezeSpecification(
+        currentSpec.spec_id,
+        selectedProject,
+        forceFreezeFlag
+      )
       
       // Update local state
       setCurrentSpec(prev => {
@@ -990,13 +1012,17 @@ export const DefineStage: React.FC<DefineStageProps> = ({
                   </motion.button>
                   
                   <motion.button
-                    whileHover={{ scale: currentSpec.completion_status.ready_to_freeze ? 1.05 : 1 }}
-                    whileTap={{ scale: currentSpec.completion_status.ready_to_freeze ? 0.95 : 1 }}
+                    whileHover={{
+                      scale: (currentSpec.completion_status.ready_to_freeze || forceFreezeEnabled) ? 1.05 : 1,
+                    }}
+                    whileTap={{
+                      scale: (currentSpec.completion_status.ready_to_freeze || forceFreezeEnabled) ? 0.95 : 1,
+                    }}
                     onClick={freezeSpecification}
-                    disabled={!currentSpec.completion_status.ready_to_freeze}
+                    disabled={!(currentSpec.completion_status.ready_to_freeze || forceFreezeEnabled)}
                     className={clsx(
                       'neon-btn transition-all',
-                      !currentSpec.completion_status.ready_to_freeze && 'neon-btn--disabled'
+                      !(currentSpec.completion_status.ready_to_freeze || forceFreezeEnabled) && 'neon-btn--disabled'
                     )}
                   >
                     Freeze Spec

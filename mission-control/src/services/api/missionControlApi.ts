@@ -631,9 +631,16 @@ class MissionControlApi {
     }
   }
 
-  async freezeSpecification(specId: string, projectId: string): Promise<void> {
+  async freezeSpecification(
+    specId: string,
+    projectId: string,
+    force: boolean = false
+  ): Promise<void> {
     try {
-      await this.client.post(`/specification/${specId}/freeze`, { projectId });
+      await this.client.post(`/specification/${specId}/freeze`, {
+        projectId,
+        force,
+      });
     } catch (error) {
       console.error("Failed to freeze specification:", error);
       throw new Error("Failed to freeze specification");
@@ -923,6 +930,14 @@ class MissionControlApi {
 
       const currentTime = Date.now();
 
+      // Debug: summarize pending events present in status for tracing
+      if ((status as any).events && Array.isArray((status as any).events)) {
+        try {
+          const types = (status as any).events.map((e: any) => e?.type)
+          console.log('[Polling] Received events:', types)
+        } catch {}
+      }
+
       // Check for project updates
       if (status.projects_updated > (this.lastUpdate.projects || 0)) {
         this.lastUpdate.projects = status.projects_updated;
@@ -960,6 +975,9 @@ class MissionControlApi {
       // Process pending events
       if ((status as any).events && Array.isArray((status as any).events)) {
         (status as any).events.forEach((event: any) => {
+          try {
+            console.log('[Polling] Dispatching event:', event?.type, event)
+          } catch {}
           this.notifyCallbacks(event);
         });
       }
@@ -970,6 +988,9 @@ class MissionControlApi {
   }
 
   private notifyCallbacks(event: any): void {
+    try {
+      console.debug('[Polling] notifyCallbacks -> listeners:', this.pollingCallbacks.length, 'event:', event?.type)
+    } catch {}
     this.pollingCallbacks.forEach((callback) => {
       try {
         callback(event);
@@ -1746,6 +1767,26 @@ class MissionControlApi {
     } catch (error) {
       console.error("Failed to get latest validation run:", error);
       throw new Error("Failed to get latest validation run");
+    }
+  }
+
+  async addValidationDecision(
+    validationRunId: string,
+    action: 'approve_override' | 'send_to_bug' | 'reject' | 'retry',
+    reason?: string,
+    user?: string
+  ): Promise<{ message: string; decisions: any[] }> {
+    try {
+      const response = await this.client.post<{
+        message: string;
+        decisions: any[];
+      }>(`/validation/runs/${validationRunId}/decision`, { action, reason, user })
+      // Some endpoints return wrapped data; normalize
+      const payload: any = (response as any).data
+      return payload.data ?? payload
+    } catch (error) {
+      console.error('Failed to add validation decision:', error)
+      throw new Error('Failed to add validation decision')
     }
   }
 }

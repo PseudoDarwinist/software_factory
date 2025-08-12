@@ -1,0 +1,36 @@
+pack:
+  name: "Default Domain Pack"
+  version: "1.0.0"
+  owner_team: "platform"
+  description: "Default fallback domain pack with universal failure modes for any application domain"
+
+defaults:
+  sla:
+    Event.Default: 600000           # 10 minutes
+    Notification: 300000            # 5 minutes
+    Update: 180000                  # 3 minutes
+    Alert: 120000                   # 2 minutes
+    Reminder: 900000                # 15 minutes
+
+  review:
+    insight_thresholds:
+      cluster_min: 5
+      window_minutes: 60
+    auto_tag_confidence: 0.85
+
+  # Fine-grained SLA overrides for universal scenarios
+  sla_overrides:
+    by_channel:
+      SMS:
+        Notification: 240000
+      Email:
+        Notification: 420000
+      Push:
+        Alert: 60000
+    by_priority:
+      High:
+        Alert: 60000
+      Medium:
+        Notification: 300000
+      Low:
+        Reminder: 1800000

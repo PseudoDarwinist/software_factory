@@ -1533,23 +1533,521 @@ IMPORTANT:
             
             ai_service = AIService()
             
-            # Create design-specific prompt for Model Garden
-            design_prompt = f"""Create a comprehensive design document based on these requirements:
+            # Create professional design prompt matching Kiro's enterprise standards
+            design_prompt = """You are a senior software architect developing a comprehensive, professional design document based on approved feature requirements. The requirements document has been created, reviewed, and approved by the user. Your task is to create a detailed technical design that matches enterprise-grade industry standards with ASCII diagrams, complete TypeScript interfaces, and comprehensive technical sections.
 
+APPROVED REQUIREMENTS:
 {requirements_content}
 
-Generate a detailed design.md with:
-1. System Architecture Overview
-2. Key Components and APIs
-3. Database Design
-4. Integration Points
-5. Security Considerations
-6. Performance Requirements
+BUSINESS CONTEXT:
+{ai_context}""".format(requirements_content=requirements_content, ai_context=ai_context) + """
 
-Context:
-{ai_context}
+TASK: Create a detailed design document that matches the quality and depth of enterprise-grade technical specifications with ASCII diagrams, complete TypeScript interfaces, and comprehensive technical sections.
 
-Keep it professional and implementation-focused."""
+DESIGN METHODOLOGY:
+- Focus on the APPROVED REQUIREMENTS as your primary source
+- Design solutions that address each requirement systematically
+- Consider technical patterns and best practices for the solution domain
+- Include detailed ASCII diagrams for architecture visualization (REQUIRED)
+- Provide complete TypeScript interfaces for all components
+- Include security, accessibility, and performance considerations
+- Highlight design decisions and their rationales
+- Ensure scalability, maintainability, and security
+
+REQUIRED SECTIONS:
+
+# Design Document
+
+## Overview
+The [Feature Name] is designed as a comprehensive [feature type] that provides [core functionality]. The interface follows a [design pattern] design pattern consistent with the existing [system context] and implements a [development approach] for [specific benefits].
+
+The design emphasizes [key principles], clear visual hierarchy, and actionable insights to help [target users] make informed decisions about [business outcome].
+
+## Architecture
+
+### High-Level Architecture
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    [Feature Name] System                    │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │              [Primary Component]                        │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│  ┌──────────┬─────────────────────────┬──────────────────┐   │
+│  │   Left   │                         │                  │   │
+│  │ Sidebar  │   Main Content Panel    │  Action Panel    │   │
+│  │          │                         │                  │   │
+│  │          │                         │                  │   │
+│  └──────────┴─────────────────────────┴──────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │                 [Secondary Component]                   │ │
+│  └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Component Hierarchy
+```
+[MainFeature]Stage
+├── [Primary]ProgressBar
+├── [Feature]Layout
+│   ├── LeftSidebar
+│   │   ├── [Feature]Items
+│   │   └── [Action]Items
+│   ├── [Main]Panel
+│   │   ├── [Content]List
+│   │   └── [Content]Item
+│   ├── [Action]Panel
+│   │   ├── [Action]Header
+│   │   ├── [Action]Content
+│   │   └── ActionButtons
+│   └── [Secondary]Dashboard
+│       ├── [Metric]Chart
+│       └── MetricCard
+└── WebSocketProvider
+```
+
+### Data Flow Architecture
+```
+External Systems → API Gateway → Backend Services → WebSocket → React UI
+                                        ↓
+                                Database Storage
+                                        ↓
+                                Real-time Updates
+```
+
+## Components and Interfaces
+
+### 1. [MainFeature]Stage Component
+**Purpose**: Main container component for the entire [feature] interface
+
+**Props Interface**:
+```typescript
+interface [MainFeature]StageProps {
+  projectId: string;
+  onStageChange?: (stage: string) => void;
+  initialData?: [Feature]Data;
+  config?: [Feature]Config;
+}
+
+interface [Feature]Data {
+  items: [Feature]Item[];
+  status: 'loading' | 'ready' | 'error' | 'empty';
+  metadata: Record<string, any>;
+  lastUpdated: Date;
+}
+
+interface [Feature]Config {
+  autoRefresh: boolean;
+  refreshInterval: number;
+  maxItems: number;
+  enableRealtime: boolean;
+}
+```
+
+**State Management**:
+- Current [feature] status and selected items
+- Real-time connection status and error states
+- Filter preferences and view configurations
+- User interaction state and navigation history
+
+### 2. [Primary]ProgressBar Component
+**Purpose**: Visual progress indicator showing [process] pipeline stages
+
+**Props Interface**:
+```typescript
+interface [Primary]ProgressBarProps {
+  stages: [Process]Stage[];
+  currentStage: number;
+  onStageClick?: (stageIndex: number) => void;
+  showTimestamps?: boolean;
+}
+
+interface [Process]Stage {
+  id: string;
+  name: string;
+  status: 'pending' | 'running' | 'success' | 'warning' | 'error';
+  timestamp?: Date;
+  duration?: number;
+  metadata?: StageMetadata;
+}
+
+interface StageMetadata {
+  description: string;
+  requirements: string[];
+  artifacts: Artifact[];
+  dependencies: string[];
+}
+```
+
+**Visual States**:
+- Pending: Gray circle with outline
+- Running: Animated blue circle with spinner
+- Success: Green circle with checkmark
+- Warning: Yellow circle with warning icon
+- Error: Red circle with X icon
+
+### 3. [Main]Panel Component
+**Purpose**: Real-time list of [content] items and their status
+
+**Props Interface**:
+```typescript
+interface [Main]PanelProps {
+  [content]Items: [Content]Item[];
+  selectedItemId?: string;
+  onItemSelect: (itemId: string) => void;
+  onItemAction: (itemId: string, action: string) => void;
+  filterConfig?: FilterConfig;
+}
+
+interface [Content]Item {
+  id: string;
+  name: string;
+  type: '[content_type_1]' | '[content_type_2]' | '[content_type_3]';
+  status: 'pending' | 'running' | 'success' | 'warning' | 'error';
+  timestamp: Date;
+  duration?: number;
+  progress?: number;
+  metadata: Record<string, any>;
+  actions: ItemAction[];
+}
+
+interface ItemAction {
+  id: string;
+  label: string;
+  type: 'primary' | 'secondary' | 'danger';
+  enabled: boolean;
+  confirmation?: ConfirmationConfig;
+}
+```
+
+### 4. [Action]Panel Component
+**Purpose**: Detailed view of [content] item results and actions
+
+**Props Interface**:
+```typescript
+interface [Action]PanelProps {
+  [content]Item?: [Content]Item;
+  [action]Data?: [Action]Data;
+  onAction: (action: [Action]Type) => void;
+  permissions?: UserPermissions;
+}
+
+interface [Action]Data {
+  logs?: LogEntry[];
+  artifacts?: Artifact[];
+  results?: [Result]Data[];
+  metrics?: [Metric]Data[];
+  errors?: ErrorDetail[];
+  history?: HistoryEntry[];
+}
+
+interface [Action]Type {
+  type: 'approve' | 'reject' | 'retry' | 'debug' | 'export';
+  reason?: string;
+  metadata?: Record<string, any>;
+  confirmation?: boolean;
+}
+
+interface UserPermissions {
+  canView: boolean;
+  canApprove: boolean;
+  canReject: boolean;
+  canRetry: boolean;
+  canDebug: boolean;
+  canExport: boolean;
+}
+```
+
+## Data Models
+
+### Core Data Models
+```typescript
+// Main [feature] entity
+interface [Feature]Run {
+  id: string;
+  projectId: string;
+  [identifier]: string;
+  branch: string;
+  status: [Feature]RunStatus;
+  startedAt: Date;
+  completedAt?: Date;
+  items: [Content]Item[];
+  approvals: [Feature]Approval[];
+  metadata: Record<string, any>;
+}
+
+// Individual [content] item
+interface [Content]Item {
+  id: string;
+  runId: string;
+  name: string;
+  type: [Content]ItemType;
+  status: [Content]ItemStatus;
+  startedAt: Date;
+  completedAt?: Date;
+  duration?: number;
+  progress?: number;
+  data: [Content]Data;
+  actions: [Content]Action[];
+}
+
+// [Content] data and results
+interface [Content]Data {
+  logs: LogEntry[];
+  artifacts: Artifact[];
+  results: [Result]Data[];
+  metrics: [Metric]Data[];
+  errors: ErrorDetail[];
+}
+
+// Stakeholder approvals
+interface [Feature]Approval {
+  id: string;
+  runId: string;
+  userId: string;
+  role: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reason?: string;
+  timestamp: Date;
+}
+```
+
+### Database Schema
+```sql
+-- Main [feature] table
+CREATE TABLE [feature]_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL,
+  [identifier] VARCHAR(255) NOT NULL,
+  branch VARCHAR(255) NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending',
+  started_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT valid_status CHECK (status IN ('pending', 'running', 'success', 'warning', 'error'))
+);
+
+-- [Content] items table
+CREATE TABLE [content]_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id UUID REFERENCES [feature]_runs(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  type VARCHAR(50) NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending',
+  started_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  duration INTEGER,
+  progress INTEGER DEFAULT 0,
+  data JSONB,
+  created_at TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT valid_progress CHECK (progress >= 0 AND progress <= 100)
+);
+
+-- Indexes for performance
+CREATE INDEX idx_[feature]_runs_project ON [feature]_runs(project_id);
+CREATE INDEX idx_[feature]_runs_status ON [feature]_runs(status);
+CREATE INDEX idx_[content]_items_run ON [content]_items(run_id);
+CREATE INDEX idx_[content]_items_status ON [content]_items(status);
+```
+
+### Mock Data Structure
+```typescript
+// Mock data for development and testing
+interface MockDataConfig {
+  [feature]Runs: Mock[Feature]Run[];
+  [content]Items: Mock[Content]Item[];
+  [action]Data: Mock[Action]Data[];
+  trends: MockTrendData[];
+}
+
+// Mock data generators
+class MockDataGenerator {
+  generate[Feature]Run(status?: [Feature]RunStatus): [Feature]Run;
+  generate[Content]Item(type?: [Content]ItemType): [Content]Item;
+  generate[Action]Data(itemType: [Content]ItemType): [Action]Data;
+  generateTrendData(metric: string, days: number): MetricDataPoint[];
+  generateTestScenario(scenario: string): TestScenario;
+}
+```
+
+## Error Handling
+
+### Error Boundaries
+```typescript
+interface [Feature]ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+  errorInfo?: ErrorInfo;
+  errorId: string;
+  recoveryAttempts: number;
+}
+
+class [Feature]ErrorBoundary extends Component<Props, [Feature]ErrorBoundaryState> {
+  static getDerivedStateFromError(error: Error): [Feature]ErrorBoundaryState;
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void;
+  handleRecovery(): void;
+  render(): ReactNode;
+}
+```
+
+### API Error Handling
+```typescript
+interface APIErrorHandler {
+  on[Feature]FetchError: (error: Error) => void;
+  on[Action]DataFetchError: (itemId: string, error: Error) => void;
+  onActionError: (action: string, error: Error) => void;
+  onPermissionError: (resource: string, error: Error) => void;
+}
+
+interface ErrorRecoveryActions {
+  retryRequest: (requestId: string) => Promise<void>;
+  fallbackToCache: (cacheKey: string) => any;
+  showUserNotification: (error: Error) => void;
+  logErrorForSupport: (error: Error, context: ErrorContext) => void;
+}
+```
+
+## Testing Strategy
+
+### Unit Testing Approach
+1. **Component Testing**: Test each component in isolation with mock data
+2. **Hook Testing**: Test custom hooks for state management and WebSocket connections
+3. **Utility Testing**: Test data transformation and formatting utilities
+4. **Mock Data Testing**: Verify mock data generators produce valid data structures
+
+### Integration Testing Approach
+1. **Component Integration**: Test component interactions and data flow
+2. **WebSocket Integration**: Test real-time updates and connection handling
+3. **API Integration**: Test backend API interactions with mock servers
+4. **End-to-End Flows**: Test complete [feature] workflows from start to finish
+
+### Testing Tools and Setup
+```typescript
+// Jest configuration for component testing
+interface TestConfig {
+  testEnvironment: 'jsdom';
+  setupFilesAfterEnv: ['<rootDir>/src/test/setup.ts'];
+  moduleNameMapping: {
+    '\\.(css|less|scss)$': 'identity-obj-proxy';
+  };
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/**/*.d.ts',
+    '!src/test/**/*'
+  ];
+  coverageThreshold: {
+    global: {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80
+    }
+  };
+}
+
+// React Testing Library utilities
+interface TestUtils {
+  renderWithProviders: (component: ReactElement) => RenderResult;
+  mockWebSocket: () => MockWebSocket;
+  mock[Feature]Data: () => Mock[Feature]Run[];
+  setupTestEnvironment: () => TestEnvironment;
+}
+```
+
+## Performance Considerations
+
+### Optimization Strategies
+1. **Virtual Scrolling**: For large lists of [content] items
+2. **Memoization**: React.memo for expensive components
+3. **Lazy Loading**: Code splitting for [action] panel components
+4. **WebSocket Throttling**: Limit update frequency for high-volume events
+5. **Data Caching**: Cache [feature] results and [action] data
+
+### Performance Monitoring
+```typescript
+interface PerformanceMetrics {
+  componentRenderTime: number;
+  webSocketLatency: number;
+  dataFetchTime: number;
+  memoryUsage: number;
+  userInteractionDelay: number;
+}
+
+class PerformanceMonitor {
+  trackComponentRender(componentName: string, duration: number): void;
+  trackWebSocketLatency(eventType: string, latency: number): void;
+  trackDataFetch(endpoint: string, duration: number): void;
+  trackUserInteraction(action: string, delay: number): void;
+}
+```
+
+## Security Considerations
+
+### Authentication and Authorization
+```typescript
+interface [Feature]Permissions {
+  canView[Feature]: boolean;
+  canApprove[Feature]: boolean;
+  canReject[Feature]: boolean;
+  canRetry[Feature]: boolean;
+  canAccess[Action]Data: boolean;
+  canExport[Action]Data: boolean;
+}
+
+interface SecurityContext {
+  user: User;
+  permissions: [Feature]Permissions;
+  projectAccess: ProjectAccess[];
+  sessionToken: string;
+  csrfToken: string;
+}
+```
+
+### Data Protection
+1. **Sensitive Data Masking**: Mask sensitive information in logs and [action] data
+2. **Access Control**: Restrict [action] data access based on user roles
+3. **Audit Logging**: Track all [feature] actions and decisions
+4. **Secure WebSocket**: Use WSS for encrypted real-time communications
+
+## Accessibility Features
+
+### WCAG Compliance
+1. **Keyboard Navigation**: Full keyboard accessibility for all interactive elements
+2. **Screen Reader Support**: Proper ARIA labels and descriptions
+3. **Color Contrast**: Meet WCAG AA contrast requirements
+4. **Focus Management**: Clear focus indicators and logical tab order
+5. **Alternative Text**: Descriptive alt text for charts and visual elements
+
+### Accessibility Implementation
+```typescript
+interface AccessibilityProps {
+  'aria-label'?: string;
+  'aria-describedby'?: string;
+  'aria-expanded'?: boolean;
+  'aria-selected'?: boolean;
+  role?: string;
+  tabIndex?: number;
+}
+
+interface AccessibilityHooks {
+  useKeyboardNavigation: (items: any[]) => KeyboardNavigationState;
+  useScreenReaderAnnouncements: () => ScreenReaderAPI;
+  useFocusManagement: () => FocusManagementAPI;
+}
+```
+
+IMPORTANT GUIDELINES:
+- Base ALL design decisions on the approved requirements
+- Focus on solving the business problem with enterprise-grade technical depth
+- Include detailed ASCII diagrams for architecture visualization (REQUIRED)
+- Provide complete TypeScript interfaces for all components
+- Include security, accessibility, and performance considerations
+- Provide rationales for major design decisions
+- Ensure the design is implementable and maintainable
+- Use industry best practices and proven patterns
+- Generate a comprehensive design document that demonstrates enterprise-grade technical depth and follows professional structure standards"""
             
             # Use Model Garden with Claude Opus 4 for high-quality design
             result = ai_service.execute_model_garden_task(
@@ -1596,18 +2094,576 @@ Keep it professional and implementation-focused."""
                 if claude_service.is_available():
                     logger.info("Using Claude Code SDK for design generation")
                     
-                    # Create simplified design-specific prompt
-                    design_prompt = f"""Create a design document based on these requirements:
+                    # Create comprehensive design prompt matching Kiro's professional standards
+                    design_prompt = """You are a senior software architect creating a comprehensive, professional design document following Kiro's spec-driven development methodology. The requirements document has been approved and you must create a detailed technical design that matches enterprise-grade industry standards.
 
+APPROVED REQUIREMENTS:
 {requirements_content}
 
-Generate a design.md with:
-1. System Architecture Overview
-2. Key Components and APIs
-3. Database Design
-4. Integration Points
+BUSINESS CONTEXT:
+{ai_context}""".format(requirements_content=requirements_content, ai_context=ai_context) + """
 
-Keep it concise and focused on the core design decisions."""
+TASK: Create a detailed, professional design document that matches the quality and depth of enterprise-grade technical specifications with ASCII diagrams, complete TypeScript interfaces, and comprehensive technical sections.
+
+DESIGN STANDARDS:
+- Create comprehensive technical specifications with full implementation details
+- Include detailed component interfaces with complete TypeScript definitions
+- Provide ASCII diagrams for architecture visualization (REQUIRED)
+- Include security, accessibility, and performance considerations
+- Specify testing strategies with concrete tools and approaches
+- Define mock data structures for development
+- Provide detailed error handling and edge case coverage
+- Follow the exact structure and quality of professional design documents
+
+# Design Document
+
+## Overview
+The [Feature Name] is designed as a comprehensive [feature type] that provides [core functionality]. The interface follows a [design pattern] design pattern consistent with the existing [system context] and implements a [development approach] for [specific benefits].
+
+The design emphasizes [key principles], clear visual hierarchy, and actionable insights to help [target users] make informed decisions about [business outcome].
+
+## Architecture
+
+### High-Level Architecture
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    [Feature Name] System                    │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │              [Primary Component]                        │ │
+│  └─────────────────────────────────────────────────────────┘ │
+│  ┌──────────┬─────────────────────────┬──────────────────┐   │
+│  │   Left   │                         │                  │   │
+│  │ Sidebar  │   Main Content Panel    │  Action Panel    │   │
+│  │          │                         │                  │   │
+│  │          │                         │                  │   │
+│  └──────────┴─────────────────────────┴──────────────────┘   │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │                 [Secondary Component]                   │ │
+│  └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Component Hierarchy
+```
+[MainFeature]Stage
+├── [Primary]ProgressBar
+├── [Feature]Layout
+│   ├── LeftSidebar
+│   │   ├── [Feature]Items
+│   │   └── [Action]Items
+│   ├── [Main]Panel
+│   │   ├── [Content]List
+│   │   └── [Content]Item
+│   ├── [Action]Panel
+│   │   ├── [Action]Header
+│   │   ├── [Action]Content
+│   │   └── ActionButtons
+│   └── [Secondary]Dashboard
+│       ├── [Metric]Chart
+│       └── MetricCard
+└── WebSocketProvider
+```
+
+### Data Flow Architecture
+```
+External Systems → API Gateway → Backend Services → WebSocket → React UI
+                                        ↓
+                                Database Storage
+                                        ↓
+                                Real-time Updates
+```
+
+## Components and Interfaces
+
+### 1. [MainFeature]Stage Component
+**Purpose**: Main container component for the entire [feature] interface
+
+**Props Interface**:
+```typescript
+interface [MainFeature]StageProps {
+  projectId: string;
+  onStageChange?: (stage: string) => void;
+  initialData?: [Feature]Data;
+  config?: [Feature]Config;
+}
+
+interface [Feature]Data {
+  items: [Feature]Item[];
+  status: 'loading' | 'ready' | 'error' | 'empty';
+  metadata: Record<string, any>;
+  lastUpdated: Date;
+}
+
+interface [Feature]Config {
+  autoRefresh: boolean;
+  refreshInterval: number;
+  maxItems: number;
+  enableRealtime: boolean;
+}
+```
+
+**State Management**:
+- Current [feature] status and selected items
+- Real-time connection status and error states
+- Filter preferences and view configurations
+- User interaction state and navigation history
+
+### 2. [Primary]ProgressBar Component
+**Purpose**: Visual progress indicator showing [process] pipeline stages
+
+**Props Interface**:
+```typescript
+interface [Primary]ProgressBarProps {
+  stages: [Process]Stage[];
+  currentStage: number;
+  onStageClick?: (stageIndex: number) => void;
+  showTimestamps?: boolean;
+}
+
+interface [Process]Stage {
+  id: string;
+  name: string;
+  status: 'pending' | 'running' | 'success' | 'warning' | 'error';
+  timestamp?: Date;
+  duration?: number;
+  metadata?: StageMetadata;
+}
+
+interface StageMetadata {
+  description: string;
+  requirements: string[];
+  artifacts: Artifact[];
+  dependencies: string[];
+}
+```
+
+**Visual States**:
+- Pending: Gray circle with outline
+- Running: Animated blue circle with spinner
+- Success: Green circle with checkmark
+- Warning: Yellow circle with warning icon
+- Error: Red circle with X icon
+
+### 3. [Main]Panel Component
+**Purpose**: Real-time list of [content] items and their status
+
+**Props Interface**:
+```typescript
+interface [Main]PanelProps {
+  [content]Items: [Content]Item[];
+  selectedItemId?: string;
+  onItemSelect: (itemId: string) => void;
+  onItemAction: (itemId: string, action: string) => void;
+  filterConfig?: FilterConfig;
+}
+
+interface [Content]Item {
+  id: string;
+  name: string;
+  type: '[content_type_1]' | '[content_type_2]' | '[content_type_3]';
+  status: 'pending' | 'running' | 'success' | 'warning' | 'error';
+  timestamp: Date;
+  duration?: number;
+  progress?: number;
+  metadata: Record<string, any>;
+  actions: ItemAction[];
+}
+
+interface ItemAction {
+  id: string;
+  label: string;
+  type: 'primary' | 'secondary' | 'danger';
+  enabled: boolean;
+  confirmation?: ConfirmationConfig;
+}
+```
+
+### 4. [Action]Panel Component
+**Purpose**: Detailed view of [content] item results and actions
+
+**Props Interface**:
+```typescript
+interface [Action]PanelProps {
+  [content]Item?: [Content]Item;
+  [action]Data?: [Action]Data;
+  onAction: (action: [Action]Type) => void;
+  permissions?: UserPermissions;
+}
+
+interface [Action]Data {
+  logs?: LogEntry[];
+  artifacts?: Artifact[];
+  results?: [Result]Data[];
+  metrics?: [Metric]Data[];
+  errors?: ErrorDetail[];
+  history?: HistoryEntry[];
+}
+
+interface [Action]Type {
+  type: 'approve' | 'reject' | 'retry' | 'debug' | 'export';
+  reason?: string;
+  metadata?: Record<string, any>;
+  confirmation?: boolean;
+}
+
+interface UserPermissions {
+  canView: boolean;
+  canApprove: boolean;
+  canReject: boolean;
+  canRetry: boolean;
+  canDebug: boolean;
+  canExport: boolean;
+}
+```
+
+### 5. [Secondary]Dashboard Component
+**Purpose**: Historical [feature] metrics and trend analysis
+
+**Props Interface**:
+```typescript
+interface [Secondary]DashboardProps {
+  metrics: [Feature]Metric[];
+  timeRange: TimeRange;
+  onTimeRangeChange: (range: TimeRange) => void;
+  chartConfig?: ChartConfig;
+}
+
+interface [Feature]Metric {
+  id: string;
+  name: string;
+  type: '[metric_type_1]' | '[metric_type_2]' | '[metric_type_3]';
+  data: MetricDataPoint[];
+  target?: number;
+  threshold?: number;
+  trend: 'up' | 'down' | 'stable';
+}
+
+interface MetricDataPoint {
+  timestamp: Date;
+  value: number;
+  metadata?: Record<string, any>;
+}
+
+interface TimeRange {
+  start: Date;
+  end: Date;
+  granularity: 'hour' | 'day' | 'week' | 'month';
+}
+```
+
+## Data Models
+
+### Core Data Models
+```typescript
+// Main [feature] entity
+interface [Feature]Run {
+  id: string;
+  projectId: string;
+  [identifier]: string;
+  branch: string;
+  status: [Feature]RunStatus;
+  startedAt: Date;
+  completedAt?: Date;
+  items: [Content]Item[];
+  approvals: [Feature]Approval[];
+  metadata: Record<string, any>;
+}
+
+// Individual [content] item
+interface [Content]Item {
+  id: string;
+  runId: string;
+  name: string;
+  type: [Content]ItemType;
+  status: [Content]ItemStatus;
+  startedAt: Date;
+  completedAt?: Date;
+  duration?: number;
+  progress?: number;
+  data: [Content]Data;
+  actions: [Content]Action[];
+}
+
+// [Content] data and results
+interface [Content]Data {
+  logs: LogEntry[];
+  artifacts: Artifact[];
+  results: [Result]Data[];
+  metrics: [Metric]Data[];
+  errors: ErrorDetail[];
+}
+
+// Stakeholder approvals
+interface [Feature]Approval {
+  id: string;
+  runId: string;
+  userId: string;
+  role: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reason?: string;
+  timestamp: Date;
+}
+```
+
+### Database Schema
+```sql
+-- Main [feature] table
+CREATE TABLE [feature]_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL,
+  [identifier] VARCHAR(255) NOT NULL,
+  branch VARCHAR(255) NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending',
+  started_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT valid_status CHECK (status IN ('pending', 'running', 'success', 'warning', 'error'))
+);
+
+-- [Content] items table
+CREATE TABLE [content]_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id UUID REFERENCES [feature]_runs(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  type VARCHAR(50) NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending',
+  started_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  duration INTEGER,
+  progress INTEGER DEFAULT 0,
+  data JSONB,
+  created_at TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT valid_progress CHECK (progress >= 0 AND progress <= 100)
+);
+
+-- Approvals table
+CREATE TABLE [feature]_approvals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id UUID REFERENCES [feature]_runs(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL,
+  role VARCHAR(100) NOT NULL,
+  status VARCHAR(50) DEFAULT 'pending',
+  reason TEXT,
+  timestamp TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT valid_approval_status CHECK (status IN ('pending', 'approved', 'rejected'))
+);
+
+-- Indexes for performance
+CREATE INDEX idx_[feature]_runs_project ON [feature]_runs(project_id);
+CREATE INDEX idx_[feature]_runs_status ON [feature]_runs(status);
+CREATE INDEX idx_[content]_items_run ON [content]_items(run_id);
+CREATE INDEX idx_[content]_items_status ON [content]_items(status);
+CREATE INDEX idx_[feature]_approvals_run ON [feature]_approvals(run_id);
+```
+
+### Mock Data Structure
+```typescript
+// Mock data for development and testing
+interface MockDataConfig {
+  [feature]Runs: Mock[Feature]Run[];
+  [content]Items: Mock[Content]Item[];
+  [action]Data: Mock[Action]Data[];
+  trends: MockTrendData[];
+}
+
+// Mock data generators
+class MockDataGenerator {
+  generate[Feature]Run(status?: [Feature]RunStatus): [Feature]Run;
+  generate[Content]Item(type?: [Content]ItemType): [Content]Item;
+  generate[Action]Data(itemType: [Content]ItemType): [Action]Data;
+  generateTrendData(metric: string, days: number): MetricDataPoint[];
+  generateTestScenario(scenario: string): TestScenario;
+}
+```
+
+## Error Handling
+
+### Error Boundaries
+```typescript
+interface [Feature]ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+  errorInfo?: ErrorInfo;
+  errorId: string;
+  recoveryAttempts: number;
+}
+
+class [Feature]ErrorBoundary extends Component<Props, [Feature]ErrorBoundaryState> {
+  static getDerivedStateFromError(error: Error): [Feature]ErrorBoundaryState;
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void;
+  handleRecovery(): void;
+  render(): ReactNode;
+}
+```
+
+### WebSocket Error Handling
+```typescript
+interface WebSocketErrorHandler {
+  onConnectionLost: () => void;
+  onReconnectAttempt: (attempt: number) => void;
+  onReconnectSuccess: () => void;
+  onReconnectFailed: (error: Error) => void;
+  onMessageError: (error: MessageError) => void;
+}
+
+interface ConnectionRecoveryStrategy {
+  maxReconnectAttempts: number;
+  reconnectInterval: number;
+  backoffMultiplier: number;
+  fallbackPolling: boolean;
+}
+```
+
+### API Error Handling
+```typescript
+interface APIErrorHandler {
+  on[Feature]FetchError: (error: Error) => void;
+  on[Action]DataFetchError: (itemId: string, error: Error) => void;
+  onActionError: (action: string, error: Error) => void;
+  onPermissionError: (resource: string, error: Error) => void;
+}
+
+interface ErrorRecoveryActions {
+  retryRequest: (requestId: string) => Promise<void>;
+  fallbackToCache: (cacheKey: string) => any;
+  showUserNotification: (error: Error) => void;
+  logErrorForSupport: (error: Error, context: ErrorContext) => void;
+}
+```
+
+## Testing Strategy
+
+### Unit Testing Approach
+1. **Component Testing**: Test each component in isolation with mock data
+2. **Hook Testing**: Test custom hooks for state management and WebSocket connections
+3. **Utility Testing**: Test data transformation and formatting utilities
+4. **Mock Data Testing**: Verify mock data generators produce valid data structures
+
+### Integration Testing Approach
+1. **Component Integration**: Test component interactions and data flow
+2. **WebSocket Integration**: Test real-time updates and connection handling
+3. **API Integration**: Test backend API interactions with mock servers
+4. **End-to-End Flows**: Test complete [feature] workflows from start to finish
+
+### Testing Tools and Setup
+```typescript
+// Jest configuration for component testing
+interface TestConfig {
+  testEnvironment: 'jsdom';
+  setupFilesAfterEnv: ['<rootDir>/src/test/setup.ts'];
+  moduleNameMapping: {
+    '\\.(css|less|scss)$': 'identity-obj-proxy';
+  };
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/**/*.d.ts',
+    '!src/test/**/*'
+  ];
+  coverageThreshold: {
+    global: {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80
+    }
+  };
+}
+
+// React Testing Library utilities
+interface TestUtils {
+  renderWithProviders: (component: ReactElement) => RenderResult;
+  mockWebSocket: () => MockWebSocket;
+  mock[Feature]Data: () => Mock[Feature]Run[];
+  setupTestEnvironment: () => TestEnvironment;
+}
+```
+
+## Performance Considerations
+
+### Optimization Strategies
+1. **Virtual Scrolling**: For large lists of [content] items
+2. **Memoization**: React.memo for expensive components
+3. **Lazy Loading**: Code splitting for [action] panel components
+4. **WebSocket Throttling**: Limit update frequency for high-volume events
+5. **Data Caching**: Cache [feature] results and [action] data
+
+### Performance Monitoring
+```typescript
+interface PerformanceMetrics {
+  componentRenderTime: number;
+  webSocketLatency: number;
+  dataFetchTime: number;
+  memoryUsage: number;
+  userInteractionDelay: number;
+}
+
+class PerformanceMonitor {
+  trackComponentRender(componentName: string, duration: number): void;
+  trackWebSocketLatency(eventType: string, latency: number): void;
+  trackDataFetch(endpoint: string, duration: number): void;
+  trackUserInteraction(action: string, delay: number): void;
+}
+```
+
+## Security Considerations
+
+### Authentication and Authorization
+```typescript
+interface [Feature]Permissions {
+  canView[Feature]: boolean;
+  canApprove[Feature]: boolean;
+  canReject[Feature]: boolean;
+  canRetry[Feature]: boolean;
+  canAccess[Action]Data: boolean;
+  canExport[Action]Data: boolean;
+}
+
+interface SecurityContext {
+  user: User;
+  permissions: [Feature]Permissions;
+  projectAccess: ProjectAccess[];
+  sessionToken: string;
+  csrfToken: string;
+}
+```
+
+### Data Protection
+1. **Sensitive Data Masking**: Mask sensitive information in logs and [action] data
+2. **Access Control**: Restrict [action] data access based on user roles
+3. **Audit Logging**: Track all [feature] actions and decisions
+4. **Secure WebSocket**: Use WSS for encrypted real-time communications
+
+## Accessibility Features
+
+### WCAG Compliance
+1. **Keyboard Navigation**: Full keyboard accessibility for all interactive elements
+2. **Screen Reader Support**: Proper ARIA labels and descriptions
+3. **Color Contrast**: Meet WCAG AA contrast requirements
+4. **Focus Management**: Clear focus indicators and logical tab order
+5. **Alternative Text**: Descriptive alt text for charts and visual elements
+
+### Accessibility Implementation
+```typescript
+interface AccessibilityProps {
+  'aria-label'?: string;
+  'aria-describedby'?: string;
+  'aria-expanded'?: boolean;
+  'aria-selected'?: boolean;
+  role?: string;
+  tabIndex?: number;
+}
+
+interface AccessibilityHooks {
+  useKeyboardNavigation: (items: any[]) => KeyboardNavigationState;
+  useScreenReaderAnnouncements: () => ScreenReaderAPI;
+  useFocusManagement: () => FocusManagementAPI;
+}
+```
+
+Generate a comprehensive design document that demonstrates enterprise-grade technical depth, includes detailed ASCII diagrams, complete TypeScript interfaces, and follows the exact professional structure and quality standards of industry-leading design documents."""
                     
                     logger.info("Calling Claude Code SDK create_specification for design...")
                     result = claude_service.create_specification(design_prompt, ai_context)
@@ -1670,8 +2726,8 @@ Generate a concise design.md with system architecture, components, and integrati
             
             ai_service = AIService()
             
-            # Create tasks-specific prompt for Model Garden
-            tasks_prompt = f"""Based on the approved requirements and design, create a comprehensive implementation plan with actionable coding tasks.
+            # Create tasks-specific prompt for Model Garden following Kiro's implementation methodology
+            tasks_prompt = f"""After the approved requirements and design documents, create an actionable implementation plan with a checklist of coding tasks based on the requirements and design. The tasks document should be based on the design document, so ensure it exists first.
 
 APPROVED REQUIREMENTS:
 {requirements_content}
@@ -1682,30 +2738,100 @@ APPROVED DESIGN:
 CONTEXT:
 {ai_context}
 
-TASK:
-Create a markdown checklist of all user stories from the requirements document. For each user story, create a set of small, one-story-point sub-tasks (with unchecked checkboxes) that break down the story into concrete implementation steps.
+TASK: Create Task List
 
-Follow this exact format:
+Convert the feature design into a series of prompts for a code-generation LLM that will implement each step in a test-driven manner. Prioritize best practices, incremental progress, and early testing, ensuring no big jumps in complexity at any stage. Make sure that each prompt builds on the previous prompts, and ends with wiring things together. There should be no hanging or orphaned code that isn't integrated into a previous step.
+
+CONSTRAINTS:
+
+Focus ONLY on tasks that involve writing, modifying, or testing code.
+
+Format the implementation plan as a numbered checkbox list with a maximum of two levels of hierarchy:
+- Top-level items (like epics) should be used only when needed
+- Sub-tasks should be numbered with decimal notation (e.g., 1.1, 1.2, 2.1)
+- Each item must be a checkbox
+- Simple structure is preferred
+
+Each task item must include:
+- A clear objective as the task description that involves writing, modifying, or testing code
+- Additional information as sub-bullets under the task
+- Specific references to requirements from the requirements document (referencing granular sub-requirements, not just user stories)
+
+Ensure that the implementation plan is a series of discrete, manageable coding steps.
+Ensure each task references specific requirements from the requirement document.
+Do NOT include excessive implementation details that are already covered in the design document.
+Assume that all context documents (feature requirements, design) will be available during implementation.
+Ensure each step builds incrementally on previous steps.
+Prioritize test-driven development where appropriate.
+Ensure the plan covers all aspects of the design that can be implemented through code.
+Sequence steps to validate core functionality early through code.
+Ensure that all requirements are covered by the implementation tasks.
+
+ONLY include tasks that can be performed by a coding agent (writing code, creating tests, etc.).
+Do NOT include tasks related to user testing, deployment, performance metrics gathering, or other non-coding activities.
+Focus on code implementation tasks that can be executed within the development environment.
+
+Ensure each task is actionable by a coding agent by following these guidelines:
+- Tasks should involve writing, modifying, or testing specific code components
+- Tasks should specify what files or components need to be created or modified
+- Tasks should be concrete enough that a coding agent can execute them without additional clarification
+- Tasks should focus on implementation details rather than high-level concepts
+- Tasks should be scoped to specific coding activities (e.g., "Implement X function" rather than "Support X feature")
+
+Explicitly avoid including the following types of non-coding tasks in the implementation plan:
+- User acceptance testing or user feedback gathering
+- Deployment to production or staging environments
+- Performance metrics gathering or analysis
+- Running the application to test end to end flows. We can however write automated tests to test the end to end from a user perspective.
+- User training or documentation creation
+- Business process changes or organizational changes
+- Marketing or communication activities
+- Any task that cannot be completed through writing, modifying, or testing code
+
+Example Format (truncated):
 
 # Implementation Plan
 
-- [ ] **User Story: As a user, I want to [specific functionality], so that [benefit].**
-  - [ ] Implement [specific backend task] in `src/path/to/file.py`.
-  - [ ] Create API endpoint `/api/endpoint` for [specific purpose].
-  - [ ] Build frontend component in `mission-control/src/components/` for [specific UI].
-  - [ ] Write unit tests for [specific functionality].
-  - [ ] Add integration tests for [specific workflow].
+- [ ] 1. Set up project structure and core interfaces
+  - Create directory structure for models, services, repositories, and API components
+  - Define interfaces that establish system boundaries
+  - _Requirements: 1.1_
 
-- [ ] **User Story: As a user, I want to [another functionality], so that [benefit].**
-  - [ ] Create database model in `src/models/model_name.py`.
-  - [ ] Implement service layer in `src/services/service_name.py`.
-  - [ ] Add API endpoints in `src/api/blueprint_name.py`.
-  - [ ] Build React components with TypeScript.
-  - [ ] Write comprehensive tests.
+- [ ] 2. Implement data models and validation
+- [ ] 2.1 Create core data model interfaces and types
+  - Write TypeScript interfaces for all data models
+  - Implement validation functions for data integrity
+  - _Requirements: 2.1, 3.3, 1.2_
+- [ ] 2.2 Implement User model with validation
+  - Write User class with validation methods
+  - Create unit tests for User model validation
+  - _Requirements: 1.2_
+- [ ] 2.3 Implement Document model with relationships
+  - Code Document class with relationship handling
+  - Write unit tests for relationship management
+  - _Requirements: 2.1, 3.3, 1.2_
 
-CRITICAL: Use ONLY unchecked checkboxes (- [ ]) for all tasks. Do not use conversational text or explanations. Each line must be a checkbox item that can be parsed as an actionable task. Generate specific file paths and concrete implementation steps.
+- [ ] 3. Create storage mechanism
+- [ ] 3.1 Implement database connection utilities
+  - Write connection management code
+  - Create error handling utilities for database operations
+  - _Requirements: 2.1, 3.3, 1.2_
+- [ ] 3.2 Implement repository pattern for data access
+  - Code base repository interface
+  - Implement concrete repositories with CRUD operations
+  - Write unit tests for repository operations
+  - _Requirements: 4.3_
 
-Make each task actionable and specific to the codebase."""
+[Additional coding tasks continue...]
+
+CRITICAL: Use ONLY unchecked checkboxes (- [ ]) for all tasks. Each line must be a checkbox item that can be parsed as an actionable coding task. Generate specific file paths and concrete implementation steps that build incrementally.
+
+TASK GRANULARITY REQUIREMENTS:
+- Each task should create or modify only 1-2 files maximum
+- Tasks should be completable in 15-30 minutes by a coding agent
+- Separate model creation from test writing (different tasks)
+- Break down complex features into atomic steps
+- Use simple numbering (1, 2, 3) for better parsing, avoid deep nesting (2.1, 2.2)"""
             
             # Use Model Garden with Claude Opus 4 for high-quality task planning
             result = ai_service.execute_model_garden_task(
@@ -1755,8 +2881,8 @@ Make each task actionable and specific to the codebase."""
                 if claude_service.is_available():
                     logger.info("Using Claude Code SDK for tasks generation")
                     
-                    # Create tasks-specific prompt
-                    tasks_prompt = f"""Based on the approved requirements and design, create a comprehensive implementation plan with actionable coding tasks.
+                    # Create tasks-specific prompt following Kiro's implementation methodology
+                    tasks_prompt = f"""After the approved requirements and design documents, create an actionable implementation plan with a checklist of coding tasks based on the requirements and design. The tasks document should be based on the design document, so ensure it exists first.
 
 APPROVED REQUIREMENTS:
 {requirements_content}
@@ -1767,28 +2893,100 @@ APPROVED DESIGN:
 CONTEXT:
 {ai_context}
 
-TASK:
-Create a markdown checklist of all user stories from the requirements document. For each user story, create a set of small, one-story-point sub-tasks (with unchecked checkboxes) that break down the story into concrete implementation steps.
+TASK: Create Task List
 
-Follow this exact format:
+Convert the feature design into a series of prompts for a code-generation LLM that will implement each step in a test-driven manner. Prioritize best practices, incremental progress, and early testing, ensuring no big jumps in complexity at any stage. Make sure that each prompt builds on the previous prompts, and ends with wiring things together. There should be no hanging or orphaned code that isn't integrated into a previous step.
+
+CONSTRAINTS:
+
+Focus ONLY on tasks that involve writing, modifying, or testing code.
+
+Format the implementation plan as a numbered checkbox list with a maximum of two levels of hierarchy:
+- Top-level items (like epics) should be used only when needed
+- Sub-tasks should be numbered with decimal notation (e.g., 1.1, 1.2, 2.1)
+- Each item must be a checkbox
+- Simple structure is preferred
+
+Each task item must include:
+- A clear objective as the task description that involves writing, modifying, or testing code
+- Additional information as sub-bullets under the task
+- Specific references to requirements from the requirements document (referencing granular sub-requirements, not just user stories)
+
+Ensure that the implementation plan is a series of discrete, manageable coding steps.
+Ensure each task references specific requirements from the requirement document.
+Do NOT include excessive implementation details that are already covered in the design document.
+Assume that all context documents (feature requirements, design) will be available during implementation.
+Ensure each step builds incrementally on previous steps.
+Prioritize test-driven development where appropriate.
+Ensure the plan covers all aspects of the design that can be implemented through code.
+Sequence steps to validate core functionality early through code.
+Ensure that all requirements are covered by the implementation tasks.
+
+ONLY include tasks that can be performed by a coding agent (writing code, creating tests, etc.).
+Do NOT include tasks related to user testing, deployment, performance metrics gathering, or other non-coding activities.
+Focus on code implementation tasks that can be executed within the development environment.
+
+Ensure each task is actionable by a coding agent by following these guidelines:
+- Tasks should involve writing, modifying, or testing specific code components
+- Tasks should specify what files or components need to be created or modified
+- Tasks should be concrete enough that a coding agent can execute them without additional clarification
+- Tasks should focus on implementation details rather than high-level concepts
+- Tasks should be scoped to specific coding activities (e.g., "Implement X function" rather than "Support X feature")
+
+Explicitly avoid including the following types of non-coding tasks in the implementation plan:
+- User acceptance testing or user feedback gathering
+- Deployment to production or staging environments
+- Performance metrics gathering or analysis
+- Running the application to test end to end flows. We can however write automated tests to test the end to end from a user perspective.
+- User training or documentation creation
+- Business process changes or organizational changes
+- Marketing or communication activities
+- Any task that cannot be completed through writing, modifying, or testing code
+
+Example Format (truncated):
 
 # Implementation Plan
 
-- [ ] **User Story: As a user, I want to [specific functionality], so that [benefit].**
-  - [ ] Implement [specific backend task] in `src/path/to/file.py`.
-  - [ ] Create API endpoint `/api/endpoint` for [specific purpose].
-  - [ ] Build frontend component in `mission-control/src/components/` for [specific UI].
-  - [ ] Write unit tests for [specific functionality].
-  - [ ] Add integration tests for [specific workflow].
+- [ ] 1. Set up project structure and core interfaces
+  - Create directory structure for models, services, repositories, and API components
+  - Define interfaces that establish system boundaries
+  - _Requirements: 1.1_
 
-- [ ] **User Story: As a user, I want to [another functionality], so that [benefit].**
-  - [ ] Create database model in `src/models/model_name.py`.
-  - [ ] Implement service layer in `src/services/service_name.py`.
-  - [ ] Add API endpoints in `src/api/blueprint_name.py`.
-  - [ ] Build React components with TypeScript.
-  - [ ] Write comprehensive tests.
+- [ ] 2. Implement data models and validation
+- [ ] 2.1 Create core data model interfaces and types
+  - Write TypeScript interfaces for all data models
+  - Implement validation functions for data integrity
+  - _Requirements: 2.1, 3.3, 1.2_
+- [ ] 2.2 Implement User model with validation
+  - Write User class with validation methods
+  - Create unit tests for User model validation
+  - _Requirements: 1.2_
+- [ ] 2.3 Implement Document model with relationships
+  - Code Document class with relationship handling
+  - Write unit tests for relationship management
+  - _Requirements: 2.1, 3.3, 1.2_
 
-CRITICAL: Use ONLY unchecked checkboxes (- [ ]) for all tasks. Do not use conversational text or explanations. Each line must be a checkbox item that can be parsed as an actionable task."""
+- [ ] 3. Create storage mechanism
+- [ ] 3.1 Implement database connection utilities
+  - Write connection management code
+  - Create error handling utilities for database operations
+  - _Requirements: 2.1, 3.3, 1.2_
+- [ ] 3.2 Implement repository pattern for data access
+  - Code base repository interface
+  - Implement concrete repositories with CRUD operations
+  - Write unit tests for repository operations
+  - _Requirements: 4.3_
+
+[Additional coding tasks continue...]
+
+CRITICAL: Use ONLY unchecked checkboxes (- [ ]) for all tasks. Each line must be a checkbox item that can be parsed as an actionable coding task. Generate specific file paths and concrete implementation steps that build incrementally.
+
+TASK GRANULARITY REQUIREMENTS:
+- Each task should create or modify only 1-2 files maximum
+- Tasks should be completable in 15-30 minutes by a coding agent
+- Separate model creation from test writing (different tasks)
+- Break down complex features into atomic steps
+- Use simple numbering (1, 2, 3) for better parsing, avoid deep nesting (2.1, 2.2)"""
                     
                     result = claude_service.create_specification(tasks_prompt, ai_context)
                     

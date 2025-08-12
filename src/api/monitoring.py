@@ -39,8 +39,12 @@ def get_monitoring_service() -> MonitoringService:
     """Get or create monitoring service instance."""
     global _monitoring_service
     if _monitoring_service is None:
+        from flask import current_app
         websocket_server = get_websocket_server()
-        _monitoring_service = MonitoringService(websocket_server=websocket_server)
+        _monitoring_service = MonitoringService(
+            websocket_server=websocket_server,
+            app=current_app._get_current_object() if current_app else None
+        )
         if not _monitoring_service.running:
             _monitoring_service.start()
     return _monitoring_service

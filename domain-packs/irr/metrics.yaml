@@ -1,0 +1,57 @@
+north_star:
+- key: OnTimeRate
+  label: On-time communications
+  description: Percentage of messages sent within SLA
+  compute: builtin:ontime_rate
+  target: 0.95
+supporting:
+- key: P95Latency
+  label: P95 send latency (ms)
+  description: 95th percentile response time
+  compute: builtin:p95_latency
+  target: 3000
+- key: TemplateAccuracy
+  label: Template selection accuracy
+  description: Percentage of correct template choices
+  compute: builtin:template_accuracy
+  target: 0.98
+- key: DeliverySuccessRate
+  label: Delivery success rate
+  description: Percentage of messages not blocked/failed
+  compute: builtin:delivery_success_rate
+  target: 0.99
+- key: DeliveryErrorRate
+  label: Delivery error rate
+  description: Errors per sent messages
+  compute: builtin:delivery_error_rate
+  target: 0.01
+- key: BlocklistHitRate
+  label: Blocklist hit rate
+  description: Share of sends blocked by blocklist
+  compute: builtin:blocklist_hit_rate
+  target: 0.0
+- key: ConsentCoverage
+  label: Consent coverage
+  description: Share of messages with valid consent
+  compute: builtin:consent_coverage
+  target: 0.99
+- key: SMSMarketCompliance
+  label: SMS market compliance
+  description: Share of SMS to allowed prefixes
+  compute: builtin:sms_market_compliance
+  target: 0.999
+- key: VoucherAccuracyRate
+  label: Voucher accuracy
+  description: Share of vouchers matching configured amount/currency
+  compute: builtin:voucher_accuracy
+  target: 0.995
+- key: EU261ComplianceRate
+  label: EU261 compliance
+  description: Share of EU261-eligible cases with required actions
+  compute: builtin:eu261_compliance
+  target: 0.98
+- key: DuplicateSuppressionRate
+  label: Duplicate suppression
+  description: Share of duplicate sends prevented
+  compute: builtin:duplicate_suppression
+  target: 0.99

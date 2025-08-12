@@ -142,8 +142,8 @@ export const StageBar: React.FC<StageBarProps> = ({
           <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
           <button
             onClick={() => {
-              // Open ADI Field Review interface
-              window.open('./adi_mockup.html', '_blank');
+              // Navigate to ADI Field Review interface
+              navigate('/adi');
             }}
             className="flex items-center space-x-3 hover:opacity-80 transition-opacity cursor-pointer bg-transparent border-none p-0"
             title="Open ADI Engine Interface"

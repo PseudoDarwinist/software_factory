@@ -31,6 +31,7 @@ import {
 import { missionControlApi } from '@/services/api/missionControlApi'
 import { tokens } from '@/styles/tokens'
 import type { RealtimeEvent } from '@/types'
+import validationWS from '@/services/validation/validationWebSocket'
 
 export const MissionControl: React.FC = () => {
   const pollingCleanupRef = useRef<(() => void) | null>(null)
@@ -104,6 +105,11 @@ export const MissionControl: React.FC = () => {
       
       const projectsData = await missionControlApi.getProjects()
       actions.setProjects(projectsData)
+
+      // Auto-select the first project if none is selected yet
+      if (!ui.selectedProject && projectsData.length > 0) {
+        actions.setSelectedProject(projectsData[0].id)
+      }
     } catch (error) {
       actions.setError('projects', error instanceof Error ? error.message : 'Failed to load projects')
     } finally {
@@ -144,7 +150,35 @@ export const MissionControl: React.FC = () => {
   // Setup polling updates
   const setupPollingUpdates = () => {
     try {
-      pollingCleanupRef.current = missionControlApi.startPolling(handlePollingEvent, 30000) // Poll every 30 seconds (reduced from 10)
+      // Poll more frequently so phase transitions feel instant
+      pollingCleanupRef.current = missionControlApi.startPolling(handlePollingEvent, 10000)
+      // Also subscribe to websocket transition for instant switch
+      validationWS.connect().catch(() => {})
+      const unsub = validationWS.subscribe('phase.transition', (payload) => {
+        try {
+          const event = payload?.type === 'batch' ? payload.events[payload.events.length - 1] : payload
+          if (!event) return
+          if (
+            event?.payload?.to_phase === 'validate' &&
+            (!ui.selectedProject || event?.payload?.project_id === ui.selectedProject)
+          ) {
+            actions.setActiveStage('validate')
+            actions.addNotification({
+              id: `phase-transition-${Date.now()}`,
+              type: 'success',
+              title: 'Phase Transition',
+              message: `Switched to Validate for PR #${event.payload?.pr_number}`,
+              timestamp: new Date().toISOString(),
+            })
+          }
+        } catch {}
+      })
+      // Ensure cleanup of WS subscription on unmount
+      const prevCleanup = pollingCleanupRef.current
+      pollingCleanupRef.current = () => {
+        prevCleanup?.()
+        unsub?.()
+      }
     } catch (error) {
       console.error('Failed to setup polling updates:', error)
     }
@@ -197,9 +231,14 @@ export const MissionControl: React.FC = () => {
         console.log('[Phase Transition] Current selected project:', ui.selectedProject)
         console.log('[Phase Transition] Event project ID:', event.payload.project_id)
         console.log('[Phase Transition] To phase:', event.payload.to_phase)
-        
-        if (event.payload.to_phase === 'validate' && event.payload.project_id === ui.selectedProject) {
-          console.log('[Phase Transition] Conditions met - switching to validate phase')
+
+        // For reliability, always align project selection with the event before switching
+        if (event.payload.project_id && event.payload.project_id !== ui.selectedProject) {
+          actions.setSelectedProject(event.payload.project_id)
+        }
+
+        if (event.payload.to_phase === 'validate') {
+          console.log('[Phase Transition] Switching to validate phase')
           actions.setActiveStage('validate')
           actions.addNotification({
             id: `phase-transition-${Date.now()}`,
@@ -208,14 +247,6 @@ export const MissionControl: React.FC = () => {
             message: `Automatically switched to Validate phase for PR #${event.payload.pr_number}`,
             timestamp: new Date().toISOString()
           })
-        } else {
-          console.log('[Phase Transition] Conditions not met - ignoring event')
-          if (event.payload.to_phase !== 'validate') {
-            console.log('  - Wrong target phase:', event.payload.to_phase)
-          }
-          if (event.payload.project_id !== ui.selectedProject) {
-            console.log('  - Project ID mismatch. Expected:', ui.selectedProject, 'Got:', event.payload.project_id)
-          }
         }
         break
         

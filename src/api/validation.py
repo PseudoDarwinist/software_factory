@@ -91,6 +91,28 @@ def update_validation_run_status(validation_run_id: str):
         return jsonify({'error': 'Failed to update validation run status'}), 500
 
 
+@validation_bp.route('/runs/<validation_run_id>/decision', methods=['POST'])
+def add_validation_decision(validation_run_id: str):
+    """Record a decision (approve_override, send_to_bug, reject, retry) with optional reason and user."""
+    try:
+        data = request.get_json() or {}
+        action = data.get('action')
+        reason = data.get('reason')
+        user = data.get('user')
+        if not action:
+            return jsonify({'error': 'action is required'}), 400
+        validation_run = ValidationRun.query.get(validation_run_id)
+        if not validation_run:
+            return jsonify({'error': 'Validation run not found'}), 404
+        # Store decision in metadata
+        validation_run.add_decision(action=action, reason=reason, user=user)
+        db.session.commit()
+        return jsonify({'message': 'Decision recorded', 'decisions': validation_run.get_decisions()}), 200
+    except Exception as e:
+        logger.error(f"Error adding decision for validation run {validation_run_id}: {e}")
+        return jsonify({'error': 'Failed to add decision'}), 500
+
+
 @validation_bp.route('/runs/<validation_run_id>/workflows', methods=['POST'])
 def add_workflow_run(validation_run_id: str):
     """Add a workflow run to a validation run"""
@@ -140,9 +162,10 @@ def get_latest_validation_run(project_id: str):
                                        .first()
         
         if not latest_run:
-            return jsonify({'error': 'No validation runs found for project'}), 404
+            # Return empty data so clients can render an empty state without treating as an error
+            return jsonify({'data': None}), 200
         
-        return jsonify(latest_run.to_dict()), 200
+        return jsonify({'data': latest_run.to_dict()}), 200
         
     except Exception as e:
         logger.error(f"Error fetching latest validation run for project {project_id}: {e}")

@@ -4,6 +4,7 @@ REST endpoints for system status, health checks, and monitoring
 """
 
 from flask import Blueprint, jsonify, current_app, request
+from sqlalchemy import text
 try:
     from ..models import BackgroundJob, SystemMap, Conversation, db
     from ..models.mission_control_project import MissionControlProject
@@ -50,6 +51,14 @@ def add_pending_event(event_data):
         # Keep only last 10 events to prevent memory issues
         r.ltrim(PENDING_EVENTS_KEY, 0, 9)
         
+        # Log what we queued for traceability
+        try:
+            evt_type = event_data.get('type')
+            evt_project = (event_data.get('payload') or {}).get('project_id')
+            logger.info(f"[PhaseQueue] Queued event type={evt_type} project_id={evt_project}")
+        except Exception:
+            pass
+        
     except Exception as e:
         # Fallback to logging if Redis fails
         logger.warning(f"Failed to add event to Redis queue: {e}")
@@ -78,7 +87,12 @@ def get_and_clear_pending_events():
                 continue
         
         # Return events in chronological order (reverse since we used lpush)
-        return list(reversed(events))
+        ordered = list(reversed(events))
+        try:
+            logger.info(f"[PhaseQueue] Drained {len(ordered)} pending events: {[e.get('type') for e in ordered]}")
+        except Exception:
+            pass
+        return ordered
         
     except Exception as e:
         # Fallback to empty list if Redis fails
@@ -932,6 +946,224 @@ def get_uptime_seconds():
         return int(uptime)
     except Exception:
         return None
+
+
+@system_bp.route('/api/kanban/clear', methods=['POST'])
+def clear_kanban_board():
+    """Clear completed tasks and failed jobs from kanban board"""
+    try:
+        data = request.get_json() or {}
+        clear_tasks = data.get('clear_tasks', True)
+        clear_failed_jobs = data.get('clear_failed_jobs', True)
+        clear_old_jobs = data.get('clear_old_jobs', False)
+        
+        results = {
+            'cleared_tasks': 0,
+            'cleared_failed_jobs': 0,
+            'cleared_old_jobs': 0,
+            'backups_created': []
+        }
+        
+        # Clear completed tasks
+        if clear_tasks:
+            try:
+                from sqlalchemy import text
+                
+                # Use raw SQL with correct enum case
+                result = db.session.execute(text("""
+                    SELECT id, title, task_number, completed_at, pr_url
+                    FROM task 
+                    WHERE status = 'DONE';
+                """))
+                
+                done_tasks = result.fetchall()
+                
+                if done_tasks:
+                    # Create backup
+                    backup_data = []
+                    for task in done_tasks:
+                        backup_data.append({
+                            'id': task.id,
+                            'title': task.title,
+                            'task_number': task.task_number,
+                            'completed_at': str(task.completed_at),
+                            'pr_url': task.pr_url
+                        })
+                    
+                    backup_filename = f"completed_tasks_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+                    
+                    try:
+                        import json
+                        with open(backup_filename, 'w') as f:
+                            json.dump(backup_data, f, indent=2, default=str)
+                        results['backups_created'].append(backup_filename)
+                    except Exception as backup_error:
+                        logger.warning(f"Failed to create backup: {backup_error}")
+                    
+                    # Delete tasks using raw SQL
+                    delete_result = db.session.execute(text("DELETE FROM task WHERE status = 'DONE';"))
+                    results['cleared_tasks'] = delete_result.rowcount
+                    logger.info(f"Cleared {results['cleared_tasks']} completed tasks")
+                
+            except Exception as e:
+                logger.error(f"Failed to clear completed tasks: {e}")
+                results['cleared_tasks'] = 0
+        
+        # Clear failed jobs
+        if clear_failed_jobs:
+            try:
+                from ..models.background_job import BackgroundJob
+            except ImportError:
+                from models.background_job import BackgroundJob
+            
+            # Only clear failed jobs older than 1 hour
+            cutoff_time = datetime.utcnow() - timedelta(hours=1)
+            failed_jobs = BackgroundJob.query.filter(
+                BackgroundJob.status == BackgroundJob.STATUS_FAILED,
+                BackgroundJob.created_at < cutoff_time
+            ).all()
+            
+            if failed_jobs:
+                # Create backup
+                backup_data = [job.to_dict() for job in failed_jobs]
+                backup_filename = f"failed_jobs_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+                
+                try:
+                    import json
+                    with open(backup_filename, 'w') as f:
+                        json.dump(backup_data, f, indent=2, default=str)
+                    results['backups_created'].append(backup_filename)
+                except Exception as backup_error:
+                    logger.warning(f"Failed to create backup: {backup_error}")
+                
+                # Delete jobs
+                for job in failed_jobs:
+                    db.session.delete(job)
+                
+                results['cleared_failed_jobs'] = len(failed_jobs)
+                logger.info(f"Cleared {len(failed_jobs)} failed jobs")
+        
+        # Clear old completed jobs
+        if clear_old_jobs:
+            try:
+                from ..models.background_job import BackgroundJob
+            except ImportError:
+                from models.background_job import BackgroundJob
+            
+            # Clear completed jobs older than 7 days
+            cutoff_time = datetime.utcnow() - timedelta(days=7)
+            old_jobs = BackgroundJob.query.filter(
+                BackgroundJob.status == BackgroundJob.STATUS_COMPLETED,
+                BackgroundJob.completed_at < cutoff_time
+            ).all()
+            
+            if old_jobs:
+                for job in old_jobs:
+                    db.session.delete(job)
+                
+                results['cleared_old_jobs'] = len(old_jobs)
+                logger.info(f"Cleared {len(old_jobs)} old completed jobs")
+        
+        # Commit all changes
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Kanban board cleared successfully',
+            'results': results,
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to clear kanban board: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to clear kanban board',
+            'details': str(e)
+        }), 500
+
+
+@system_bp.route('/api/kanban/status', methods=['GET'])
+def get_kanban_status():
+    """Get current kanban board status for clearing decisions"""
+    try:
+        try:
+            from ..models.task import Task, TaskStatus
+            from ..models.background_job import BackgroundJob
+        except ImportError:
+            from models.task import Task, TaskStatus
+            from models.background_job import BackgroundJob
+        
+        # Task counts by status using raw SQL
+        task_counts = {}
+        result = db.session.execute(text("""
+            SELECT status, COUNT(*) as count
+            FROM task 
+            GROUP BY status;
+        """))
+        
+        for status, count in result.fetchall():
+            task_counts[status.lower()] = count
+        
+        # Job counts by status
+        job_counts = {}
+        for status in [BackgroundJob.STATUS_PENDING, BackgroundJob.STATUS_RUNNING, 
+                      BackgroundJob.STATUS_COMPLETED, BackgroundJob.STATUS_FAILED, 
+                      BackgroundJob.STATUS_CANCELLED]:
+            count = BackgroundJob.query.filter_by(status=status).count()
+            job_counts[status] = count
+        
+        # Failed jobs older than 1 hour (clearable)
+        clearable_failed_jobs_result = db.session.execute(text("""
+            SELECT COUNT(*) FROM background_job 
+            WHERE status = 'failed' 
+            AND created_at < NOW() - INTERVAL '1 hour';
+        """))
+        clearable_failed_jobs = clearable_failed_jobs_result.scalar()
+        
+        # Old completed jobs (clearable)
+        clearable_old_jobs_result = db.session.execute(text("""
+            SELECT COUNT(*) FROM background_job 
+            WHERE status = 'completed' 
+            AND completed_at < NOW() - INTERVAL '7 days';
+        """))
+        clearable_old_jobs = clearable_old_jobs_result.scalar()
+        
+        # Recent activity
+        recent_task_updates_result = db.session.execute(text("""
+            SELECT COUNT(*) FROM task 
+            WHERE updated_at >= NOW() - INTERVAL '24 hours';
+        """))
+        recent_task_updates = recent_task_updates_result.scalar()
+        
+        recent_job_updates_result = db.session.execute(text("""
+            SELECT COUNT(*) FROM background_job 
+            WHERE updated_at >= NOW() - INTERVAL '24 hours';
+        """))
+        recent_job_updates = recent_job_updates_result.scalar()
+        
+        return jsonify({
+            'task_counts': task_counts,
+            'job_counts': job_counts,
+            'clearable_items': {
+                'completed_tasks': task_counts.get('done', 0),
+                'failed_jobs': clearable_failed_jobs,
+                'old_completed_jobs': clearable_old_jobs
+            },
+            'recent_activity': {
+                'task_updates_24h': recent_task_updates,
+                'job_updates_24h': recent_job_updates
+            },
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Failed to get kanban status: {e}")
+        return jsonify({
+            'error': 'Failed to get kanban status',
+            'details': str(e)
+        }), 500
 
 
 # Error handlers for this blueprint

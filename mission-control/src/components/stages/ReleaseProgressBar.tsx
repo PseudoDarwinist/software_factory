@@ -163,14 +163,17 @@ export const ReleaseProgressBar: React.FC<ReleaseProgressBarProps> = ({
 }) => {
   const [hoveredStage, setHoveredStage] = useState<string | null>(null);
 
+  // Guard: coerce undefined to empty array to avoid runtime issues during live updates
+  const safeStages = Array.isArray(stages) ? stages : []
+
   // Calculate progress percentage based on completed stages
-  const completedStages = stages.filter(stage => 
+  const completedStages = safeStages.filter(stage => 
     stage.status === 'success' || stage.status === 'warning' || stage.status === 'error'
   ).length;
-  const progressPercentage = stages.length > 0 ? (completedStages / stages.length) * 100 : 0;
+  const progressPercentage = safeStages.length > 0 ? (completedStages / safeStages.length) * 100 : 0;
 
   // Check if any stage is currently running for animation effects
-  const hasRunningStage = stages.some(stage => stage.status === 'running');
+  const hasRunningStage = safeStages.some(stage => stage.status === 'running');
 
   return (
     <div className={clsx('relative', className)}>
@@ -262,7 +265,7 @@ export const ReleaseProgressBar: React.FC<ReleaseProgressBarProps> = ({
         )}
         
         {/* Stage indicators */}
-        {stages.map((stage, index) => {
+        {safeStages.map((stage, index) => {
           const colors = getStageColors(stage.status);
           const isActive = stage.status !== 'pending';
           const isHovered = hoveredStage === stage.id;

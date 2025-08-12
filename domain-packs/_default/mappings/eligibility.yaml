@@ -1,0 +1,92 @@
+# Derived from IRR flows
+eligibility:
+  Cancel:
+    - id: minutes_to_departure_lt_48h
+      description: Send only when within 48h of scheduled time
+      when:
+        left: event.attrs.minutesToScheduledTime
+        op: <
+        right: 2880
+      except:
+        - field: event.attrs.arrivalCity
+          op: !=
+          value: YYZ
+        - field: event.attrs.departureCity
+          op: !=
+          value: YYZ
+  Delay:
+    - id: near_departure_no_icoupon
+      description: For close-to-departure delays (<= 10m), only consider non-iCoupon path
+      when_all:
+        - left: event.attrs.minutesToScheduledTime
+          op: <=
+          right: 600
+        - left: event.attrs.hasCouponBatchId
+          op: ==
+          right: false
+    - id: delay_diff_bands
+      description: Delay difference bands with pre-boarding guardrails
+      bands:
+        - max: 10
+          label: lt_10m
+        - min: 15
+          label: gte_15m
+          require:
+            - left: event.attrs.hasBoarded
+              op: ==
+              right: false
+        - max: 30
+          label: lt_30m
+        - min: 30
+          label: gte_30m
+          require:
+            - left: event.attrs.hasBoarded
+              op: ==
+              right: false
+        - max: 60
+          label: lt_60m
+        - min: 60
+          label: gte_60m
+          require:
+            - left: event.attrs.hasBoarded
+              op: ==
+              right: false
+    - id: icoupon_branch
+      description: Route to iCoupon templates when a coupon batch exists (except YYZ)
+      when_all:
+        - left: event.attrs.hasCouponBatchId
+          op: ==
+          right: true
+        - left: event.attrs.stationArrival
+          op: !=
+          right: YYZ
+        - left: event.attrs.stationDeparture
+          op: !=
+          right: YYZ
+    - id: icoupon_ams_override
+      description: Use AMS-specific iCoupon templates when departure is AMS
+      when:
+        left: event.attrs.stationDeparture
+        op: ==
+        right: AMS
+  Common:
+    - id: us_station_routing
+      description: US routing applies when either station is in USAIRPORT list
+      list_mapping: USAIRPORT
+      when_any:
+        - left: event.attrs.stationArrival
+          op: in
+          right_mapping: USAIRPORT
+        - left: event.attrs.stationDeparture
+          op: in
+          right_mapping: USAIRPORT
+  Lists:
+    USAIRPORT:
+      - BOS
+      - EWR
+      - LAX
+      - IAD
+      - MIA
+      - ORD
+      - SFO
+      - ATL

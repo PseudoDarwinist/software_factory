@@ -1,0 +1,76 @@
+templates:
+  Cancel:
+    email_allowed:
+      - irr_cancellation_email_01
+      - irr_cancellation_email_01_US
+    sms_allowed:
+      - irr_cancellation_sms_01
+      - irr_cancellation_sms_01_US
+  Delay:
+    email_allowed:
+      - irr_delay_email_01
+      - irr_delay_email_01_US
+      - irr_reset_email
+      - irr_reset_email_US
+      - irr_delay_icoupon_email
+      - irr_delay_icoupon_email_AMS
+    sms_allowed:
+      - irr_delay_sms_01
+      - irr_delay_sms_01_US
+      - irr_reset_sms
+      - irr_reset_sms_US
+      - irr_delay_icoupon_sms
+      - irr_delay_icoupon_sms_AMS
+  Rebook:
+    email_allowed:
+      - irr_rebooking_email_01
+      - irr_rebooking_email_01_US
+    sms_allowed:
+      - irr_rebooking_sms_01
+      - irr_rebooking_sms_01_US
+  ScheduledChange:
+    email_allowed:
+      - irr_schedule_change_email_01a_Cancelled_Self_reacc_UN_TK
+      - irr_schedule_change_email_01a_Cancelled_Self_reacc_UN_TK_US
+      - irr_schedule_change_email_01b_Cancelled_Self_reacc_UN_TK_overnightstay
+      - "irr_schedule_change_email_01b_Cancelled_Self_reacc_UN_TK_overnight stay_US"
+      - irr_schedule_change_email_01c_Time_change_Self_reacc_TK_only
+      - irr_schedule_change_email_01c_Time_change_Self_reacc_TK_only_US
+      - irr_schedule_change_email_01d_Time_change_Self_reacc_TK_only_less_than_60min
+      - "irr_schedule_change_email_01d_Time_change_Self_reacc_TK_only_less_than_60 min_US"
+      - irr_schedule_change_email_01e_Time_change_Self_reacc_TK_only_overnightstay
+      - "irr_schedule_change_email_01e_Time_change_Self_reacc_TK_only_overnight stay_US"
+      - irr_schedule_change_email_02c_No_alternative_MH_No_Self_Reacc_UN_only
+      - irr_schedule_change_email_02c_No_alternative_MH_No_Self_Reacc_UN_only_US
+      - irr_schedule_change_email_03b_Time_change_MH_No_Self_reacc_OAL
+      - irr_schedule_change_email_03b_Time_change_MH_No_Self_reacc_OAL_US
+      - irr_schedule_change_email_03c_Time_change_MH_No_Self_reacc_OAL_less_than_60_min
+      - "irr_schedule_change_email_03c_Time_change_MH_No_Self_reac_OAL_les_than_60_min_US"
+      - irr_schedule_change_email_03d_Cancelled_MH_No_Self_reacc_OAL_SSR_overnight_stay
+      - irr_schedule_change_email_03d_Canceled_MH_No_Self_reac_OAL_SSR_overnight_stay_US
+      - irr_schedule_change_email_03e_Time_change_MH_No_Self_reac_OAL_SSR_overnight_stay
+      - irr_schedule_change_email_03e_Time_chang_MH_No_Self_reac_OAL_SSR_overngt_stay_US
+      - irr_schedule_change_email_04a_Cancelled_Self_Reacc_airport_change
+      - irr_schedule_change_email_04a_Cancelled_Self_Reacc_airport_change_US
+      - irr_schedule_change_email_04b_Cancelled_MH_No_Self_Reacc_OAL_airport_change
+      - irr_schedule_change_email_09a_Default
+      - irr_schedule_change_email_09a_Default_US
+    sms_allowed:
+      - irr_schedule_change_sms_01
+  NewInfo:
+    email_allowed: []
+    sms_allowed:
+      - irr_new_info_sms_01
+      - irr_new_info_sms_01_US
+  AirportChange:
+    email_allowed:
+      - irr_schedule_change_email_04b_Cancelled_MH_No_Self_Reacc_OAL_airport_change
+    sms_allowed:
+      - irr_airportChange_sms_01
+  NoAlternativeUN:
+    email_allowed:
+      - irr_noalternativeUN_email_01
+      - irr_noalternativeUN_email_01_US
+    sms_allowed:
+      - irr_noalternativeUN_sms_01
+      - irr_noalternativeUN_SMS_01_US

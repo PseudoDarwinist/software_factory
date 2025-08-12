@@ -1,7 +1,7 @@
 """Add metadata column to background_job table
 
-Revision ID: add_bg_job_metadata
-Revises: 
+Revision ID: 020_add_bg_job_metadata
+Revises: 019_add_adi_knowledge_embeddings
 Create Date: 2024-01-15 10:00:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = 'add_bg_job_metadata'
-down_revision = None
+revision = '020_add_bg_job_metadata'
+down_revision = '019_add_adi_knowledge_embeddings'
 branch_labels = None
 depends_on = None
 

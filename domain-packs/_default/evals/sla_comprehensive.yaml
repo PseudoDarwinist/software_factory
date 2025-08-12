@@ -1,0 +1,37 @@
+id: "sla_comprehensive"
+tag: "Time.SLA"
+description: "Comprehensive SLA compliance evaluation"
+
+select:
+  event_types: ["Notification", "Alert", "Update", "Reminder"]
+  window_hours: 24
+  min_cases: 50
+  sample_strategy: "stratified"
+
+verify:
+  checks:
+    - name: "within_sla"
+      description: "Message sent within SLA timeframe"
+      condition: "latency_ms <= sla_threshold"
+      weight: 1.0
+    
+    - name: "channel_sla"
+      description: "Channel-specific SLA respected"
+      condition: "latency_ms <= channel_sla_threshold"
+      weight: 0.8
+    
+    - name: "priority_sla"
+      description: "Priority-based SLA respected"
+      condition: "latency_ms <= priority_sla_threshold"
+      weight: 0.9
+
+expected_outcomes:
+  - metric: "sla_compliance_rate"
+    operator: ">="
+    value: 0.95
+  
+  - metric: "avg_latency_ms"
+    operator: "<="
+    value: 300000
+
+min_pass_rate: 0.95

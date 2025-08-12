@@ -105,9 +105,10 @@ class MonitoringService:
     Provides WebSocket streaming for dashboard updates and historical data storage.
     """
     
-    def __init__(self, redis_url: str = "redis://localhost:6379/0", websocket_server: Optional[WebSocketServer] = None):
+    def __init__(self, redis_url: str = "redis://localhost:6379/0", websocket_server: Optional[WebSocketServer] = None, app=None):
         self.redis_url = redis_url
         self.websocket_server = websocket_server
+        self.app = app  # Store Flask app reference for context
         self.running = False
         self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="MonitoringService")
         
@@ -515,10 +516,24 @@ class MonitoringService:
     def _check_database_health(self) -> bool:
         """Check database health."""
         try:
-            # Simple database ping using SQLAlchemy text()
-            from sqlalchemy import text
-            db.session.execute(text('SELECT 1'))
-            return True
+            # Use stored app reference if available
+            if self.app:
+                with self.app.app_context():
+                    # Simple database ping using SQLAlchemy text()
+                    from sqlalchemy import text
+                    db.session.execute(text('SELECT 1'))
+                    return True
+            else:
+                # Try to get current app context
+                from flask import current_app
+                if current_app:
+                    # Simple database ping using SQLAlchemy text()
+                    from sqlalchemy import text
+                    db.session.execute(text('SELECT 1'))
+                    return True
+                else:
+                    logger.debug("Database health check skipped - no application context")
+                    return False
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
             return False
@@ -554,6 +569,24 @@ class MonitoringService:
     
     def _store_metrics_to_database(self):
         """Store current metrics to database for historical analysis."""
+        try:
+            # Use stored app reference if available
+            if self.app:
+                with self.app.app_context():
+                    self._do_store_metrics()
+            else:
+                # Try to get current app context
+                from flask import current_app
+                if current_app:
+                    self._do_store_metrics()
+                else:
+                    logger.debug("Metrics storage skipped - no application context")
+                    
+        except Exception as e:
+            logger.error(f"Error storing metrics to database: {e}")
+    
+    def _do_store_metrics(self):
+        """Actually store metrics to database (must be called within app context)."""
         try:
             current_time = datetime.utcnow()
             
@@ -625,8 +658,11 @@ class MonitoringService:
             db.session.commit()
             
         except Exception as e:
-            logger.error(f"Error storing metrics to database: {e}")
-            db.session.rollback()
+            logger.error(f"Error in _do_store_metrics: {e}")
+            try:
+                db.session.rollback()
+            except:
+                pass  # Rollback might fail if no session
     
     def _stream_metrics_to_websocket(self):
         """Stream metrics data to WebSocket clients."""

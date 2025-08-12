@@ -154,15 +154,13 @@ def _handle_spec_frozen_event(event_data):
 
 
 def _parse_tasks_from_markdown(markdown_content: str, spec_id: str, project_id: str):
-    """Parse tasks from markdown content using indentation to handle nested structures."""
+    """Parse tasks from markdown content with proper decimal notation support."""
     import re
-    logger.info("Starting markdown parsing with new hierarchical logic.")
+    logger.info("Starting markdown parsing with decimal notation support.")
 
     tasks = []
     lines = markdown_content.split('\n')
     current_task = None
-    current_task_indent = -1
-    task_counter = 0
 
     def save_current_task():
         nonlocal current_task
@@ -171,41 +169,82 @@ def _parse_tasks_from_markdown(markdown_content: str, spec_id: str, project_id: 
             current_task['description'] = '\n'.join(current_task['description_lines']).strip()
             del current_task['description_lines']
             tasks.append(current_task)
-            logger.debug(f"Saved task: {current_task['title']}")
+            logger.debug(f"Saved task: {current_task['task_number']} - {current_task['title']}")
         current_task = None
 
     for line_num, line in enumerate(lines):
         if not line.strip():
             continue
 
-        indent_level = len(line) - len(line.lstrip(' '))
         stripped_line = line.strip()
 
-        # Match lines that look like tasks, e.g., "- [ ] Task title"
-        task_match = re.match(r'-\s*\[\s*[x\s]*\]\s*(.*)', stripped_line)
+        # Match checkbox tasks with explicit numbering: - [ ] 1. Task title OR - [ ] 1.1 Task title
+        # First try to match decimal notation (2.1, 2.2)
+        decimal_task_match = re.match(r'-\s*\[\s*[x\s]*\]\s*(\d+\.\d+)\s+(.+)', stripped_line)
+        # Then try to match simple numbering (1., 2.)
+        simple_task_match = re.match(r'-\s*\[\s*[x\s]*\]\s*(\d+)\.\s*(.+)', stripped_line)
+        
+        explicit_task_match = decimal_task_match or simple_task_match
+        
+        # Match checkbox tasks without explicit numbering: - [ ] Task title
+        implicit_task_match = re.match(r'-\s*\[\s*[x\s]*\]\s*(.+)', stripped_line)
 
-        if task_match:
-            # This is a potential task. Decide if it's a new top-level task or a sub-item.
-            if current_task is None or indent_level <= current_task_indent:
-                # This is a new top-level task.
-                save_current_task()  # Save the previous task before starting a new one.
+        if explicit_task_match:
+            # This is a task with explicit numbering (1, 1.1, 2.1, etc.)
+            save_current_task()  # Save the previous task
+            
+            task_number_str = explicit_task_match.group(1)
+            title_full = explicit_task_match.group(2).strip()
+            
+            # Clean up common AI artifacts
+            title = re.sub(r'^\*\*User Story:\s*', '', title_full, flags=re.IGNORECASE)
+            title = re.sub(r'\*\*', '', title)  # Remove bold markers
+            
+            # Determine parent task for decimal notation
+            parent_task_id = None
+            task_parts = task_number_str.split('.')
+            if len(task_parts) > 1:
+                # This is a sub-task (e.g., 2.1)
+                parent_number = task_parts[0]
+                parent_task_id = f"{spec_id}_{parent_number}"
 
-                task_counter += 1
-                title_full = task_match.group(1).strip()
+            current_task = {
+                'task_number': task_number_str,
+                'title': title,
+                'description_lines': [],
+                'requirements_refs': [],
+                'effort_estimate_hours': 1.0 if len(task_parts) > 1 else 2.0,  # Sub-tasks get smaller estimates
+                'suggested_owner': 'Developer',
+                'depends_on': [],
+                'related_files': [],
+                'related_components': [],
+                'parent_task_id': parent_task_id
+            }
+            
+        elif implicit_task_match and not explicit_task_match:
+            # This is a task without explicit numbering - check if it should be parsed
+            title_full = implicit_task_match.group(1).strip()
+            
+            # Skip if this looks like a description item rather than a task
+            if (title_full.startswith('Create ') or 
+                title_full.startswith('Implement ') or 
+                title_full.startswith('Write ') or
+                title_full.startswith('Add ') or
+                title_full.startswith('Build ') or
+                title_full.startswith('Test ') or
+                title_full.startswith('Set up ') or
+                title_full.startswith('Configure ')):
                 
-                task_number_str = str(task_counter)
-                title = title_full
-
-                # Check for and extract explicit numbering like "1." or "1.1."
-                num_match = re.match(r'(\d+(?:\.\d+)?)\.\s*(.*)', title_full)
-                if num_match:
-                    task_number_str = num_match.group(1)
-                    title = num_match.group(2).strip()
-
-                # Clean up common AI artifacts like "**User Story:**"
-                title = re.sub(r'^\*\*User Story:\s*', '', title, flags=re.IGNORECASE)
-                title = re.sub(r'\*\*', '', title)  # Remove any remaining bold markers
-
+                # This looks like a task without explicit numbering
+                save_current_task()  # Save the previous task
+                
+                # Auto-assign a task number
+                task_number_str = str(len(tasks) + 1)
+                
+                # Clean up title
+                title = re.sub(r'^\*\*User Story:\s*', '', title_full, flags=re.IGNORECASE)
+                title = re.sub(r'\*\*', '', title)
+                
                 current_task = {
                     'task_number': task_number_str,
                     'title': title,
@@ -215,32 +254,37 @@ def _parse_tasks_from_markdown(markdown_content: str, spec_id: str, project_id: 
                     'suggested_owner': 'Developer',
                     'depends_on': [],
                     'related_files': [],
-                    'related_components': []
+                    'related_components': [],
+                    'parent_task_id': None
                 }
-                current_task_indent = indent_level
             else:
-                # This is an indented sub-task, so treat it as part of the description.
-                # Format it as a bullet point for readability.
-                current_task['description_lines'].append(f"  • {task_match.group(1).strip()}")
+                # This is likely a description item, add to current task if exists
+                if current_task:
+                    current_task['description_lines'].append(f"• {title_full}")
         
-        elif current_task and indent_level > current_task_indent and stripped_line:
-            # This is an indented line of text that is not a checkbox item.
-            # Add it to the description of the current task.
+        elif current_task and stripped_line:
+            # This is additional content for the current task
             if '_Requirements:' in stripped_line:
                 req_match = re.search(r'_Requirements:\s*([^_]+)_', stripped_line)
                 if req_match:
                     req_refs = [f"REQ-{ref.strip().zfill(3)}" for ref in req_match.group(1).split(',')]
                     current_task['requirements_refs'].extend(req_refs)
             elif stripped_line.startswith('- '):
-                # Handle simple bullet points in the description
+                # Handle bullet points in the description
                 current_task['description_lines'].append(f"  {stripped_line}")
             else:
                 # Handle regular description text
-                current_task['description_lines'].append(line)
+                current_task['description_lines'].append(stripped_line)
 
-    save_current_task()  # Save the very last task in the file.
+    save_current_task()  # Save the very last task
 
-    logger.info(f"Hierarchical parser finished. Parsed {len(tasks)} tasks from markdown.")
+    logger.info(f"Decimal notation parser finished. Parsed {len(tasks)} tasks from markdown.")
+    
+    # Log task structure for debugging
+    for task in tasks:
+        parent_info = f" (parent: {task.get('parent_task_id', 'none')})" if task.get('parent_task_id') else ""
+        logger.info(f"  Task {task['task_number']}: {task['title'][:50]}...{parent_info}")
+    
     return tasks
 
 

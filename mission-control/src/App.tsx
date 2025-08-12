@@ -18,6 +18,10 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { QueryClient, QueryClientProvider } from 'react-query'
 import { ReactQueryDevtools } from 'react-query/devtools'
 import { MissionControl } from '@/pages/MissionControl/MissionControl'
+import { ADIFieldReview } from '@/pages/ADI/ADIFieldReview'
+import ADIPackConfiguration from '@/pages/ADI/ADIPackConfiguration'
+import { Notifications } from '@/components/core/Notifications'
+import { WebSocketProvider } from '@/contexts/WebSocketProvider'
 import { Settings } from '@/pages/Settings/Settings'
 import './App.css'
 
@@ -36,25 +40,32 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Router>
-        <div className="App">
-          <Routes>
+      <WebSocketProvider>
+        <Router>
+          <div className="App">
+            <Routes>
             {/* Render Mission Control on root */}
-            <Route path="/" element={<MissionControl />} />
+              <Route path="/" element={<MissionControl />} />
             {/* Optional alias */}
-            <Route path="/mission-control" element={<MissionControl />} />
+              <Route path="/mission-control" element={<MissionControl />} />
+            {/* ADI Field Review */}
+              <Route path="/adi" element={<ADIFieldReview />} />
+            {/* ADI Pack Configuration */}
+              <Route path="/adi/config/:projectId" element={<ADIPackConfiguration />} />
             {/* Settings page */}
-            <Route path="/settings" element={<Settings />} />
+              <Route path="/settings" element={<Settings />} />
             {/* Fallback 404 -> root */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </div>
-        
-        {/* React Query DevTools (only in development) */}
-        {process.env.NODE_ENV === 'development' && (
-          <ReactQueryDevtools initialIsOpen={false} position="bottom-right" />
-        )}
-      </Router>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+            <Notifications />
+          </div>
+          
+          {/* React Query DevTools (only in development) */}
+          {process.env.NODE_ENV === 'development' && (
+            <ReactQueryDevtools initialIsOpen={false} position="bottom-right" />
+          )}
+        </Router>
+      </WebSocketProvider>
     </QueryClientProvider>
   )
 }

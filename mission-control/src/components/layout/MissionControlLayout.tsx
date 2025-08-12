@@ -135,7 +135,7 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
       />
 
       {/* Main Content Area */}
-      <div className="flex h-full pt-24">
+      <div className="flex h-full min-h-0 pt-24">
         {/* Left Rail - Projects */}
         <AnimatePresence>
           {(!isMobile || !showConversation) && (
@@ -175,7 +175,7 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
               className={clsx(
-                'flex-1 min-w-0',
+                'flex-1 min-w-0 min-h-0',
                 'bg-black/10 backdrop-blur-sm',
                 activeStage !== 'define' && 'border-r border-white/10',
                 'overflow-hidden'

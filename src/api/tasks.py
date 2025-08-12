@@ -404,6 +404,40 @@ def approve_task(task_id):
                             db.session.commit()
                             logger.info(f"✅ Created validation run {validation_run.id} for merged PR #{task.pr_number}")
                             
+                            # Broadcast phase transition immediately over WebSocket (in addition to polling)
+                            try:
+                                try:
+                                    from ..services.websocket_server import get_websocket_server
+                                except Exception:
+                                    # Fallback for script/flat import context
+                                    from services.websocket_server import get_websocket_server
+                                ws = get_websocket_server()
+                                if ws:
+                                    # Send dot and underscore variants for compatibility
+                                    evt = {
+                                        'type': 'phase.transition',
+                                        'payload': {
+                                            'from_phase': 'build',
+                                            'to_phase': 'validate',
+                                            'validation_run_id': validation_run.id,
+                                            'project_id': task.project_id,
+                                            'pr_number': task.pr_number,
+                                            'task_id': task.id
+                                        },
+                                        'timestamp': datetime.utcnow().isoformat()
+                                    }
+                                    ws.socketio.emit('phase.transition', evt)
+                                    ws.socketio.emit('phase_transition', evt)
+                                    logger.info(f"📡 Emitted websocket phase transition for project {task.project_id}")
+
+                                    # Also immediately broadcast an initial validation.runs payload
+                                    try:
+                                        ws.broadcast_validation_run(task.project_id, validation_run.to_dict())
+                                    except Exception as be:
+                                        logger.warning(f"Failed to broadcast initial validation.runs: {be}")
+                            except Exception as ws_error:
+                                logger.warning(f"Failed to emit websocket phase transition: {ws_error}")
+                            
                             # Trigger phase transition to Validate via polling system
                             try:
                                 try:
@@ -536,18 +570,31 @@ def retry_task(task_id):
         # Remove from cancelled tasks if it was there
         _cancelled_tasks.discard(task_id)
         
-        # Enqueue background job
-        job_manager = get_job_manager()
-        if job_manager:
-            job_manager.enqueue_job(
-                'task_execution',
-                _execute_task_background,
-                task_id=task_id,
-                agent_id=agent_id
+        # Run background execution in a daemon thread (consistent with start)
+        try:
+            import threading
+            from flask import current_app
+
+            app_obj = current_app._get_current_object()
+
+            def _run_with_app_context(app, task_id, agent_id):
+                with app.app_context():
+                    _execute_task_background(task_id, agent_id)
+
+            exec_thread = threading.Thread(
+                target=_run_with_app_context,
+                args=(app_obj, task_id, agent_id),
+                daemon=True,
             )
-        else:
-            # Fallback: execute immediately (for testing)
-            _execute_task_background(task_id, agent_id)
+            exec_thread.start()
+            logger.info(f"Background retry thread started for task {task_id}")
+        except Exception as bg_error:
+            logger.error(f"Failed to start background retry thread for task {task_id}: {bg_error}")
+            # As a last resort, attempt synchronous execution (may block request)
+            try:
+                _execute_task_background(task_id, agent_id)
+            except Exception as sync_err:
+                logger.error(f"Synchronous retry execution failed for task {task_id}: {sync_err}")
         
         return jsonify({'message': 'Task retry started successfully'}), 202
         
@@ -1274,12 +1321,26 @@ def _execute_task_background(task_id: str, agent_id: str, context_options: dict 
         task.add_touched_file("tests/test_example.py")
         db.session.commit()
         
-        # Final broadcast
-        _broadcast_task_update(task_id, {
-            'status': 'review',
-            'message': 'Task completed successfully',
-            'percent': 100
-        })
+        # Final broadcast reflecting actual task status
+        try:
+            current_status = task.status.value if task.status else 'unknown'
+            if task.status == TaskStatus.FAILED:
+                final_message = 'Task failed'
+                final_percent = None
+            elif task.status in (TaskStatus.REVIEW, TaskStatus.DONE):
+                final_message = 'Task completed successfully'
+                final_percent = 100
+            else:
+                final_message = 'Task updated'
+                final_percent = task.get_progress_percent()
+
+            _broadcast_task_update(task_id, {
+                'status': current_status,
+                'message': final_message,
+                'percent': final_percent
+            })
+        except Exception as broadcast_err:
+            logger.warning(f"Final broadcast failed for task {task_id}: {broadcast_err}")
         
         # Remove from cancelled tasks
         _cancelled_tasks.discard(task_id)

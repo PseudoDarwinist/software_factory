@@ -1,0 +1,37 @@
+pack:
+  name: "IRR - Irregular Operations"
+  version: "1.0.0"
+  owner_team: "irr-ops"
+  description: "Disruption communications for delays, cancellations, rebooking, schedule changes and related events"
+
+defaults:
+  sla:
+    Event.Default: 600000           # 10 minutes
+    FlightDelay: 300000             # 5 minutes
+    FlightCancellation: 180000      # 3 minutes
+    Rebooking: 600000               # 10 minutes
+    ScheduledChange: 600000         # 10 minutes
+    NewInfo: 600000                 # 10 minutes
+
+  review:
+    insight_thresholds:
+      cluster_min: 5
+      window_minutes: 60
+    auto_tag_confidence: 0.85
+
+  # Fine-grained SLA overrides derived from IRR flows/metadata
+  sla_overrides:
+    by_channel:
+      SMS:
+        Delay: 240000
+      Email:
+        Delay: 420000
+    by_market:
+      US:
+        Delay: 300000
+    by_airport:
+      AMS:
+        Delay: 240000
+    by_delay_window_minutes:
+      "Delay:120-240": 300000
+      "Delay:241-*": 420000

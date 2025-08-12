@@ -40,6 +40,7 @@ class BackgroundJob(db.Model):
     TYPE_SPEC_GENERATION = 'spec_generation'
     TYPE_DESIGN_GENERATION = 'design_generation'
     TYPE_TASKS_GENERATION = 'tasks_generation'
+    TYPE_ADI_CLEANUP = 'adi_decision_log_cleanup'
     
     def __repr__(self):
         return f'<BackgroundJob {self.id}: {self.job_type} ({self.status})>'
@@ -67,7 +68,7 @@ class BackgroundJob(db.Model):
         """Create a new background job"""
         if job_type not in [cls.TYPE_REPOSITORY_PROCESSING, cls.TYPE_SYSTEM_MAP_GENERATION, 
                            cls.TYPE_AI_ANALYSIS, cls.TYPE_DATA_MIGRATION, cls.TYPE_SPEC_GENERATION,
-                           cls.TYPE_DESIGN_GENERATION, cls.TYPE_TASKS_GENERATION]:
+                           cls.TYPE_DESIGN_GENERATION, cls.TYPE_TASKS_GENERATION, cls.TYPE_ADI_CLEANUP]:
             raise ValueError(f"Invalid job type: {job_type}")
         
         job = cls(

@@ -347,6 +347,31 @@ def register_blueprints(app):
     app.register_blueprint(github.github_bp)
     app.register_blueprint(upload.upload_bp)
     app.register_blueprint(validation.validation_bp)
+    
+    # Register ADI Engine blueprints
+    try:
+        from .adi.api import ingest_bp, insights_bp, knowledge_bp, evaluation_bp, pack_config_bp
+        from .adi.api.field_review import adi_bp
+        app.register_blueprint(ingest_bp)
+        app.register_blueprint(insights_bp)
+        app.register_blueprint(knowledge_bp)
+        app.register_blueprint(evaluation_bp)
+        app.register_blueprint(adi_bp)
+        app.register_blueprint(pack_config_bp)
+        app.logger.info("ADI Engine blueprints registered successfully")
+    except ImportError:
+        from adi.api import ingest_bp, insights_bp, knowledge_bp, evaluation_bp, pack_config_bp
+        from adi.api.field_review import adi_bp
+        app.register_blueprint(ingest_bp)
+        app.register_blueprint(insights_bp)
+        app.register_blueprint(knowledge_bp)
+        app.register_blueprint(evaluation_bp)
+        app.register_blueprint(adi_bp)
+        app.register_blueprint(pack_config_bp)
+        app.logger.info("ADI Engine blueprints registered successfully")
+    except Exception as e:
+        app.logger.warning(f"ADI Engine blueprint registration failed: {e}")
+    
     app.logger.info("API blueprints registered successfully")
 
 

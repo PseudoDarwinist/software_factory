@@ -28,6 +28,15 @@ import type {
   SystemNotification
 } from '@/types'
 
+interface NotificationPrefs {
+  toastsEnabled: boolean
+  browserNotifications: boolean
+  soundEnabled: boolean
+  showSuccess: boolean
+  showWarnings: boolean
+  showErrors: boolean
+}
+
 interface MissionControlState {
   // Data
   projects: ProjectSummary[]
@@ -39,6 +48,7 @@ interface MissionControlState {
   loading: LoadingState
   errors: ErrorState
   notifications: SystemNotification[]
+  notificationPrefs: NotificationPrefs
   
   // Actions
   actions: {
@@ -72,12 +82,25 @@ interface MissionControlState {
     addNotification: (notification: SystemNotification) => void
     removeNotification: (notificationId: string) => void
     clearNotifications: () => void
+
+    // Notification preference actions
+    setNotificationPrefs: (prefs: Partial<NotificationPrefs>) => void
+    enableBrowserNotifications: () => Promise<void>
   }
+}
+
+const defaultPrefs: NotificationPrefs = {
+  toastsEnabled: true,
+  browserNotifications: false,
+  soundEnabled: false,
+  showSuccess: true,
+  showWarnings: true,
+  showErrors: true,
 }
 
 export const useMissionControlStore = create<MissionControlState>()(
   devtools(
-    (set) => ({
+    (set, get) => ({
       // Initial state
       projects: [],
       feedItems: [],
@@ -107,6 +130,7 @@ export const useMissionControlStore = create<MissionControlState>()(
       },
       
       notifications: [],
+      notificationPrefs: defaultPrefs,
       
       actions: {
         // Project actions
@@ -220,6 +244,22 @@ export const useMissionControlStore = create<MissionControlState>()(
         clearNotifications: () => set(() => ({
           notifications: []
         })),
+
+        // Notification preferences
+        setNotificationPrefs: (prefs) => set((state) => ({
+          notificationPrefs: { ...state.notificationPrefs, ...prefs }
+        })),
+
+        enableBrowserNotifications: async () => {
+          try {
+            if ('Notification' in window) {
+              const permission = await Notification.requestPermission()
+              if (permission === 'granted') {
+                set((state) => ({ notificationPrefs: { ...state.notificationPrefs, browserNotifications: true } }))
+              }
+            }
+          } catch {}
+        },
       },
     }),
     {
@@ -237,6 +277,7 @@ export const useLoadingState = () => useMissionControlStore(state => state.loadi
 export const useErrorState = () => useMissionControlStore(state => state.errors)
 export const useNotifications = () => useMissionControlStore(state => state.notifications)
 export const useActions = () => useMissionControlStore(state => state.actions)
+export const useNotificationPrefs = () => useMissionControlStore(state => state.notificationPrefs)
 
 // Computed selectors
 export const useSelectedProject = () => useMissionControlStore(state => 

@@ -1,0 +1,107 @@
+[
+  {
+    "code": "Time.SLA",
+    "label": "Late or missed send",
+    "group": "Time",
+    "color": "#ef4444",
+    "description": "Communication sent outside SLA timeframe"
+  },
+  {
+    "code": "Template.Selection",
+    "label": "Wrong template selected",
+    "group": "Template",
+    "color": "#3b82f6",
+    "description": "Incorrect template chosen for event type or channel"
+  },
+  {
+    "code": "Policy.Misapplied",
+    "label": "Policy misapplied",
+    "group": "Policy",
+    "color": "#22c55e",
+    "description": "Business rule or regulation incorrectly applied"
+  },
+  {
+    "code": "Delivery.Blocked",
+    "label": "Delivery blocked/failed",
+    "group": "Delivery",
+    "color": "#a855f7",
+    "description": "Message failed due to blocklist or invalid contact"
+  },
+  {
+    "code": "Audience.Wrong",
+    "label": "Wrong recipient audience",
+    "group": "Audience",
+    "color": "#f59e0b",
+    "description": "Message sent to wrong or partial audience"
+  },
+  {
+    "code": "Consent.Missing",
+    "label": "Missing consent",
+    "group": "Compliance",
+    "color": "#f97316",
+    "description": "Message sent without valid consent"
+  },
+  {
+    "code": "Consent.Invalid",
+    "label": "Invalid consent",
+    "group": "Compliance",
+    "color": "#fb923c",
+    "description": "Consent string invalid or cannot be parsed"
+  },
+  {
+    "code": "Delivery.Blocklisted",
+    "label": "Recipient blocklisted",
+    "group": "Delivery",
+    "color": "#a78bfa",
+    "description": "Phone/email is on blocklist"
+  },
+  {
+    "code": "Content.LocaleMismatch",
+    "label": "Content-locale mismatch",
+    "group": "Content",
+    "color": "#10b981",
+    "description": "Content locale does not match recipient preferences"
+  },
+  {
+    "code": "Audience.Duplicate",
+    "label": "Duplicate recipient",
+    "group": "Audience",
+    "color": "#f59e0b",
+    "description": "Same recipient messaged multiple times within window"
+  },
+  {
+    "code": "Eligibility.TimeWindow",
+    "label": "Not in allowed time window",
+    "group": "Eligibility",
+    "color": "#ef4444",
+    "description": "Event not within allowed time window"
+  },
+  {
+    "code": "Eligibility.Criteria",
+    "label": "Eligibility criteria not met",
+    "group": "Eligibility",
+    "color": "#f97316",
+    "description": "Recipient does not meet eligibility requirements"
+  },
+  {
+    "code": "Content.Personalization",
+    "label": "Personalization failed",
+    "group": "Content",
+    "color": "#8b5cf6",
+    "description": "Failed to personalize content for recipient"
+  },
+  {
+    "code": "System.Error",
+    "label": "System error",
+    "group": "System",
+    "color": "#dc2626",
+    "description": "Technical system error during processing"
+  },
+  {
+    "code": "Data.Missing",
+    "label": "Required data missing",
+    "group": "Data",
+    "color": "#ea580c",
+    "description": "Required data fields missing or empty"
+  }
+]

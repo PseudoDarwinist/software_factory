@@ -1,0 +1,7 @@
+id: "compliance:duplicate"
+tag: "Audience.Duplicate"
+select:
+  window_minutes: 1440
+verify:
+  pass_when: "not finding_exists('Audience.Duplicate')"
+min_pass_rate: 0.99

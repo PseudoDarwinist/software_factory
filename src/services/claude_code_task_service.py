@@ -204,6 +204,12 @@ class ClaudeCodeTaskService:
                     task.add_progress_message(f"🔗 PR URL: {pr_result['pr_url']}", 100)
                     task.add_progress_message(f"📋 Task moved to Review stage - ready for code review!", 100)
                     
+                    # Clean up old workspaces to prevent bloat (keep last 5)
+                    try:
+                        self._cleanup_old_workspaces(keep_count=5)
+                    except Exception as cleanup_e:
+                        logger.warning(f"Workspace cleanup failed: {cleanup_e}")
+                    
                     return {
                         'success': True,
                         'workspace_path': workspace_path,
@@ -438,8 +444,7 @@ This PR implements the changes required for the above task using automated agent
                         # the database.
                         if _app_ctx is not None:
                             with _app_ctx.app_context():
-                                from ..models.task import Task as _Task  # local import to avoid circular deps
-                                task_obj = _Task.query.get(task.id)
+                                task_obj = Task.query.get(task.id)
                                 if task_obj:
                                     task_obj.add_progress_message(message, progress_percent)
                         else:
@@ -792,7 +797,12 @@ The {claude_agent} sub agent should handle this task according to its specialize
             last_progress_time = time.time()
             progress_percent = 70
 
-            timeout_seconds = 900  # 15-minute hard timeout
+            # Adaptive timeout based on task complexity - force recalculation
+            default_timeout = self._calculate_adaptive_timeout(task)
+            # Increased baseline timeout for complex codebases
+            if default_timeout < 900:  # If less than 15 minutes
+                default_timeout = 1200  # Force 20 minutes for complex tasks
+            timeout_seconds = int(os.getenv("CLAUDE_CODE_TIMEOUT_SECONDS", str(default_timeout)))
 
             try:
                 import time, select
@@ -802,6 +812,14 @@ The {claude_agent} sub agent should handle this task according to its specialize
                 lines_read = 0
                 last_activity = time.time()
                 
+                # Capture Flask application context for background threads so that
+                # DB-backed task progress updates work outside request handlers
+                try:
+                    from flask import current_app as _current_app_for_thread
+                    _captured_app = _current_app_for_thread._get_current_object()
+                except Exception:
+                    _captured_app = None
+
                 # Heartbeat monitor for long-running Claude Code execution
                 heartbeat_count = [0]  # Use list to allow modification from nested function
                 def heartbeat_monitor():
@@ -814,19 +832,61 @@ The {claude_agent} sub agent should handle this task according to its specialize
                             
                             if elapsed < 300:  # Only for first 5 minutes
                                 if heartbeat_count[0] == 1:
-                                    task.add_progress_message("🤖 Claude Code is analyzing the repository...", 74)
+                                    if _captured_app is not None:
+                                        with _captured_app.app_context():
+                                            task_obj = Task.query.get(task.id)
+                                            if task_obj:
+                                                task_obj.add_progress_message("🤖 Claude Code is analyzing the repository...", 74)
+                                    else:
+                                        task.add_progress_message("🤖 Claude Code is analyzing the repository...", 74)
                                 elif heartbeat_count[0] == 2:
-                                    task.add_progress_message("📋 Understanding requirements and existing patterns...", 76)
+                                    if _captured_app is not None:
+                                        with _captured_app.app_context():
+                                            task_obj = Task.query.get(task.id)
+                                            if task_obj:
+                                                task_obj.add_progress_message("📋 Understanding requirements and existing patterns...", 76)
+                                    else:
+                                        task.add_progress_message("📋 Understanding requirements and existing patterns...", 76)
                                 elif heartbeat_count[0] == 3:
-                                    task.add_progress_message("⚡ Implementing changes based on specifications...", 78)
+                                    if _captured_app is not None:
+                                        with _captured_app.app_context():
+                                            task_obj = Task.query.get(task.id)
+                                            if task_obj:
+                                                task_obj.add_progress_message("⚡ Implementing changes based on specifications...", 78)
+                                    else:
+                                        task.add_progress_message("⚡ Implementing changes based on specifications...", 78)
                                 elif heartbeat_count[0] == 4:
-                                    task.add_progress_message("🔧 Writing code and updating files...", 80)
+                                    if _captured_app is not None:
+                                        with _captured_app.app_context():
+                                            task_obj = Task.query.get(task.id)
+                                            if task_obj:
+                                                task_obj.add_progress_message("🔧 Writing code and updating files...", 80)
+                                    else:
+                                        task.add_progress_message("🔧 Writing code and updating files...", 80)
                                 elif heartbeat_count[0] == 5:
-                                    task.add_progress_message("🧪 Creating or updating tests...", 82)
+                                    if _captured_app is not None:
+                                        with _captured_app.app_context():
+                                            task_obj = Task.query.get(task.id)
+                                            if task_obj:
+                                                task_obj.add_progress_message("🧪 Creating or updating tests...", 82)
+                                    else:
+                                        task.add_progress_message("🧪 Creating or updating tests...", 82)
                                 elif heartbeat_count[0] == 6:
-                                    task.add_progress_message("💾 Preparing to commit changes...", 84)
+                                    if _captured_app is not None:
+                                        with _captured_app.app_context():
+                                            task_obj = Task.query.get(task.id)
+                                            if task_obj:
+                                                task_obj.add_progress_message("💾 Preparing to commit changes...", 84)
+                                    else:
+                                        task.add_progress_message("💾 Preparing to commit changes...", 84)
                                 elif heartbeat_count[0] >= 7:
-                                    task.add_progress_message(f"⏳ Still working... ({int(elapsed)}s elapsed)", min(85 + heartbeat_count[0], 90))
+                                    if _captured_app is not None:
+                                        with _captured_app.app_context():
+                                            task_obj = Task.query.get(task.id)
+                                            if task_obj:
+                                                task_obj.add_progress_message(f"⏳ Still working... ({int(elapsed)}s elapsed)", min(85 + heartbeat_count[0], 90))
+                                    else:
+                                        task.add_progress_message(f"⏳ Still working... ({int(elapsed)}s elapsed)", min(85 + heartbeat_count[0], 90))
                             else:
                                 break
                     except Exception as e:
@@ -841,7 +901,16 @@ The {claude_agent} sub agent should handle this task according to its specialize
                             if line:
                                 stderr_lines.append(line.strip())
                                 logger.warning("Claude Code stderr: %s", line.strip())
-                                task.add_progress_message(f"⚠️ {line.strip()}", 73)
+                                try:
+                                    if _captured_app is not None:
+                                        with _captured_app.app_context():
+                                            task_obj = Task.query.get(task.id)
+                                            if task_obj:
+                                                task_obj.add_progress_message(f"⚠️ {line.strip()}", 73)
+                                    else:
+                                        task.add_progress_message(f"⚠️ {line.strip()}", 73)
+                                except Exception as progress_exc:
+                                    logger.warning("Failed to record stderr progress for task %s: %s", task.id, progress_exc)
                     except Exception as e:
                         logger.error("Error monitoring stderr: %s", e)
                 
@@ -1014,8 +1083,10 @@ The {claude_agent} sub agent should handle this task according to its specialize
                                     task.add_progress_message(f"📝 {raw_line[:150]}{'...' if len(raw_line) > 150 else ''}", min(progress_percent + 1, 95))
                                 progress_percent = min(progress_percent + 1, 95)
 
-                    # Timeout check
+                    # Timeout check with more verbose logging
                     if time.time() - start_time > timeout_seconds:
+                        logger.error("Claude Code execution timed out after %d seconds (task: %s)", timeout_seconds, task.id)
+                        task.add_progress_message(f"⏱️ Task execution timed out after {timeout_seconds//60} minutes", 0)
                         raise subprocess.TimeoutExpired(cmd, timeout_seconds)
 
                 # Wait for stderr thread to finish
@@ -1290,6 +1361,112 @@ The {claude_agent} sub agent should handle this task according to its specialize
             'workspace_path': str(workspace_path),
             'exists': workspace_path.exists()
         }
+    
+    def _cleanup_old_workspaces(self, keep_count: int = 5) -> None:
+        """
+        Clean up old task workspaces to prevent bloat
+        
+        Args:
+            keep_count: Number of most recent workspaces to keep
+        """
+        try:
+            import shutil
+            from pathlib import Path
+            
+            runs_dir = Path("runs")
+            if not runs_dir.exists():
+                return
+                
+            # Get all task workspace directories with their modification times
+            task_dirs = []
+            for item in runs_dir.iterdir():
+                if item.is_dir() and item.name.startswith("task-"):
+                    task_dirs.append((item, item.stat().st_mtime))
+            
+            # Sort by modification time (newest first)
+            task_dirs.sort(key=lambda x: x[1], reverse=True)
+            
+            # Remove older workspaces beyond keep_count
+            if len(task_dirs) > keep_count:
+                dirs_to_remove = task_dirs[keep_count:]
+                for dir_path, _ in dirs_to_remove:
+                    try:
+                        shutil.rmtree(dir_path)
+                        logger.info(f"Cleaned up old workspace: {dir_path.name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to remove workspace {dir_path.name}: {e}")
+                        
+                logger.info(f"Workspace cleanup completed - kept {keep_count} workspaces, removed {len(dirs_to_remove)}")
+            else:
+                logger.debug(f"No cleanup needed - {len(task_dirs)} workspaces (limit: {keep_count})")
+                
+        except Exception as e:
+            logger.error(f"Workspace cleanup failed: {e}")
+            raise
+    
+    def _calculate_adaptive_timeout(self, task: Task) -> int:
+        """
+        Calculate adaptive timeout based on task complexity and codebase size
+        
+        Args:
+            task: Task object
+            
+        Returns:
+            Timeout in seconds
+        """
+        base_timeout = 600  # 10 minutes for simple tasks (increased from 5 minutes)
+        
+        # Check if this is a large, complex codebase (like iropsagent)
+        try:
+            from pathlib import Path
+            runs_dir = Path("runs")
+            if runs_dir.exists():
+                # Look for recent workspaces to estimate codebase size
+                recent_workspaces = [
+                    d for d in runs_dir.iterdir() 
+                    if d.is_dir() and d.name.startswith("task-")
+                ]
+                if recent_workspaces:
+                    # Check the most recent workspace
+                    latest = max(recent_workspaces, key=lambda d: d.stat().st_mtime)
+                    
+                    # Count Python files to estimate complexity
+                    py_files = list(latest.rglob("*.py"))
+                    if len(py_files) > 50:  # Large codebase like iropsagent
+                        base_timeout = 1200  # 20 minutes for large codebases (doubled)
+                    elif len(py_files) > 20:  # Medium codebase  
+                        base_timeout = 900   # 15 minutes (doubled)
+                        
+        except Exception:
+            # If we can't determine codebase size, use conservative timeout
+            pass
+        
+        if not task.description:
+            return base_timeout
+            
+        description_lower = task.description.lower()
+        
+        # Simple file/directory operations (but in large codebases still need analysis time)
+        simple_keywords = ['create', 'directory', 'file', 'basic', 'simple', 'setup']
+        if any(keyword in description_lower for keyword in simple_keywords):
+            return base_timeout  # Base timeout already adjusted for codebase size
+            
+        # Medium complexity tasks
+        medium_keywords = ['refactor', 'update', 'modify', 'enhance', 'integrate']
+        if any(keyword in description_lower for keyword in medium_keywords):
+            return int(base_timeout * 1.5)  # 50% more time
+            
+        # Complex tasks
+        complex_keywords = ['implement', 'build', 'develop', 'architecture', 'system', 'complete']
+        if any(keyword in description_lower for keyword in complex_keywords):
+            return base_timeout * 2  # Double time
+            
+        # Very complex tasks
+        very_complex_keywords = ['migration', 'large', 'complex', 'full', 'comprehensive']
+        if any(keyword in description_lower for keyword in very_complex_keywords):
+            return base_timeout * 3  # Triple time
+            
+        return int(base_timeout * 1.2)  # Default to 20% more than base
 
 
 # Global instance

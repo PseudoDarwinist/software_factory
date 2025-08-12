@@ -1,0 +1,8 @@
+id: "compliance:sms-market"
+tag: "Delivery.Blocked"
+select:
+  decision.channel_in: ["SMS"]
+  window_minutes: 1440
+verify:
+  pass_when: "event.attrs.phone_e164_prefix in mapping('allowed_prefixes')"
+min_pass_rate: 0.999
