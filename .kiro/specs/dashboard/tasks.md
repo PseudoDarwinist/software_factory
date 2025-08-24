@@ -8,7 +8,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
 
 ### Task 1: Backend Monitoring Service Foundation
 
-- [ ] ⚡ 1.1 Create MonitoringService class with event subscription capabilities
+- [x] ⚡ 1.1 Create MonitoringService class with event subscription capabilities
 
   - Implement Redis event subscription for all event types
   - Create metrics collection and aggregation logic
@@ -17,7 +17,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 1, 8_
   - _Completion: MonitoringService collects and streams event metrics via WebSocket_
 
-- [ ] ⚡ 1.2 Implement monitoring API endpoints
+- [x] ⚡ 1.2 Implement monitoring API endpoints
 
   - Create `/api/monitoring/events` endpoint with real-time stream
   - Add event analytics and search functionality
@@ -26,7 +26,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 1, 5_
   - _Completion: API endpoints return event data and support real-time streaming_
 
-- [ ] ⚡ 1.3 Create monitoring database schema
+- [x] ⚡ 1.3 Create monitoring database schema
 
   - Design `monitoring_metrics` table for aggregated data
   - Create indexes for efficient time-series queries
@@ -35,7 +35,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 5, 8_
   - _Completion: Database schema supports efficient metrics storage and retrieval_
 
-- [ ] ⚡ 1.4 Expose Prometheus metrics
+- [x] ⚡ 1.4 Expose Prometheus metrics
   - Export MonitoringService counters at /metrics on port 9100
   - Add default Grafana dashboard JSON in /infra/grafana
   - _Requirements: 3_
@@ -43,7 +43,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
 
 ### Task 2: Settings Page and Dashboard Structure
 
-- [ ] ⚡ 2.1 Create Settings page structure in Mission Control
+- [x] ⚡ 2.1 Create Settings page structure in Mission Control
 
   - Add Settings route and navigation in Mission Control app
   - Create SettingsPage component with monitoring tab
@@ -54,7 +54,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 6_
   - _Completion: Settings page accessible with monitoring dashboard layout_
 
-- [ ] ⚡ 2.2 Build real-time event monitoring interface
+- [x] ⚡ 2.2 Build real-time event monitoring interface
 
   - Create EventStream component with live event feed
   - Implement event filtering and search functionality
@@ -63,7 +63,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 1, 6_
   - _Completion: Real-time event stream displays with filtering and search_
 
-- [ ] ⚡ 2.3 Implement WebSocket integration for real-time updates
+- [x] ⚡ 2.3 Implement WebSocket integration for real-time updates
   - Create WebSocket client service for dashboard updates
   - Dashboard listens on monitor.events, monitor.metrics, monitor.alerts
   - Add connection management and automatic reconnection
@@ -73,11 +73,98 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 1, 8_
   - _Completion: Dashboard receives real-time updates via WebSocket_
 
-## Phase 2: Agent Monitoring and Control
+## Phase 2: DORA Metrics and Development Productivity Dashboard
 
-### Task 3: Agent Status Monitoring
+### Task 3: Development Event Tracking (Minimal App Changes)
 
-- [ ] ⚡ 3.1 Extend BaseAgent with monitoring capabilities
+- [ ] ⚡ 3.1 Add development lifecycle event stamps
+
+  - Add simple timestamp fields to existing Task model: `first_commit_time`, `pr_opened_time`, `pr_merged_time`, `deploy_time`
+  - Create lightweight event emission in existing task workflow (task_created, task_started, pr_opened, pr_merged)
+  - Add optional deploy tracking via webhook or manual "deploy succeeded" button
+  - Store baseline metrics for comparison (pre-agent performance from historical data or estimates)
+  - _Requirements: Minimal changes to existing task flow_
+  - _Completion: Key development moments are timestamped without disrupting current workflow_
+
+- [ ] ⚡ 3.2 Implement DORA metrics calculation service
+
+  - Create `DORAMetricsService` that calculates metrics from existing event data
+  - Implement deployment frequency calculation (deploys per week)
+  - Add lead time for changes calculation (first commit to production)
+  - Create change failure rate tracking (failed deploys / total deploys)
+  - Add mean time to restore calculation (incident start to resolution)
+  - _Requirements: Read-only service that doesn't modify existing data_
+  - _Completion: DORA metrics calculated from existing workflow events_
+
+- [ ] ⚡ 3.3 Build DORA metrics API endpoints
+  - Create `/api/metrics/dora` endpoint for DORA metrics retrieval
+  - Add time window filtering (weekly, monthly, quarterly)
+  - Implement baseline comparison calculations for percentage improvements
+  - Add trend analysis for metric progression over time
+  - _Requirements: Simple REST API for dashboard consumption_
+  - _Completion: DORA metrics available via API with historical trends_
+
+### Task 4: Productivity Metrics Implementation
+
+- [ ] ⚡ 4.1 Implement accuracy and efficiency tracking
+
+  - Add "first-pass acceptance rate" calculation (tasks completed without retry/rework)
+  - Create time-saved calculation using baseline vs actual human touch time
+  - Implement efficiency metrics (completed task weights per engineer per week)
+  - Add cycle time calculation (task started to PR merged)
+  - _Requirements: Use existing task status transitions and timing data_
+  - _Completion: Productivity metrics calculated from current task workflow_
+
+- [ ] ⚡ 4.2 Create cost tracking service
+
+  - Implement simple cost calculation (human hours × rate + model costs)
+  - Add cost reduction percentage vs baseline calculation
+  - Create cost breakdown by task type and engineer
+  - Add monthly/quarterly cost trend analysis
+  - _Requirements: Configurable hourly rates and model costs_
+  - _Completion: Development cost tracking with improvement percentages_
+
+- [ ] ⚡ 4.3 Build productivity metrics API
+  - Create `/api/metrics/productivity` endpoints
+  - Add accuracy, time-saved, efficiency, cycle time, and cost metrics
+  - Implement percentage improvement calculations vs baseline
+  - Add drill-down capabilities for detailed analysis
+  - _Requirements: RESTful API with filtering and aggregation_
+  - _Completion: Complete productivity metrics available via API_
+
+### Task 5: Development Metrics Dashboard
+
+- [ ] ⚡ 5.1 Create DORA metrics dashboard cards
+
+  - Build MetricCard components for each DORA metric
+  - Display current value and percentage change vs baseline
+  - Add small trend charts using Recharts for visual progression
+  - Implement color coding (green for improvements, red for regressions)
+  - _Requirements: Clean, professional metric cards with tooltips_
+  - _Completion: DORA metrics displayed with current values and trends_
+
+- [ ] ⚡ 5.2 Build productivity metrics dashboard
+
+  - Create cards for accuracy (+30%), time saved (+75%), efficiency (+80%)
+  - Add cycle time (-75%) and cost reduction (-50%) displays
+  - Implement "how we calculate this" tooltips for transparency
+  - Add weekly/monthly toggle for different time windows
+  - _Requirements: Consistent design with DORA cards_
+  - _Completion: Productivity metrics dashboard with improvement percentages_
+
+- [ ] ⚡ 5.3 Add metrics dashboard to Mission Control
+  - Integrate metrics dashboard into existing Settings page
+  - Add navigation tab for "Development Metrics"
+  - Implement responsive grid layout for metric cards
+  - Add export functionality for metric reports
+  - _Requirements: Seamless integration with existing Mission Control UI_
+  - _Completion: Development metrics accessible within Mission Control interface_
+
+## Phase 3: Agent Monitoring and Control (Moved from Phase 2)
+
+### Task 6: Agent Status Monitoring
+
+- [ ] ⚡ 6.1 Extend BaseAgent with monitoring capabilities
 
   - Add metrics collection to BaseAgent class
   - Implement agent heartbeat and status reporting (agents send a ping every 5s; missing 3 pings → yellow, 6 pings → red)
@@ -86,7 +173,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 2_
   - _Completion: All agents report status and metrics to monitoring system_
 
-- [ ] ⚡ 3.2 Build agent monitoring API endpoints
+- [ ] ⚡ 6.2 Build agent monitoring API endpoints
 
   - Create `/api/monitoring/agents` endpoints for status and metrics
   - Implement agent control endpoints with proper authorization
@@ -95,7 +182,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 2_
   - _Completion: API provides complete agent monitoring and control capabilities_
 
-- [ ] ⚡ 3.3 Create agent status grid interface
+- [ ] ⚡ 6.3 Create agent status grid interface
   - Build AgentStatusGrid component with real-time updates
   - Implement agent control buttons and confirmation dialogs
   - Add agent performance charts and trend visualization
@@ -103,9 +190,9 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 2, 6_
   - _Completion: Agent status grid shows all agents with control capabilities_
 
-### Task 4: System Health Monitoring
+### Task 7: System Health Monitoring
 
-- [ ] ⚡ 4.1 Implement system health checks
+- [ ] ⚡ 7.1 Implement system health checks
 
   - Create health check services for database, Redis, WebSocket
   - Add API response time monitoring and error rate tracking
@@ -114,7 +201,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 3_
   - _Completion: System health checks run continuously and report status_
 
-- [ ] ⚡ 4.2 Build system health API and data models
+- [ ] ⚡ 7.2 Build system health API and data models
 
   - Create `/api/monitoring/system` endpoints for health data
   - Implement SystemHealth data model with component status
@@ -123,7 +210,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 3, 5_
   - _Completion: System health API provides comprehensive infrastructure monitoring_
 
-- [ ] ⚡ 4.3 Create system health dashboard interface
+- [ ] ⚡ 7.3 Create system health dashboard interface
   - Build SystemHealthPanel with overall health score display
   - Implement component status indicators with color coding
   - Add resource usage charts and performance metrics
@@ -131,11 +218,11 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 3, 6_
   - _Completion: System health dashboard shows infrastructure status and trends_
 
-## Phase 3: Integration Monitoring and Alerts
+## Phase 4: Integration Monitoring and Alerts
 
-### Task 5: Integration Status Monitoring
+### Task 8: Integration Status Monitoring
 
-- [ ] ⚡ 5.1 Implement external service monitoring
+- [ ] ⚡ 8.1 Implement external service monitoring
 
   - Create integration health checks for Slack, GitHub, AI services
   - Add API rate limit monitoring and usage tracking
@@ -144,7 +231,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 4_
   - _Completion: All external integrations monitored for health and performance_
 
-- [ ] ⚡ 5.2 Build integration monitoring API
+- [ ] ⚡ 8.2 Build integration monitoring API
 
   - Create `/api/monitoring/integrations` endpoints
   - Implement integration status and metrics retrieval
@@ -153,7 +240,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 4, 5_
   - _Completion: Integration monitoring API provides complete external service visibility_
 
-- [ ] ⚡ 5.3 Create integration status interface
+- [ ] ⚡ 8.3 Create integration status interface
   - Build IntegrationStatus component with service status grid
   - Implement integration performance charts and metrics
   - Add integration testing controls and error displays
@@ -161,9 +248,9 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 4, 6_
   - _Completion: Integration status interface shows all external service health_
 
-### Task 6: Alert System Implementation
+### Task 9: Alert System Implementation
 
-- [ ] ⚡ 6.1 Create alert processing service
+- [ ] ⚡ 9.1 Create alert processing service
 
   - Implement AlertService with threshold evaluation
   - Create alert types (critical, warning, info) and severity levels
@@ -173,7 +260,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 7_
   - _Completion: Alert system processes thresholds and triggers notifications_
 
-- [ ] ⚡ 6.2 Build alert management API
+- [ ] ⚡ 9.2 Build alert management API
 
   - Create `/api/monitoring/alerts` endpoints for alert management
   - Implement alert configuration and threshold setting
@@ -182,7 +269,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 7_
   - _Completion: Alert management API provides complete alert lifecycle management_
 
-- [ ] ⚡ 6.3 Create alert dashboard interface
+- [ ] ⚡ 9.3 Create alert dashboard interface
   - Build AlertsPanel with active alerts display
   - Implement alert acknowledgment and resolution controls
   - Add alert configuration interface with threshold settings
@@ -190,11 +277,11 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 7, 6_
   - _Completion: Alert dashboard provides complete alert management interface_
 
-## Phase 4: Analytics and Advanced Features
+## Phase 5: Analytics and Advanced Features
 
-### Task 7: Historical Analytics and Reporting
+### Task 10: Historical Analytics and Reporting
 
-- [ ] ⚡ 7.1 Implement analytics data processing
+- [ ] ⚡ 10.1 Implement analytics data processing
 
   - Create time-series data aggregation for historical analysis
   - Add trend calculation and pattern detection algorithms
@@ -203,7 +290,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 5, 8_
   - _Completion: Analytics system processes historical data and generates insights_
 
-- [ ] ⚡ 7.2 Build analytics API endpoints
+- [ ] ⚡ 10.2 Build analytics API endpoints
 
   - Create analytics endpoints for historical data retrieval
   - Implement trend analysis and pattern detection APIs
@@ -212,7 +299,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 5_
   - _Completion: Analytics API provides comprehensive historical data analysis_
 
-- [ ] ⚡ 7.3 Create analytics dashboard interface
+- [ ] ⚡ 10.3 Create analytics dashboard interface
   - Build AnalyticsCharts component with interactive visualizations
   - Implement time range selection and drill-down capabilities
   - Add chart types for different metrics (line, bar, pie charts)
@@ -220,9 +307,9 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 5, 6_
   - _Completion: Analytics dashboard provides interactive historical analysis_
 
-### Task 8: Performance Optimization and Polish
+### Task 11: Performance Optimization and Polish
 
-- [ ] ⚡ 8.1 Implement performance optimizations
+- [ ] ⚡ 11.1 Implement performance optimizations
 
   - Add data caching and query optimization for dashboard APIs
   - Implement WebSocket message throttling and batching
@@ -232,7 +319,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 8_
   - _Completion: Dashboard performs efficiently under high load with minimal system impact_
 
-- [ ] ⚡ 8.2 Add mobile responsiveness and accessibility
+- [ ] ⚡ 11.2 Add mobile responsiveness and accessibility
 
   - Implement responsive design for mobile and tablet devices
   - Add touch-friendly controls and navigation
@@ -242,7 +329,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 6_
   - _Completion: Dashboard works seamlessly on all devices with full accessibility_
 
-- [ ] ⚡ 8.3 Create user customization features
+- [ ] ⚡ 11.3 Create user customization features
   - Implement dashboard layout customization and panel resizing
   - Add user preference storage for filters and settings
   - Create custom alert threshold configuration per user
@@ -250,11 +337,11 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 6_
   - _Completion: Users can customize dashboard layout and save preferences_
 
-## Phase 5: Testing and Production Readiness
+## Phase 6: Testing and Production Readiness
 
-### Task 9: Comprehensive Testing Suite
+### Task 12: Comprehensive Testing Suite
 
-- [ ] ⚡ 9.1 Implement backend testing
+- [ ] ⚡ 12.1 Implement backend testing
 
   - Create unit tests for MonitoringService and AlertService
   - Add integration tests for API endpoints and WebSocket streaming
@@ -263,7 +350,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 8_
   - _Completion: Backend monitoring system has comprehensive test coverage_
 
-- [ ] ⚡ 9.2 Create frontend testing suite
+- [ ] ⚡ 12.2 Create frontend testing suite
 
   - Build component tests for all dashboard components
   - Add integration tests for real-time data updates
@@ -272,7 +359,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 6_
   - _Completion: Frontend dashboard has complete test coverage_
 
-- [ ] ⚡ 9.3 Performance and reliability testing
+- [ ] ⚡ 12.3 Performance and reliability testing
   - Conduct load testing with 1000+ events per minute (load script will simulate 2k events/min for headroom)
   - Test system impact and resource usage monitoring
   - Verify WebSocket connection stability under load
@@ -280,9 +367,9 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 8_
   - _Completion: Dashboard proven reliable under production load conditions_
 
-### Task 10: Documentation and Deployment
+### Task 13: Documentation and Deployment
 
-- [ ] ⚡ 10.1 Create comprehensive documentation
+- [ ] ⚡ 13.1 Create comprehensive documentation
 
   - Write user guide for dashboard navigation and features
   - Create administrator guide for alert configuration
@@ -291,7 +378,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: All_
   - _Completion: Complete documentation available for users and administrators_
 
-- [ ] ⚡ 10.2 Implement deployment and configuration
+- [ ] ⚡ 13.2 Implement deployment and configuration
 
   - Create deployment scripts and configuration management
   - Add environment-specific settings and feature flags
@@ -300,7 +387,7 @@ This implementation plan transforms the System Monitoring Dashboard design into 
   - _Requirements: 8_
   - _Completion: Dashboard ready for production deployment with proper configuration_
 
-- [ ] ⚡ 10.3 Final integration testing and validation
+- [ ] ⚡ 13.3 Final integration testing and validation
   - Test complete dashboard functionality with real system data
   - Validate all monitoring features work correctly in production environment
   - Verify performance requirements and system impact

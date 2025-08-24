@@ -1,306 +1,295 @@
-# Implementation Plan
+# Implementation Plan - MVP-Driven Development
 
-## Milestone A: Core Platform (Think → Define Flow)
+## 🎯 MVP 1: Plan Stage Foundation (Tasks 1-6)
 
-_Goal: A card can travel Think → Define and freeze a spec with AI assistance_
+_Goal: Complete Plan stage with task management, agent selection, and GitHub integration_
 
-- [x] 1. Implement base agent framework and event infrastructure
+**Testable Outcome**: User can see tasks, select agents, configure context, and connect to GitHub
 
-  - Create BaseAgent class with event subscription and context retrieval methods
-  - Implement Agent Manager with lifecycle management and loop prevention
-  - Add standardized event envelope format with Postgres persistence
-  - Start Prometheus server on :9100 for metrics collection
-  - _Requirements: 1, 9, 11_
-  - _Completion: BaseAgent can subscribe to events and publish to Redis with Postgres persistence_
+- [x] 1. Plan stage UI foundation (Task 11 - Basic Implementation)
 
-- [x] 2. Create WebSocket event bridge with user permission filtering
-
-  - Implement WebSocket server with Redis event subscription
-  - Build user permission filtering based on project access tokens
-  - Add connection management and automatic reconnection logic
-  - Create user presence indicators for real-time collaboration
-  - _Requirements: 9, 11_
-  - _Completion: WebSocket receives Redis events and broadcasts to connected browsers_
-
-- [x] 3. Build vector context service for AI-powered context retrieval
-
-  - Implement VectorContextService with pgvector similarity search methods
-  - Create document chunking and embedding generation for project artifacts
-  - Add context retrieval methods for specs, code, and documentation
-  - Build embedding storage and retrieval optimization
-  - _Requirements: 2, 3, 5, 9_
-  - _Completion: Vector search returns relevant context for test queries_
-
-- [x] 4. Create graph relationship service for project intelligence
-
-  - Implement GraphService with PostgreSQL graph query capabilities
-  - Build relationship mapping for ideas, specs, tasks, commits, and team members
-  - Add team expertise analysis using Git blame and contribution history
-  - Create relationship visualization data structures for UI consumption
-  - _Requirements: 10, 4_
-  - _Completion: Graph queries return connected entities for test project data_
-
-- [x] 5. Implement Capture Agent for intelligent idea processing
-
-  - Create Capture Agent that subscribes to slack.message.received events
-  - Build entity recognition using project system map and AI analysis
-  - Implement automatic categorization by severity using Claude
-  - Add idea enrichment with vector search for similar historical items
-  - Test Slack integration and idea.captured event publishing
-  - _Requirements: 2_
-  - _Completion: Slack message triggers idea.captured event visible in event_log and WebSocket_
-
-- [ ] 6. Build Define Agent with context-aware specification generation
-
-  - Create Define Agent that subscribes to idea.promoted events
-  - Implement pgvector context retrieval for similar specs and documentation
-  - Build Claude integration for generating requirements.md, design.md, tasks.md
-  - Add AI-draft vs Human-reviewed badge tracking system
-  - Implement spec.frozen event publishing and optional Notion sync
-  - _Requirements: 3, 12_
-  - _Completion: idea.promoted event triggers spec.frozen event with generated documents_
-
-- [ ] 7. Build enhanced Think Stage with intelligent feed management
-
-  - Create ThinkStage component with automatic idea categorization
-  - Build context panel with graph relationships and historical context
-  - Implement drag-to-define functionality with visual feedback and event emission
-  - Add idea dismissal and escalation features
-  - Test real-time updates via WebSocket integration
-  - _Requirements: 2, 10_
-  - _Completion: Drag from Think to Define emits idea.promoted event and updates UI_
-
-- [ ] 8. Build Define Stage with AI-powered specification editor
-  - Create DefineStage component with three-tab editor (requirements, design, tasks)
-  - Implement AI-draft vs Human-reviewed badge system
-  - Build freeze specification workflow with validation
-  - Add context-aware AI assistant integration
-  - Test Define Agent integration and spec.frozen event handling
-  - _Requirements: 3, 9_
-  - _Completion: Freeze Spec button emits spec.frozen event and locks specification_
-
-## Milestone B: Build Loop (Define → Plan → Build → Validate)
-
-_Goal: Frozen spec → tasks → PR → CI result visible in UI_
-
-- [ ] 9. Create Planner Agent for intelligent task breakdown
-
-  - Build Planner Agent that subscribes to spec.frozen events
-  - Implement task parsing from tasks.md with effort estimation
-  - Add owner suggestion using Git blame analysis and team expertise
-  - Create task relationship mapping and dependency analysis
-  - Test tasks.created event publishing and Plan stage integration
-  - _Requirements: 4_
-  - _Completion: spec.frozen event triggers tasks.created event with parsed task list_
-
-- [ ] 10. Implement Build Agent with context-aware code generation
-
-  - Create Build Agent that subscribes to task.started events
-  - Build comprehensive context retrieval using pgvector and graph services
-  - Implement Claude-Code integration with project patterns and style guides
-  - Add local testing before PR creation and GitHub integration
-  - Create build.started event publishing and CI status monitoring
-  - _Requirements: 5_
-  - _Completion: task.started event creates GitHub PR and emits build.started event_
-
-- [ ] 11. Build Test Agent for intelligent quality analysis
-
-  - Create Test Agent that subscribes to build.succeeded events
-  - Implement code diff analysis and test gap identification
-  - Build Claude integration for generating comprehensive test scenarios
-  - Add AI-powered failure analysis and root cause identification
-  - Create quality.analyzed event publishing with recommendations
-  - _Requirements: 6_
-  - _Completion: build.succeeded event triggers quality analysis and test generation_
-
-- [ ] 12. Create Plan Stage with intelligent task management board
-
-  - Build PlanStage component with Kanban board (Ready/In Progress/Done)
-  - Implement task detail drawer with context and relationship display
-  - Add drag-and-drop functionality with task.started event emission
-  - Create real-time updates via WebSocket for multi-user collaboration
-  - Test Planner Agent integration and task progression rules
+  - **Goal**: Kanban view with task cards, status columns, and basic interaction
+  - **Do**: Create Ready/In Progress/Done columns, task cards with title/owner/effort, Start button opens side panel
+  - **Test**: User can see tasks, click Start, see side panel with agent dropdown
   - _Requirements: 4, 10_
-  - _Completion: Drag task to In Progress emits task.started event and updates board_
+  - _Completion: Basic Plan stage renders with task data_
 
-- [ ] 13. Implement Build Stage with PR monitoring and CI integration
+- [x] 2. Task execution API (Task 10)
 
-  - Create BuildStage component with PR monitoring table
-  - Build real-time CI status updates via GitHub webhooks
-  - Implement build failure analysis and AI-powered recommendations
-  - Add code preview and branch management features
-  - Test Build Agent integration and build status tracking
+  - **Goal**: Backend endpoints for task lifecycle management
+  - **Do**: POST /api/tasks/:id/start, WebSocket progress stream, context/retry/cancel endpoints
+  - **Test**: API can start tasks, stream progress, handle retries
+  - _Requirements: 4, 5_
+  - _Completion: Frontend can start/watch/retry tasks via API_
+
+- [x] 3. Plan cards with intelligent signals (Task 11.1)
+
+  - **Goal**: Cards show priority, assignee suggestions, effort estimates
+  - **Do**: Add editable priority/status/assignee fields, "Suggest" buttons, goal line from acceptance criteria
+  - **Test**: Cards show real data, Suggest buttons work, user can override suggestions
+  - _Requirements: 18.1, 18.2_
+  - _Completion: Cards display planning intelligence, not hard-coded data_
+
+- [x] 4. Agent run panel with context options (Task 11.2)
+
+  - **Goal**: Complete side panel for agent selection and configuration
+  - **Do**: Agent selection (Claude Code/AI Garden/Kiro), context checkboxes, branch naming, preflight status
+  - **Test**: Panel shows all options, validates GitHub connection, generates branch names
+  - _Requirements: 18.4, 18.5_
+  - _Completion: Panel ready for actual agent execution_
+
+- [x] 5. GitHub integration and preflight checks (Tasks 11.7, 11.8)
+
+  - **Goal**: Connect projects to GitHub repositories with validation
+  - **Do**: Project settings for repo URL/token, preflight validation, connection status display
+  - **Test**: Projects show "GitHub connected" status, preflight catches issues
+  - _Requirements: 17.1, 5_
+  - _Completion: Reliable GitHub connectivity before agent runs_
+
+- [x] 6. Branch naming and collision handling (Task 11.4)
+  - **Goal**: Consistent, conflict-free branch names
+  - **Do**: Generate feature/bug/hotfix branches with collision detection
+  - **Test**: Branch names never collide, user can edit suggested names
+  - _Requirements: 17.1_
+  - _Completion: Every task gets a unique, valid branch name_
+
+## 🎯 MVP 2: Agent Execution Core (Tasks 7-12)
+
+_Goal: Agents actually execute with Claude Code SDK and create real branches/PRs_
+
+**Testable Outcome**: Click "Start Task" → See Claude Code create branch → Make changes → Open PR
+
+- [x] 7. Local clone and branch creation (Task 11.9)
+
+  - **Goal**: Give Claude Code a real working copy for each task
+  - **Do**: Shallow-clone repo into task-specific folder, create/push branch before agent starts
+  - **Test**: New branch exists in GitHub repo before agent execution
   - _Requirements: 5_
-  - _Completion: GitHub webhook updates PR status in real-time via WebSocket_
+  - _Completion: Git workspace ready for Claude Code SDK_
 
-- [ ] 14. Build Validate Stage with test execution monitoring
-  - Create ValidateStage component with test execution timeline
-  - Implement detailed test result display with logs and AI summaries
-  - Add quality analysis visualization and failure highlighting
-  - Build real-time test status updates via WebSocket
-  - Test Test Agent integration and quality analysis features
-  - _Requirements: 6_
-  - _Completion: Test results display with AI analysis and quality metrics_
+- [x] 8. Claude Code sub-agent execution (Task 11.21)
 
-## Milestone C: UX Polish & Advanced Features
+  - **Goal**: Actually invoke Claude Code SDK with selected sub-agent
+  - **Do**: Use `claude -p "Use the feature-builder sub agent..."` with .claude/agents/ detection
+  - **Test**: Selected agent runs with proper context, makes real code changes
+  - _Requirements: 16.3, 16.5_
+  - _Completion: Agent selection in UI controls actual Claude Code sub-agent used_
 
-_Goal: Complete seven-stage workflow with advanced features and production readiness_
+- [x] 9. Sub-agent choices and auto-routing (Tasks 11.5, 11.6)
 
-- [ ] 15. Build stage navigation system with intelligent progression rules
+  - **Goal**: Proper sub-agent selection with intelligent defaults
+  - **Do**: Show feature-builder/test-runner/code-reviewer/debugger/design-to-code options, auto-route by task type
+  - **Test**: Different agents produce different results, auto-routing suggests correct agent
+  - _Requirements: 16.1, 16.2_
+  - _Completion: Agent selection is intelligent and affects execution behavior_
 
-  - Create StageNav component with seven-stage navigation
-  - Implement stage enablement logic based on completion criteria
-  - Add health indicators (green/amber/red) with real-time updates
-  - Build stage transition handling and URL routing
-  - Test complete stage progression flow from Think to Learn
+- [x] 10. Pull request creation and linking (Task 11.10)
+
+  - **Goal**: Every successful run produces a reviewable PR
+  - **Do**: Push branch, create draft PR, link back to task, flip to ready when tests pass
+  - **Test**: Task completion shows working PR link immediately
+  - _Requirements: 5_
+  - _Completion: End-to-end task → PR workflow working_
+
+- [x] 11. Progress tracking and live updates (Task 11.13)
+
+  - **Goal**: Real-time progress from agent execution
+  - **Do**: Stream progress from Claude Code execution, update UI in real-time
+  - **Test**: User sees smooth progress sequence during agent execution
+  - _Requirements: 5_
+  - _Completion: Live progress updates during agent runs_
+
+- [x] 12. Error handling and retry (Task 11.17)
+  - **Goal**: Graceful failure recovery
+  - **Do**: Failed tasks show clear errors, retry with previous settings, cancel running tasks
+  - **Test**: Failed task can be retried successfully, running tasks can be cancelled
+  - _Requirements: 5_
+  - _Completion: Robust error handling and recovery_
+
+## 🎯 MVP 3: Build Stage Integration (Tasks 13-18)
+
+_Goal: Complete Build stage with PR management and GitHub webhooks_
+
+**Testable Outcome**: Tasks move to Build stage → Show PR status → Merge updates task status
+
+- [x] 13. Build stage dashboard (Task 11.23)
+
+  - **Goal**: Central place to watch running tasks and manage PRs
+  - **Do**: List Running/Review/Failed tasks, show live logs, PR diffs, failure excerpts
+  - **Test**: Can watch task progress, open PRs, see detailed execution logs
+  - _Requirements: 5_
+  - _Completion: Build stage provides comprehensive task monitoring_
+
+- [x] 14. GitHub webhooks integration (Task 11.11)
+
+  - **Goal**: Automatic task status updates from GitHub events
+  - **Do**: Webhook endpoint for PR events, update task status on merge/close
+  - **Test**: Merging PR automatically marks task Done in real-time
+  - _Requirements: 5_
+  - _Completion: GitHub events drive task status changes_
+
+- [ ] 15. Task approval and resolution (Task 11.24)
+
+  - **Goal**: Complete task lifecycle management
+  - **Do**: Approve/Retry/Send back buttons, PR linking, task resolution
+  - **Test**: Reviewer can resolve tasks without leaving Build stage
+  - _Requirements: 5_
+  - _Completion: Full task resolution workflow_
+
+- [ ] 16. Context bundling and optimization (Task 11.14)
+
+  - **Goal**: Efficient context delivery to agents
+  - **Do**: Assemble checked context files, optimize for agent consumption
+  - **Test**: Agent receives exactly what user selected in context options
+  - _Requirements: 5_
+  - _Completion: Context options directly control agent input_
+
+- [ ] 17. Test execution and reporting (Task 11.16)
+
+  - **Goal**: Real test outcomes visible in UI
+  - **Do**: Run tests during agent execution, capture results, show pass/fail status
+  - **Test**: Build stage shows clear test results and failure details
+  - _Requirements: 5_
+  - _Completion: Test results integrated into task workflow_
+
+- [ ] 18. Concurrency and resource management (Task 11.19)
+  - **Goal**: Prevent system overload and conflicts
+  - **Do**: Task execution limits, queueing system, conflict detection
+  - **Test**: Multiple tasks run without conflicts, queue position visible
+  - _Requirements: 5_
+  - _Completion: Reliable multi-task execution_
+
+## 🎯 MVP 4: Advanced Agent Features (Tasks 19-24)
+
+_Goal: Sub-agent chaining, intelligent suggestions, and optimization_
+
+**Testable Outcome**: Agents suggest better defaults → Chain automatically → Provide performance insights
+
+- [ ] 19. Plan-mode suggestions with Claude Code (Task 11.3)
+
+  - **Goal**: Intelligent planning assistance without code changes
+  - **Do**: Claude Code in read-only mode for assignee/estimate/path suggestions
+  - **Test**: Suggest buttons provide intelligent defaults with reasoning
+  - _Requirements: 13.1, 13.2, 13.3_
+  - _Completion: Planning becomes AI-assisted but human-controlled_
+
+- [ ] 20. Sub-agent detection and validation (Task 11.30)
+
+  - **Goal**: Verify and display available sub-agents per project
+  - **Do**: Check .claude/agents/ directory, validate expected files, show status
+  - **Test**: Project settings show "Sub agents: 5/5 available" or fallback warning
+  - _Requirements: 20.1, 20.2, 20.3_
+  - _Completion: Clear visibility into sub-agent availability_
+
+- [ ] 21. Chained sub-agent execution (Task 11.22)
+
+  - **Goal**: Automated agent sequences for quality workflows
+  - **Do**: feature-builder → test-runner → code-reviewer chains, debugger on failures
+  - **Test**: Single task triggers multiple agents in sequence automatically
+  - _Requirements: 16.5, 19.1_
+  - _Completion: Automated quality pipeline through agent chaining_
+
+- [ ] 22. Bug tracking and fast-track fixes (Tasks 11.25, 11.26)
+
+  - **Goal**: Failed PRs become trackable bugs with quick fix workflow
+  - **Do**: CI failures create bug cards, fast-track fix flow reuses branches
+  - **Test**: Red PR creates bug card, fix can be started immediately
+  - _Requirements: 5_
+  - _Completion: Seamless bug creation and resolution workflow_
+
+- [ ] 23. Performance metrics and telemetry (Tasks 11.35, 11.36)
+
+  - **Goal**: Insights into agent effectiveness and performance
+  - **Do**: Track start-to-PR time, model turns, sub-agent performance comparison
+  - **Test**: Dashboard shows agent performance metrics and comparisons
+  - _Requirements: 20.4, 20.5, 5_
+  - _Completion: Data-driven insights into development workflow_
+
+- [ ] 24. System reliability and guardrails (Tasks 11.33, 11.20, 11.32)
+  - **Goal**: Production-ready reliability and safety
+  - **Do**: Timeouts, idempotency, log retention, duplicate start handling
+  - **Test**: System handles edge cases gracefully, maintains audit trail
+  - _Requirements: 5_
+  - _Completion: Production-ready reliability and observability_
+
+## 🎯 MVP 5: Polish and Production (Tasks 25-30)
+
+_Goal: Demo-ready system with proper UX and accessibility_
+
+**Testable Outcome**: System ready for demo with smooth UX and comprehensive features
+
+- [ ] 25. Demo data and happy path (Task 11.37)
+
+  - **Goal**: Smooth demo experience out of the box
+  - **Do**: Sample project setup, demo script, seed data for immediate testing
+  - **Test**: Can set up and run full demo in under 5 minutes
   - _Requirements: 1_
-  - _Completion: Stage navigation enforces progression rules and shows health status_
+  - _Completion: Demo-ready system with sample data_
 
-- [ ] 16. Build project onboarding wizard with three-screen flow
+- [ ] 26. User experience polish (Tasks 11.42, 11.43, 11.44)
 
-  - Create OnboardingWizard component with repository connection screen
-  - Implement document upload screen with drag-and-drop and automatic embedding
-  - Build communication linking screen with Slack channel mapping
-  - Add system map generation from repository analysis
-  - Test complete onboarding flow and project initialization
-  - _Requirements: 2, 9_
-  - _Completion: Complete onboarding creates project with system map and embeddings_
+  - **Goal**: Professional UX with accessibility and theming
+  - **Do**: Microcopy, keyboard navigation, dark theme consistency
+  - **Test**: First-time users understand interface, fully keyboard accessible
+  - _Requirements: 1_
+  - _Completion: Professional, accessible user interface_
 
-- [ ] 17. Implement context-aware AI assistant with project knowledge
+- [ ] 27. Debugging and observability (Task 11.38)
 
-  - Create AI assistant component with project context integration
-  - Build pgvector search integration for relevant context retrieval
-  - Implement graph relationship integration for comprehensive answers
-  - Add external documentation preview (Notion, Figma, GitHub)
-  - Test AI assistant across all stages with contextual responses
-  - _Requirements: 9, 12_
-  - _Completion: AI assistant provides contextual answers using project knowledge_
+  - **Goal**: Easy troubleshooting and bug reporting
+  - **Do**: Run correlation IDs, event stream export, detailed logging
+  - **Test**: Can export full run transcript for debugging
+  - _Requirements: 5_
+  - _Completion: Comprehensive debugging and observability_
 
-- [ ] 18. Build role-based security and project isolation system
+- [ ] 28. Configuration and customization (Task 11.29)
 
-  - Implement JWT token generation with project-scoped permissions
-  - Create user authentication and authorization middleware
-  - Add per-project agent toggle functionality in Project model
-  - Build external integration security with short-lived tokens
-  - Test security isolation between projects and user roles
-  - _Requirements: 11_
-  - _Completion: Users only see authorized projects and can toggle agents_
+  - **Goal**: Flexible system configuration per project
+  - **Do**: Model defaults, tool permissions, security settings
+  - **Test**: Projects work with minimal configuration, can be customized
+  - _Requirements: 5_
+  - _Completion: Flexible, secure configuration system_
 
-- [ ] 19. Create User Simulation Agent for synthetic testing (stretch)
+- [ ] 29. Feature flags and advanced features (Task 11.34)
 
-  - Build User Simulation Agent that subscribes to deployment.completed events
-  - Implement synthetic user session generation with different personas
-  - Add behavioral analysis and friction point detection
-  - Create video replay generation and friction reporting
-  - Test user.friction event publishing and Learn stage integration
-  - _Requirements: 7_
-  - _Completion: Deployment triggers user simulation with friction analysis_
+  - **Goal**: Advanced features behind flags for stability
+  - **Do**: Feature flags for experimental functionality
+  - **Test**: Can enable/disable advanced features without breaking core workflow
+  - _Requirements: 5_
+  - _Completion: Stable core with optional advanced features_
 
-- [ ] 20. Implement Learn Agent for continuous improvement insights (stretch)
+- [ ] 30. End-to-end validation (Tasks 11.39, 11.40, 11.41)
+  - **Goal**: Prove complete workflow reliability
+  - **Do**: Start→PR→Merge flow, failure→retry→success flow, real-time updates
+  - **Test**: Complete workflows work reliably end-to-end
+  - _Requirements: 5_
+  - _Completion: Fully validated, production-ready system_
 
-  - Create Learn Agent that subscribes to project completion events
-  - Build event log analysis for cycle time and success pattern detection
-  - Implement insight generation with actionable recommendations
-  - Add pattern.identified event publishing for cross-project learning
-  - Create "Open as idea" functionality for continuous improvement loop
-  - _Requirements: 8_
-  - _Completion: Project completion generates insights with "Open as idea" functionality_
+---
 
-- [ ] 21. Create User Stage with simulation and friction analysis (stretch)
+## 📋 **Current Status Summary**
 
-  - Build UserStage component with user simulation grid
-  - Implement video replay functionality for user sessions
-  - Add friction point visualization with detailed annotations
-  - Create user behavior analysis and recommendation display
-  - Test User Simulation Agent integration and friction reporting
-  - _Requirements: 7_
-  - _Completion: User Stage displays simulation results with replay capability_
+### ✅ **Completed (MVP 1 + partial MVP 2)**
 
-- [ ] 22. Implement Learn Stage with insights and feedback loop (stretch)
+- Plan stage UI foundation with task cards and agent selection
+- Task execution API with progress streaming
+- GitHub integration with preflight checks
+- Local Git workspace creation and branch management
+- Claude Code sub-agent execution (basic implementation)
 
-  - Create LearnStage component with insight carousel
-  - Build "Open as idea" functionality for continuous improvement
-  - Implement pattern recognition and trend analysis display
-  - Add insight tracking and impact measurement
-  - Test Learn Agent integration and feedback loop completion
-  - _Requirements: 8_
-  - _Completion: Learn Stage shows insights that can be converted to new ideas_
+### 🚧 **Next Priority (Complete MVP 2)**
 
-- [ ] 23. Implement external documentation integration and Notion sync (stretch)
+- Sub-agent choices and intelligent auto-routing (Task 9)
+- Pull request creation and linking (Task 10)
+- Real-time progress tracking (Task 11)
+- Error handling and retry mechanisms (Task 12)
 
-  - Create Notion integration service for specification mirroring
-  - Build external documentation preview system
-  - Add embedded preview functionality for external links
-  - Implement bidirectional sync detection and conflict resolution
-  - Test Notion sync workflow and external documentation access
-  - _Requirements: 12_
-  - _Completion: Frozen specs sync to Notion and external docs show previews_
+### 🎯 **MVP Milestones**
 
-- [ ] 24. Create comprehensive monitoring and observability system
+- **MVP 1**: ✅ Plan stage foundation (6/6 tasks complete)
+- **MVP 2**: 🚧 Agent execution core (2/6 tasks complete)
+- **MVP 3**: ⏳ Build stage integration (0/6 tasks)
+- **MVP 4**: ⏳ Advanced agent features (0/6 tasks)
+- **MVP 5**: ⏳ Polish and production (0/6 tasks)
 
-  - Implement Prometheus metrics collection for all agent operations
-  - Build Grafana dashboards for system health and performance monitoring
-  - Add distributed tracing for complex event flows
-  - Create health check endpoints for all system components
-  - Test monitoring system under load and failure scenarios
-  - _Requirements: All (monitoring support)_
-  - _Completion: Grafana dashboards show system health and agent metrics_
-
-- [ ] 25. Build comprehensive error handling and recovery system
-
-  - Implement circuit breaker pattern for external API calls
-  - Create dead letter queue for failed event processing
-  - Add automatic retry with exponential backoff for transient failures
-  - Build graceful degradation when external services are unavailable
-  - Test error recovery scenarios and system resilience
-  - _Requirements: All (error handling support)_
-  - _Completion: System gracefully handles failures with automatic recovery_
-
-- [ ] 26. Implement mobile-responsive design and accessibility features (stretch)
-
-  - Create responsive layouts for all stage components
-  - Build touch-friendly interfaces with appropriate sizing
-  - Add keyboard navigation support and ARIA labels
-  - Implement alternative interaction methods for mobile devices
-  - Test accessibility compliance and mobile user experience
-  - _Requirements: All (accessibility support)_
-  - _Completion: All stages work on mobile with full accessibility compliance_
-
-- [ ] 27. Create comprehensive testing suite for agent workflows
-
-  - Build unit tests for all agent event processing logic
-  - Implement integration tests for agent coordination scenarios
-  - Add end-to-end tests for complete user workflows
-  - Create performance tests for event throughput and latency
-  - Test event replay functionality and audit trail integrity
-  - _Requirements: All (testing support)_
-  - _Completion: Test suite covers all agents and workflows with >90% coverage_
-
-- [ ] 28. Build performance optimization and caching system
-
-  - Implement Redis-based caching for frequently accessed data
-  - Add database query optimization and indexing
-  - Create connection pooling and resource management
-  - Build cache invalidation strategies based on domain events
-  - Test performance under load with multiple concurrent users
-  - _Requirements: All (performance support)_
-  - _Completion: System handles 100+ concurrent users with <200ms response times_
-
-- [ ] 29. Create production deployment and configuration system
-
-  - Build Docker containerization for single-process deployment
-  - Implement environment-based configuration with validation
-  - Add startup scripts and process management utilities
-  - Create deployment documentation and rollback procedures
-  - Test production deployment and system monitoring
-  - _Requirements: All (deployment support)_
-  - _Completion: Single Docker command deploys complete system_
-
-- [ ] 30. Final integration testing and system validation
-  - Integrate all components and test complete system functionality
-  - Validate all seven-stage workflows with real project scenarios
-  - Test agent coordination and event-driven automation
-  - Verify security, performance, and accessibility requirements
-  - Create user documentation and training materials
-  - _Requirements: All (final validation)_
-  - _Completion: Complete Think→Learn workflow works end-to-end with real data_
+This reorganization provides clear MVP phases where each phase delivers a testable, working system that builds on the previous phase. You can now work through MVP 2 to get a complete working agent execution system before moving to Build stage integration.

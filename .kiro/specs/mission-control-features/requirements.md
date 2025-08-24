@@ -163,3 +163,99 @@ The system will provide the business rules, agent behaviors, and user experience
 3. WHEN Notion pages are updated externally THEN the system SHALL detect changes and offer to sync updates back to Mission Control
 4. WHEN viewing external links THEN the system SHALL provide context-aware previews based on URL patterns (Notion, Figma, GitHub)
 5. WHEN documentation is accessed THEN the system SHALL track usage patterns to optimize integration priorities
+
+### Requirement 13: Claude Code SDK Intelligence Integration
+
+**User Story:** As a Project Manager, I want the system to use Claude Code SDK's repository analysis capabilities to provide intelligent task estimation, developer assignment, and dependency detection based on actual codebase understanding, so that project planning becomes data-driven and accurate.
+
+#### Acceptance Criteria
+
+1. WHEN tasks are created from frozen specs THEN the system SHALL use Claude Code SDK to analyze repository structure and provide realistic effort estimates based on code complexity
+2. WHEN developer assignments are suggested THEN the system SHALL use Claude Code SDK to analyze git history, code ownership patterns, and expertise areas to match tasks with optimal developers
+3. WHEN task dependencies are evaluated THEN the system SHALL use Claude Code SDK to analyze component relationships and automatically detect technical dependencies between tasks
+4. WHEN task complexity is assessed THEN the system SHALL provide confidence scores and reasoning explanations for all AI-generated estimates and suggestions
+5. WHEN repository state changes THEN the system SHALL re-analyze affected tasks and update estimates, assignments, and dependencies in real-time
+
+### Requirement 14: Dynamic Task Intelligence and Workload Optimization
+
+**User Story:** As a Development Team Lead, I want the system to continuously optimize task assignments and workload distribution using AI analysis of team performance, repository changes, and project patterns, so that development velocity is maximized while maintaining code quality.
+
+#### Acceptance Criteria
+
+1. WHEN historical task data is available THEN the system SHALL analyze completed tasks to improve future effort estimates and identify patterns in estimation accuracy
+2. WHEN multiple tasks are ready THEN the system SHALL suggest optimal task execution order based on dependencies, developer availability, and risk assessment
+3. WHEN developers have varying workloads THEN the system SHALL balance task assignments considering current capacity, expertise match, and project priorities
+4. WHEN potential conflicts are detected THEN the system SHALL proactively identify file-level conflicts and suggest task scheduling to minimize blocking
+5. WHEN team performance patterns emerge THEN the system SHALL provide insights on developer strengths, bottlenecks, and optimization opportunities
+
+### Requirement 15: Advanced Repository Context and Code Impact Analysis
+
+**User Story:** As a Senior Developer, I want the system to understand which code components each task will impact and provide detailed context about related files, dependencies, and potential risks, so that I can make informed decisions about task implementation approaches.
+
+#### Acceptance Criteria
+
+1. WHEN a task is selected THEN the system SHALL use Claude Code SDK to identify which files, components, and modules the task will likely modify
+2. WHEN code impact is analyzed THEN the system SHALL provide risk assessment including complexity factors, testing requirements, and potential breaking changes
+3. WHEN similar tasks exist in history THEN the system SHALL reference previous implementations and their outcomes to inform current task planning
+4. WHEN architectural decisions are needed THEN the system SHALL provide context-aware recommendations based on existing code patterns and project conventions
+5. WHEN task execution begins THEN the system SHALL provide developers with comprehensive context including related PRs, design decisions, and implementation examples
+
+### Requirement 16: Claude Code Sub Agent Orchestration and Specialization
+
+**User Story:** As a Development Team Lead, I want the system to automatically select and orchestrate specialized Claude Code sub agents (feature-builder, test-runner, code-reviewer, debugger, design-to-code) based on task characteristics and chain them intelligently, so that each task gets the right expertise with optimal tool permissions and context isolation.
+
+#### Acceptance Criteria
+
+1. WHEN a task is ready to start THEN the system SHALL analyze task content and automatically suggest the most appropriate sub agent (feature-builder for new features, test-runner for test tasks, debugger for bug fixes, code-reviewer for refactoring)
+2. WHEN a sub agent is selected THEN the system SHALL launch Claude Code SDK with the specific sub agent using the `.claude/agents/[agent-name].md` file from the connected repository
+3. WHEN sub agents execute THEN each SHALL operate with its own clean context window and respect tool permissions defined in its markdown configuration (e.g., code-reviewer gets read-only access, feature-builder gets full write access)
+4. WHEN a primary task completes successfully THEN the system SHALL automatically chain appropriate follow-up agents (feature-builder → test-runner → code-reviewer, or feature-builder → test-runner → debugger if tests fail)
+5. WHEN agent chaining occurs THEN the system SHALL display the execution timeline in the UI showing the sequence of agents and their individual contributions to the final result
+
+### Requirement 17: GitHub Integration with Branch Management and PR Automation
+
+**User Story:** As a Project Manager, I want the system to automatically manage GitHub branches, create pull requests with consistent formatting, and track PR status through webhooks, so that code changes are properly organized and reviewable without manual Git operations.
+
+#### Acceptance Criteria
+
+1. WHEN a task execution starts THEN the system SHALL create a new branch using the format `feature|bug|hotfix/<taskId>-<short-slug>-<yyyymmdd>` and handle naming collisions by appending `-2`, `-3`, etc.
+2. WHEN code changes are completed THEN the system SHALL automatically commit changes, push the branch, and create a draft PR with consistent title/body format including task ID and plan summary
+3. WHEN tests pass THEN the system SHALL automatically convert the draft PR to "ready for review" status
+4. WHEN PR status changes THEN GitHub webhooks SHALL update task status in real-time (merged → Done, closed without merge → Failed with reason)
+5. WHEN multiple tasks run concurrently THEN the system SHALL prevent conflicts by checking file overlap and queuing tasks that would modify the same components
+
+### Requirement 18: Intelligent Plan Stage with Real-Time Task Intelligence
+
+**User Story:** As a Product Owner, I want the Plan stage to show intelligent task cards with AI-generated estimates, developer suggestions, priority indicators, and dependency visualization, so that I can make informed decisions about task prioritization and resource allocation.
+
+#### Acceptance Criteria
+
+1. WHEN tasks are displayed THEN each card SHALL show editable priority (Critical/High/Normal/Low) with color coding, AI-suggested assignee with confidence reasoning, and effort estimate with historical comparison
+2. WHEN "Suggest" buttons are clicked THEN the system SHALL use Claude Code SDK in read-only mode to provide assignee and estimate suggestions with one-line explanations and allow human override
+3. WHEN task dependencies exist THEN cards SHALL show "Likely touches" hints and dim blocked tasks with "Blocked by Task #X" labels
+4. WHEN the "Prepare agent run" side panel opens THEN it SHALL show preflight GitHub connection status, context checkboxes, auto-generated branch name, and a dry-run explanation of what will happen
+5. WHEN tasks are started THEN the system SHALL stream real-time progress updates to both the side panel and task cards, showing the agent chain execution and current status
+
+### Requirement 19: Build Stage Monitoring with Agent Chain Visualization
+
+**User Story:** As a Development Team Lead, I want to monitor running tasks with detailed logs, see agent execution chains, and manage task completion through approval/retry workflows, so that I can oversee development progress and handle issues efficiently.
+
+#### Acceptance Criteria
+
+1. WHEN tasks are running THEN the Build stage SHALL display a dashboard with tasks grouped by status (Running, Review, Failed) showing start time, elapsed time, and current agent in the chain
+2. WHEN a task is selected THEN the right panel SHALL show live logs, agent chain timeline (e.g., "feature-builder → test-runner → code-reviewer"), and PR diff when in Review status
+3. WHEN tasks complete successfully THEN the system SHALL show PR links, touched files list, and provide Approve/Retry/Send back to Plan actions
+4. WHEN tasks fail THEN the system SHALL display failure excerpts, offer Retry with previous settings pre-filled, and show correlation IDs for debugging
+5. WHEN agent chains execute THEN the UI SHALL show real-time progress through the sequence, indicating which agent is currently active and what each agent contributed
+
+### Requirement 20: Sub Agent Configuration and Repository Integration
+
+**User Story:** As a DevOps Engineer, I want the system to automatically detect and validate sub agent configurations in connected repositories, provide fallback behavior when agents are missing, and track agent performance metrics, so that teams can customize their development workflows while maintaining system reliability.
+
+#### Acceptance Criteria
+
+1. WHEN a GitHub repository is connected THEN the system SHALL check for `.claude/agents/` directory and validate the presence of the five expected sub agent files (feature-builder.md, test-runner.md, code-reviewer.md, debugger.md, design-to-code.md)
+2. WHEN sub agents are detected THEN project settings SHALL display "Sub agents: 5/5 available" or "Sub agents: missing (using defaults)" with clear status indicators
+3. WHEN sub agent files are missing THEN the system SHALL provide graceful fallback behavior using built-in default configurations while showing warnings in the UI
+4. WHEN sub agents execute THEN the system SHALL record telemetry including agent name, start-to-PR time, number of model turns, and success/failure status for performance analysis
+5. WHEN agent performance data is available THEN the Build stage SHALL show a summary comparing different agents' effectiveness (feature-builder vs test-runner vs debugger cycle times) to help optimize team workflows

@@ -140,7 +140,7 @@ Card (`FeedCard`) props:
 
 ## 10. User Stage — Simulation (`/user`)
 
-- Grid of synthetic user sessions: status, persona, friction notes.
+- Grid of synthetic user sessions: status, persona, friction notet the s.
 - “Replay” opens screencast.
 
 ## 11. Learn Stage — Insights (`/learn`)
