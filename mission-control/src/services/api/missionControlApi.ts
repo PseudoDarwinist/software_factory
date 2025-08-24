@@ -1789,6 +1789,108 @@ class MissionControlApi {
       throw new Error('Failed to add validation decision')
     }
   }
+
+  // Work Order Management endpoints
+  async generateWorkOrders(specId: string, projectId: string): Promise<ReadableStream<Uint8Array>> {
+    try {
+      const response = await fetch(`${this.baseURL}/specs/${specId}/generate-work-orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
+        },
+        body: JSON.stringify({ projectId: projectId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      if (!response.body) {
+        throw new Error('No response body for work order generation');
+      }
+
+      return response.body;
+    } catch (error) {
+      console.error('Failed to generate work orders:', error);
+      throw new Error('Failed to generate work orders');
+    }
+  }
+
+  async getWorkOrders(specId: string, projectId: string): Promise<any[]> {
+    try {
+      const response = await this.client.get<ApiResponse<any[] | { work_orders: any[] }>>(
+        `/specs/${specId}/work-orders`, 
+        { params: { projectId: projectId } }
+      );
+      const data = response.data.data;
+      if (Array.isArray(data)) {
+        return data;
+      }
+      if (data && Array.isArray((data as any).work_orders)) {
+        return (data as any).work_orders;
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to get work orders:', error);
+      // On error, return an empty array to prevent UI crashes
+      return [];
+    }
+  }
+
+  async getWorkOrderGenerationStatus(specId: string, projectId: string): Promise<{
+    status: string;
+    total_work_orders: number;
+    generated_work_orders: number;
+    ready_work_orders: number;
+  }> {
+    try {
+      const response = await this.client.get<ApiResponse<{
+        status: string;
+        total_work_orders: number;
+        generated_work_orders: number;
+        ready_work_orders: number;
+      }>>(`/specs/${specId}/work-orders/status`, { params: { projectId: projectId } });
+      return response.data.data!;
+    } catch (error) {
+      console.error('Failed to get work order generation status:', error);
+      return {
+        status: 'error',
+        total_work_orders: 0,
+        generated_work_orders: 0,
+        ready_work_orders: 0
+      };
+    }
+  }
+
+  async generateWorkOrderImplementationPlan(workOrderId: string, specId: string, projectId: string): Promise<{
+    success: boolean;
+    implementation_plan?: any;
+    status?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await this.client.post<ApiResponse<{
+        implementation_plan: any;
+        status: string;
+      }>>(`/work-orders/${workOrderId}/generate-implementation-plan`, {
+        specId: specId,
+        projectId: projectId
+      });
+      
+      return {
+        success: true,
+        implementation_plan: response.data.data?.implementation_plan,
+        status: response.data.data?.status
+      };
+    } catch (error) {
+      console.error('Failed to generate work order implementation plan:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to generate implementation plan'
+      };
+    }
+  }
 }
 
 // Create and export singleton instance

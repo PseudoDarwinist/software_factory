@@ -745,10 +745,48 @@ def handle_prd_updated_webhook():
             'received_at': datetime.utcnow().isoformat()
         }
         
-        # TODO: In a real implementation, you might want to:
-        # 1. Store this event in a database for audit trail
-        # 2. Forward to WebSocket connections for real-time updates
-        # 3. Send notifications to connected Po.html clients
+        # Update feed item progress when PRD is frozen
+        if data['status'] == 'frozen':
+            try:
+                # Extract feed item ID from PRD ID (assuming format like prd_feeditem_id)
+                prd_id = data['prd_id']
+                if prd_id.startswith('prd_'):
+                    feed_item_id = prd_id[4:]  # Remove 'prd_' prefix
+                    
+                    # Get PRD to find project_id
+                    try:
+                        from ..models.prd import PRD
+                        from ..models.feed_item import FeedItem
+                    except ImportError:
+                        from models.prd import PRD
+                        from models.feed_item import FeedItem
+                    
+                    prd = PRD.query.get(prd_id)
+                    if prd and prd.project_id:
+                        # Update feed item metadata to reflect PRD is frozen
+                        feed_item = FeedItem.query.filter_by(
+                            id=feed_item_id,
+                            project_id=prd.project_id
+                        ).first()
+                        
+                        if feed_item:
+                            current_metadata = feed_item.meta_data or {}
+                            current_metadata.update({
+                                'prdFrozen': True,
+                                'prdStatus': 'frozen',
+                                'prdProgress': 1.0,
+                                'hasPRD': True,
+                                'lastPRDUpdate': datetime.utcnow().isoformat()
+                            })
+                            feed_item.update_metadata(current_metadata)
+                            current_app.logger.info(f"Updated feed item {feed_item_id} - PRD frozen")
+                        
+            except Exception as e:
+                current_app.logger.warning(f"Failed to update feed item progress: {str(e)}")
+        
+        # TODO: Additional real-time updates:
+        # 1. Forward to WebSocket connections for real-time updates
+        # 2. Send notifications to connected Po.html clients
         
         return jsonify({
             'success': True,

@@ -12,27 +12,16 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
 from abc import ABC, abstractmethod
+from src.services.context_aware_ai import get_context_aware_ai, AIContext
+from src.services.intelligence_engine import get_intelligence_engine, get_recommendation_engine
+from src.services.graph_service import GraphService
+from src.services.event_bus import get_event_bus, EventBus
+from src.services.distributed_cache import get_distributed_cache
+from src.core.events import Event, EventType
+from src.models.mission_control_project import MissionControlProject
+from src.models.conversation import Conversation
+from src.models.system_map import SystemMap
 
-try:
-    from ..services.context_aware_ai import get_context_aware_ai, AIContext
-    from ..services.intelligence_engine import get_intelligence_engine, get_recommendation_engine
-    from ..services.graph_service import GraphService
-    from ..services.event_bus import get_event_bus
-    from ..services.distributed_cache import get_distributed_cache
-    from ..core.events import Event, EventType
-    from ..models.mission_control_project import MissionControlProject
-    from ..models.conversation import Conversation
-    from ..models.system_map import SystemMap
-except ImportError:
-    from services.context_aware_ai import get_context_aware_ai, AIContext
-    from services.intelligence_engine import get_intelligence_engine, get_recommendation_engine
-    from services.graph_service import GraphService
-    from services.event_bus import get_event_bus
-    from services.distributed_cache import get_distributed_cache
-    from core.events import Event, EventType
-    from models.mission_control_project import MissionControlProject
-    from models.conversation import Conversation
-    from models.system_map import SystemMap
 
 logger = logging.getLogger(__name__)
 
@@ -733,7 +722,7 @@ def get_ai_agent_manager() -> AIAgentManager:
 
 def init_ai_agents() -> AIAgentManager:
     """Initialize the AI agent system and start all registered agents."""
-    manager = get_ai_agent_manager()  # This will create and register default agents if not already done
+    manager = get_ai_agent_manager()
     manager.start_all_agents()
-    logger.info("AI agent system initialized and started.")
+    logger.info(f"Started {len(manager.agents)} AI agents")
     return manager

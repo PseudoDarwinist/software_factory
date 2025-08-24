@@ -124,9 +124,12 @@ class SpecificationArtifact(db.Model):
         return artifact
     
     @classmethod
-    def get_spec_artifacts(cls, spec_id: str):
-        """Get all artifacts for a specification"""
-        return cls.query.filter_by(spec_id=spec_id).all()
+    def get_spec_artifacts(cls, spec_id: str, project_id: str = None):
+        """Get all artifacts for a specification, optionally filtered by project"""
+        query = cls.query.filter_by(spec_id=spec_id)
+        if project_id:
+            query = query.filter_by(project_id=project_id)
+        return query.all()
     
     @classmethod
     def get_project_specs(cls, project_id):
@@ -222,9 +225,9 @@ class SpecificationArtifact(db.Model):
             }
     
     @classmethod
-    def get_spec_completion_status(cls, spec_id: str):
+    def get_spec_completion_status(cls, spec_id: str, project_id: str = None):
         """Get completion status for a specification"""
-        artifacts = cls.get_spec_artifacts(spec_id)
+        artifacts = cls.get_spec_artifacts(spec_id, project_id)
         
         if not artifacts:
             return {

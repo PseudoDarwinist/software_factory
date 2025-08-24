@@ -1,9 +1,22 @@
 """
 PlannerAgent Bridge - Initialize and manage PlannerAgent lifecycle
+
+FEATURE SWITCH: AUTOMATIC_TASK_CREATION_ENABLED
+==============================================
+Set to False to pause automatic task creation when specs are frozen.
+Set to True to enable automatic task creation.
+
+To reactivate:
+1. Change AUTOMATIC_TASK_CREATION_ENABLED = True
+2. Uncomment the task creation code in _handle_spec_frozen_event
+3. Restart the Flask server
 """
 
 import logging
 from typing import Optional
+
+# FEATURE SWITCH: Controls automatic task creation
+AUTOMATIC_TASK_CREATION_ENABLED = False  # Set to True to reactivate
 
 try:
     from ..services.event_bus import get_event_bus
@@ -84,6 +97,12 @@ def _handle_spec_frozen_event(event_data):
     
     # We need to run this in Flask application context
     with _flask_app.app_context():
+        # Import models inside Flask context to avoid registry conflicts
+        try:
+            from flask import current_app
+            current_app.logger.debug("Starting task creation in Flask context")
+        except Exception:
+            pass
         try:
             logger.info(f"PlannerAgent received spec.frozen event: {event_data}")
             
@@ -104,48 +123,77 @@ def _handle_spec_frozen_event(event_data):
             
             logger.info(f"Processing spec.frozen for spec {spec_id} in project {project_id}")
             
-            # Get the tasks artifact
-            tasks_artifact = SpecificationArtifact.query.filter_by(
-                spec_id=spec_id,
-                artifact_type=ArtifactType.TASKS
-            ).first()
+            # ========================================================================
+            # AUTOMATIC TASK CREATION FEATURE - CURRENTLY PAUSED
+            # ========================================================================
+            # This feature automatically creates tasks when specs are frozen.
+            # It has been temporarily paused for Work Order enhancement development.
+            #
+            # TO REACTIVATE:
+            # 1. Set AUTOMATIC_TASK_CREATION_ENABLED = True at the top of this file
+            # 2. Uncomment the code block below (remove triple quotes)
+            # 3. Restart the Flask server
+            #
+            # Status: PAUSED (2025-08-22 for Work Order enhancement)
+            # ========================================================================
             
-            if not tasks_artifact:
-                logger.warning(f"No tasks artifact found for spec {spec_id}")
-                return
-            
-            # Parse tasks from markdown content
-            parsed_tasks = _parse_tasks_from_markdown(tasks_artifact.content, spec_id, project_id)
-            
-            if not parsed_tasks:
-                logger.warning(f"No tasks parsed from spec {spec_id}")
-                return
-            
-            # Create Task records (skip duplicates)
-            created_tasks = []
-            for task_data in parsed_tasks:
-                task_id = f"{spec_id}_{task_data.get('task_number', 'unknown')}"
+            if AUTOMATIC_TASK_CREATION_ENABLED:
+                logger.info(f"🔄 Processing spec.frozen event for task creation: {spec_id}")
                 
-                # Check if task already exists
-                existing_task = Task.query.get(task_id)
-                if existing_task:
-                    logger.info(f"Task {task_id} already exists, skipping")
-                    continue
-                
-                task = Task.create_task(
+                # Create tasks directly in Flask context to avoid SQLAlchemy issues
+                # Get the tasks.md artifact
+                tasks_artifact = SpecificationArtifact.query.filter_by(
                     spec_id=spec_id,
-                    project_id=project_id,
-                    task_data=task_data,
-                    created_by='planner_agent'
-                )
-                created_tasks.append(task)
-            
-            if created_tasks:
+                    artifact_type=ArtifactType.TASKS
+                ).first()
+                
+                if not tasks_artifact:
+                    logger.warning(f"No tasks artifact found for spec {spec_id}")
+                    return
+                
+                # Parse tasks from tasks.md content using the existing parser
+                parsed_tasks = _parse_tasks_from_markdown(tasks_artifact.content, spec_id, project_id)
+                
+                if not parsed_tasks:
+                    logger.warning(f"No tasks parsed from spec {spec_id}")
+                    return
+                
+                # Create task records in database
+                created_tasks = []
+                for task_data in parsed_tasks:
+                    try:
+                        # Generate unique task ID in the same format as existing tasks
+                        task_id = f"{spec_id}_{task_data.get('task_number', 'unknown')}"
+                        
+                        # Create a new task with the data
+                        task = Task(
+                            id=task_id,
+                            spec_id=spec_id,
+                            project_id=project_id,
+                            task_number=task_data.get('task_number'),
+                            title=task_data.get('title', 'Untitled Task'),
+                            description=task_data.get('description', ''),
+                            status=TaskStatus.READY,
+                            priority=TaskPriority.MEDIUM,
+                            effort_estimate_hours=task_data.get('effort_estimate_hours', 2.0),
+                            suggested_owner=task_data.get('suggested_owner', 'Developer'),
+                            parent_task_id=task_data.get('parent_task_id'),
+                            created_by='planner_agent_bridge'
+                        )
+                        db.session.add(task)
+                        created_tasks.append(task)
+                    except Exception as e:
+                        logger.error(f"Failed to create task {task_data.get('task_number')}: {e}")
+                
+                # Commit all tasks
                 db.session.commit()
-            
-            logger.info(f"✅ Created {len(created_tasks)} tasks from spec {spec_id}")
-            for task in created_tasks:
-                logger.info(f"  - {task.task_number}: {task.title}")
+                
+                logger.info(f"✅ PlannerAgent successfully created {len(created_tasks)} tasks for spec {spec_id}")
+                logger.info(f"   Tasks are now available on the Plan stage Kanban board")
+            else:
+                logger.info(f"⏸️  Automatic task creation is PAUSED for spec {spec_id}")
+                logger.info(f"   Spec freeze event received but no tasks will be created")
+                logger.info(f"   To reactivate: Set AUTOMATIC_TASK_CREATION_ENABLED = True")
             
         except Exception as e:
             logger.error(f"Error handling spec.frozen event: {e}")
@@ -172,7 +220,7 @@ def _parse_tasks_from_markdown(markdown_content: str, spec_id: str, project_id: 
             logger.debug(f"Saved task: {current_task['task_number']} - {current_task['title']}")
         current_task = None
 
-    for line_num, line in enumerate(lines):
+    for line in lines:
         if not line.strip():
             continue
 

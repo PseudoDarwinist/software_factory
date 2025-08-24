@@ -5,6 +5,8 @@ Single-process application consolidating all functionality
 """
 
 import os
+from gevent import monkey
+monkey.patch_all()
 # Load environment variables from a .env file so every process (including isolated MCP servers)
 # picks up the same DATABASE_URL and related settings.
 from dotenv import load_dotenv
@@ -20,6 +22,29 @@ from flask_migrate import Migrate
 from flask_cors import CORS
 import atexit
 import redis
+
+
+# Monkey patch the standard library for eventlet - REMOVED
+# eventlet.monkey_patch()
+
+# --- Start: Definitive Python Path Resolution ---
+# This block is the definitive fix for the 'Multiple classes found' error.
+# It ensures that, regardless of how the application is started (e.g., as a
+# script, with 'python -m', or via a runner), the project's root directory
+# is correctly identified and used as the single source for all imports.
+# This eliminates the path ambiguity that causes the same module to be loaded
+# twice under different names, which is the root cause of the error.
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Remove the 'src' directory from the path if it's present. This is a common
+# source of ambiguity and forces all imports to be absolute from the project
+# root (e.g., 'from src.models import ...').
+src_path = os.path.join(project_root, 'src')
+if src_path in sys.path:
+    sys.path.remove(src_path)
+# --- End: Definitive Python Path Resolution ---
 
 # Configure comprehensive logging
 logging.basicConfig(

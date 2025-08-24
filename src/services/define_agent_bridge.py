@@ -34,6 +34,7 @@ class DefineAgentBridge(BaseAIAgent):
         super().__init__(AgentType.DEFINE_AGENT)
         self.define_agent = None
         self.event_bus = None
+        self.registry = None
         self.initialize()
         
     def _subscribe_to_events(self):
@@ -54,11 +55,16 @@ class DefineAgentBridge(BaseAIAgent):
             if not ai_broker:
                 logger.warning("AI broker not available, DefineAgent will have limited functionality")
             
-            # Create event bus (simplified for this bridge)
-            event_store = EventStore()
-            self.event_bus = EventBus(event_store)
+            # Get the event bus 
+            from src.services.event_bus import get_event_bus
+            self.event_bus = get_event_bus()
             
-            # Create DefineAgent
+            if not self.event_bus:
+                logger.error("Event bus not available")
+                self.is_active = False
+                return
+
+            # Create DefineAgent with event bus
             self.define_agent = create_define_agent(self.event_bus, ai_broker)
             
             # Subscribe to idea.promoted events

@@ -546,9 +546,43 @@ def perform_feed_item_action(item_id):
         
         logger.info(f'Performing action "{action}" on feed item {item_id}')
         
-        # Update feed item with action result
-        feed_item.summary = f'Action "{action}" completed'
-        feed_item.updated_at = datetime.utcnow()
+        # Import required modules at the top of the action handling
+        from sqlalchemy.orm.attributes import flag_modified
+        from datetime import timedelta
+        
+        # Handle different actions
+        if action == 'promote':
+            # Move item to Define stage
+            current_metadata = feed_item.meta_data or {}
+            current_metadata['stage'] = 'define'
+            feed_item.meta_data = current_metadata
+            feed_item.updated_at = datetime.utcnow()
+            
+            # Mark SQLAlchemy that JSON column changed (required for PostgreSQL)
+            flag_modified(feed_item, 'meta_data')
+            
+            logger.info(f'Promoted feed item {item_id} to Define stage')
+            
+        elif action == 'snooze':
+            # Snooze item for 24 hours
+            snooze_until = datetime.utcnow() + timedelta(hours=24)
+            
+            current_metadata = feed_item.meta_data or {}
+            current_metadata['snoozed'] = True
+            current_metadata['snoozeUntil'] = snooze_until.isoformat()
+            feed_item.meta_data = current_metadata
+            feed_item.updated_at = datetime.utcnow()
+            
+            # Mark SQLAlchemy that JSON column changed
+            flag_modified(feed_item, 'meta_data')
+            
+            logger.info(f'Snoozed feed item {item_id} until {snooze_until}')
+            
+        else:
+            # Default action - just update summary
+            feed_item.summary = f'Action "{action}" completed'
+            feed_item.updated_at = datetime.utcnow()
+        
         db.session.commit()
         
         return jsonify({
@@ -660,8 +694,11 @@ def get_specification(item_id):
         # Create spec_id from item_id
         spec_id = f"spec_{item_id}"
         
-        # Get all specification artifacts for this spec
-        specs = SpecificationArtifact.query.filter_by(spec_id=spec_id).all()
+        # Get all specification artifacts for this spec AND project
+        specs = SpecificationArtifact.query.filter_by(
+            spec_id=spec_id, 
+            project_id=project_id
+        ).all()
         
         if not specs:
             # No specifications exist yet - return empty structure

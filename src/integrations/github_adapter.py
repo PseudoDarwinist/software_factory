@@ -143,11 +143,81 @@ class GitHubAdapter:
     
     def __init__(self):
         self.webhook_secret = None
+        self.github_token = None
     
-    def configure(self, webhook_secret: Optional[str] = None):
+    def configure(self, webhook_secret: Optional[str] = None, github_token: Optional[str] = None):
         """Configure the GitHub adapter."""
         self.webhook_secret = webhook_secret
+        self.github_token = github_token or self._get_github_token()
         logger.info("GitHub adapter configured")
+    
+    def _get_github_token(self) -> Optional[str]:
+        """Get GitHub token from environment (fallback only)"""
+        import os
+        return os.getenv('GITHUB_TOKEN') or os.getenv('GITHUB_API_TOKEN')
+    
+    def get_workflows(self, owner: str, repo: str) -> Optional[list]:
+        """Get GitHub Actions workflows for a repository"""
+        if not self.github_token:
+            logger.warning("No GitHub token configured, cannot fetch workflows")
+            return None
+        
+        try:
+            import requests
+            
+            url = f"https://api.github.com/repos/{owner}/{repo}/actions/workflows"
+            headers = {
+                'Authorization': f'token {self.github_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('workflows', [])
+            elif response.status_code == 404:
+                logger.info(f"Repository {owner}/{repo} not found or no workflows")
+                return []
+            else:
+                logger.warning(f"GitHub API error {response.status_code}: {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error fetching workflows for {owner}/{repo}: {e}")
+            return None
+    
+    def get_recent_workflow_runs(self, owner: str, repo: str, limit: int = 10) -> Optional[list]:
+        """Get recent workflow runs for a repository"""
+        if not self.github_token:
+            logger.warning("No GitHub token configured, cannot fetch workflow runs")
+            return None
+        
+        try:
+            import requests
+            
+            url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs"
+            headers = {
+                'Authorization': f'token {self.github_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            params = {'per_page': limit}
+            
+            response = requests.get(url, headers=headers, params=params)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('workflow_runs', [])
+            elif response.status_code == 404:
+                logger.info(f"Repository {owner}/{repo} not found or no workflow runs")
+                return []
+            else:
+                logger.warning(f"GitHub API error {response.status_code}: {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error fetching workflow runs for {owner}/{repo}: {e}")
+            return None
     
     def process_webhook(self, payload: Dict[str, Any], headers: Dict[str, str]) -> Optional[Event]:
         """Process GitHub webhook payload and return appropriate event."""

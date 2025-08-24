@@ -10,7 +10,7 @@ from datetime import datetime
 
 # Optional prometheus_client import
 try:
-    from prometheus_client import Counter, Histogram, Gauge, start_http_server, CollectorRegistry, REGISTRY
+    from prometheus_client import Counter, Histogram, Gauge, start_http_server, REGISTRY
     from prometheus_client.core import CollectorRegistry
     PROMETHEUS_AVAILABLE = True
 except ImportError:
@@ -53,7 +53,10 @@ class MetricsService:
     
     def __init__(self, port: int = 9100, registry: Optional[CollectorRegistry] = None):
         self.port = port
-        self.registry = registry or REGISTRY
+        # Use a dedicated registry by default to avoid duplicate timeseries errors
+        # when this module is imported via different paths (absolute vs relative).
+        # If a registry is explicitly provided, respect it.
+        self.registry = registry or CollectorRegistry()
         self.server_thread = None
         self.running = False
         self._lock = threading.RLock()

@@ -68,7 +68,10 @@ def get_ideas_without_specs():
             
             # Check if this idea has any specifications
             spec_id = f"spec_{idea.id}"
-            specs = SpecificationArtifact.query.filter_by(spec_id=spec_id).all()
+            specs = SpecificationArtifact.query.filter_by(
+                spec_id=spec_id, 
+                project_id=str(idea.project_id)
+            ).all()
             
             if not specs:  # No specifications exist for this idea
                 ideas_without_specs.append({
@@ -114,7 +117,10 @@ def get_ideas_with_incomplete_specs():
                 continue  # Skip ideas not in Define stage
             
             spec_id = f"spec_{idea.id}"
-            specs = SpecificationArtifact.query.filter_by(spec_id=spec_id).all()
+            specs = SpecificationArtifact.query.filter_by(
+                spec_id=spec_id, 
+                project_id=str(idea.project_id)
+            ).all()
             
             if specs and len(specs) < 3:  # Has some but not all 3 specs
                 existing_types = [spec.artifact_type.value for spec in specs]
@@ -278,7 +284,10 @@ def get_spec_status():
             return jsonify({'error': 'Idea not found'}), 404
         
         spec_id = f"spec_{idea_id}"
-        specs = SpecificationArtifact.query.filter_by(spec_id=spec_id).all()
+        specs = SpecificationArtifact.query.filter_by(
+            spec_id=spec_id, 
+            project_id=project_id
+        ).all()
         
         # Build specification status
         specifications = {}

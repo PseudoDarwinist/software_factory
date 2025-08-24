@@ -5,6 +5,7 @@ REST endpoints for Mission Control SDLC stage management
 
 from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy.exc import SQLAlchemyError
+import json
 try:
     from ..models import (
         Stage, StageTransition, ProductBrief, FeedItem, 
@@ -522,9 +523,9 @@ def get_specification(item_id):
         except ImportError:
             from models.specification_artifact import SpecificationArtifact, ArtifactType
         
-        # Get all artifacts for this specification
+        # Get all artifacts for this specification AND project
         spec_id = f"spec_{item_id}"
-        artifacts = SpecificationArtifact.get_spec_artifacts(spec_id)
+        artifacts = SpecificationArtifact.get_spec_artifacts(spec_id, project_id)
         
         # Build specification set
         spec_set = {
@@ -533,7 +534,7 @@ def get_specification(item_id):
             'requirements': None,
             'design': None,
             'tasks': None,
-            'completion_status': SpecificationArtifact.get_spec_completion_status(spec_id)
+            'completion_status': SpecificationArtifact.get_spec_completion_status(spec_id, project_id)
         }
         
         for artifact in artifacts:
@@ -984,6 +985,7 @@ def generate_design_document(spec_id):
         logger.info(f"🔍 Looking for requirements artifact...")
         requirements_artifact = SpecificationArtifact.query.filter_by(
             spec_id=spec_id,
+            project_id=project_id,
             artifact_type=ArtifactType.REQUIREMENTS
         ).first()
         
@@ -1089,11 +1091,13 @@ def generate_tasks_document(spec_id):
         
         requirements_artifact = SpecificationArtifact.query.filter_by(
             spec_id=spec_id,
+            project_id=project_id,
             artifact_type=ArtifactType.REQUIREMENTS
         ).first()
 
         design_artifact = SpecificationArtifact.query.filter_by(
             spec_id=spec_id,
+            project_id=project_id,
             artifact_type=ArtifactType.DESIGN
         ).first()
 
@@ -1972,6 +1976,308 @@ def generate_tasks_document_async(spec_id):
         return jsonify({
             'success': False,
             'error': 'Failed to start tasks generation',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/specs/<spec_id>/generate-work-orders', methods=['POST'])
+def generate_work_orders_stream(spec_id):
+    """Generate work orders from frozen specification with streaming response"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body must be JSON',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        project_id = data.get('projectId')
+        if not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Project ID is required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        logger.info(f"Starting work order generation for spec {spec_id} in project {project_id}")
+        
+        # Import work order generation service
+        try:
+            from ..services.work_order_generation_service import WorkOrderGenerationService
+        except ImportError:
+            from services.work_order_generation_service import WorkOrderGenerationService
+        
+        # Create the service within the current Flask context
+        work_order_service = WorkOrderGenerationService()
+        logger.info(f"Created WorkOrderGenerationService for spec {spec_id}")
+
+        # Capture the app object while we are still inside the request/app context
+        from flask import current_app
+        app_obj = current_app._get_current_object()
+
+        def generate_stream():
+            """Generator function for streaming work order generation"""
+            try:
+                # Ensure we have an active Flask application context while streaming
+                with app_obj.app_context():
+                    chunk_count = 0
+                    for chunk in work_order_service.generate_work_orders_stream(spec_id, project_id):
+                        # Ensure chunk has a type for UI handling
+                        if isinstance(chunk, dict) and 'type' not in chunk:
+                            if 'error' in chunk:
+                                chunk = {
+                                    'type': 'generation_error',
+                                    **chunk,
+                                    'timestamp': datetime.utcnow().isoformat()
+                                }
+                            else:
+                                chunk = {
+                                    'type': 'update',
+                                    'data': chunk,
+                                    'timestamp': datetime.utcnow().isoformat()
+                                }
+
+                        chunk_count += 1
+                        logger.info(f"Streaming chunk {chunk_count}: {chunk.get('type', 'unknown')}")
+                        # Format as Server-Sent Events
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                    
+                    logger.info(f"Completed streaming {chunk_count} chunks for spec {spec_id}")
+                        
+            except Exception as e:
+                logger.error(f"Error in work order generation stream: {e}")
+                import traceback
+                traceback.print_exc()
+                error_chunk = {
+                    'type': 'error',
+                    'message': f'Stream error: {str(e)}',
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+                yield f"data: {json.dumps(error_chunk)}\n\n"
+        
+        # Return streaming response
+        from flask import Response, stream_with_context
+        return Response(
+            stream_with_context(generate_stream()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'X-Accel-Buffering': 'no'  # Disable nginx buffering
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error setting up work order generation stream for spec {spec_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to start work order generation',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/specs/<spec_id>/work-orders', methods=['GET'])
+def get_work_orders(spec_id):
+    """Get all work orders for a specification"""
+    try:
+        project_id = request.args.get('projectId')
+        if not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Project ID is required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Import work order generation service
+        try:
+            from ..services.work_order_generation_service import WorkOrderGenerationService
+        except ImportError:
+            from services.work_order_generation_service import WorkOrderGenerationService
+        
+        work_order_service = WorkOrderGenerationService()
+        work_orders = work_order_service.get_work_orders_for_spec(spec_id, project_id)
+        status = work_order_service.get_work_order_generation_status(spec_id, project_id)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'work_orders': work_orders,
+                'status': status
+            },
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Error retrieving work orders for spec {spec_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to retrieve work orders',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/specs/<spec_id>/work-orders/status', methods=['GET'])
+def get_work_order_generation_status(spec_id):
+    """Get work order generation status for a specification"""
+    try:
+        project_id = request.args.get('projectId')
+        if not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Project ID is required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        # Import work order generation service
+        try:
+            from ..services.work_order_generation_service import WorkOrderGenerationService
+        except ImportError:
+            from services.work_order_generation_service import WorkOrderGenerationService
+        
+        work_order_service = WorkOrderGenerationService()
+        status = work_order_service.get_work_order_generation_status(spec_id, project_id)
+        
+        return jsonify({
+            'success': True,
+            'data': status,
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting work order generation status for spec {spec_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to get work order generation status',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+@stages_bp.route('/api/work-orders/<work_order_id>/generate-implementation-plan', methods=['POST'])
+def generate_work_order_implementation_plan(work_order_id):
+    """Generate detailed implementation plan for a specific work order"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body must be JSON',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        spec_id = data.get('specId')
+        project_id = data.get('projectId')
+        
+        if not spec_id or not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Spec ID and Project ID are required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        logger.info(f"Generating implementation plan for work order {work_order_id}")
+        
+        # Import work order generation service
+        try:
+            from ..services.work_order_generation_service import WorkOrderGenerationService
+        except ImportError:
+            from services.work_order_generation_service import WorkOrderGenerationService
+        
+        work_order_service = WorkOrderGenerationService()
+        result = work_order_service.generate_implementation_plan(work_order_id, spec_id, project_id)
+        
+        if result.get('success'):
+            return jsonify({
+                'success': True,
+                'data': {
+                    'implementation_plan': result.get('implementation_plan'),
+                    'status': result.get('status')
+                },
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Failed to generate implementation plan'),
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error generating implementation plan for work order {work_order_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to generate implementation plan',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+@stages_bp.route('/api/debug/frozen-specs', methods=['GET'])
+def debug_frozen_specs():
+    """Debug endpoint to check frozen specs"""
+    try:
+        # Use the Flask app's SQLAlchemy session
+        from flask import current_app
+        db_extension = current_app.extensions['sqlalchemy']
+        
+        # Import models
+        try:
+            from ..models.specification_artifact import SpecificationArtifact, ArtifactType
+        except ImportError:
+            from models.specification_artifact import SpecificationArtifact, ArtifactType
+        
+        # Get all artifacts
+        all_artifacts = db_extension.session.query(SpecificationArtifact).all()
+        
+        # Group by spec_id
+        specs = {}
+        for artifact in all_artifacts:
+            spec_id = artifact.spec_id
+            if spec_id not in specs:
+                specs[spec_id] = {}
+            specs[spec_id][artifact.artifact_type.value] = artifact.status.value
+        
+        # Find specs ready for work order generation
+        ready_specs = []
+        for spec_id, artifacts in specs.items():
+            if 'tasks' in artifacts and artifacts['tasks'] == 'frozen':
+                ready_specs.append(spec_id)
+        
+        return jsonify({
+            'success': True,
+            'total_artifacts': len(all_artifacts),
+            'total_specs': len(specs),
+            'specs': specs,
+            'ready_for_work_orders': ready_specs,
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
             'timestamp': datetime.utcnow().isoformat(),
             'version': '1.0.0',
         }), 500

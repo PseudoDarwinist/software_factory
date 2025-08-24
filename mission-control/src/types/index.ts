@@ -326,7 +326,7 @@ export type Awaited<T> = T extends Promise<infer U> ? U : T
 // Task Management Types
 // ========================================
 
-export type TaskStatus = 'ready' | 'running' | 'review' | 'done' | 'failed'
+export type TaskStatus = 'backlog' | 'ready' | 'running' | 'review' | 'done' | 'failed' | 'needs_rework'
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical'
 
 export interface Task {

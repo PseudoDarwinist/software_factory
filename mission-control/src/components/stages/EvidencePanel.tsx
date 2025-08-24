@@ -24,8 +24,8 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({ selected, evidence
   const evidence: ValidationEvidence | null = useMemo(() => (liveEvidence ? liveEvidence : (selected ? generateEvidenceFor(selected) : null)), [selected, liveEvidence])
   const perms = getValidationPermissions()
   return (
-    <div className="flex flex-col h-full">
-      <div className="p-4 border-b border-white/10">
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="p-4 border-b border-white/10 flex-shrink-0">
         <h2 className="text-lg font-semibold text-white">Evidence</h2>
       </div>
 
@@ -34,7 +34,8 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({ selected, evidence
           Select a validation check to see evidence
         </div>
       ) : (
-        <div className="flex-1 p-4">
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-4">
           {/* Header */}
           <GlassBackground className="p-4 mb-4">
             <div className="flex items-center justify-between">
@@ -122,6 +123,7 @@ export const EvidencePanel: React.FC<EvidencePanelProps> = ({ selected, evidence
               </AnimatePresence>
             ) : null}
           </div>
+        </div>
         </div>
       )}
     </div>

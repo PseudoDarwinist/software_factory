@@ -1271,44 +1271,68 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
               
               {/* actions: Make PRD + Add (+) */}
               <div className="flex items-center gap-3">
-                {/* Make PRD draft (ring-only glass capsule) */}
+                {/* Make PRD draft - standardized pill button */}
                 <button
                   className="relative inline-flex items-center justify-center rounded-full font-semibold text-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] focus:outline-none"
                   style={{
                     background: 'transparent',
                     border: 'none',
-                    minWidth: '172px',
-                    height: '40px',
-                    padding: '0 18px',
+                    height: '36px',
+                    padding: '0 20px',
                     opacity: files.length === 0 ? 0.55 : 1,
-                    pointerEvents: files.length === 0 ? 'none' : 'auto'
+                    pointerEvents: files.length === 0 ? 'none' : 'auto',
+                    filter: 'saturate(1.02)'
                   }}
                   onClick={handleAnalyze}
                   aria-disabled={files.length === 0}
                   title={files.length === 0 ? 'Add sources to enable' : 'Generate PRD draft from sources'}
                 >
-                  {/* gradient ring only (cyan → teal) */}
+                  {/* Gradient ring */}
                   <span
                     className="pointer-events-none absolute inset-0 rounded-full"
                     style={{
-                      padding: '1.5px',
-                      borderRadius: 9999,
-                      background:
-                        'linear-gradient(90deg, rgba(73,201,255,0.75), rgba(21,241,204,0.60))',
-                      WebkitMask:
-                        'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+                      padding: '2px',
+                      borderRadius: '9999px',
+                      background: 'linear-gradient(90deg, rgba(255,216,77,0.92) 0%, rgba(223,255,160,0.78) 38%, rgba(21,241,204,0.70) 100%)',
+                      WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
                       WebkitMaskComposite: 'xor',
                       maskComposite: 'exclude',
-                      boxShadow: '0 0 14px rgba(73,201,255,0.22), 0 0 12px rgba(21,241,204,0.18)'
+                      boxShadow: '0 0 18px rgba(255,216,77,0.25), 0 0 24px rgba(21,241,204,0.15)'
                     } as React.CSSProperties}
                   />
-                  {/* faint top specular highlight */}
+                  {/* Edge vignette */}
+                  <span
+                    className="pointer-events-none absolute inset-[2px] rounded-full"
+                    style={{
+                      background: 'radial-gradient(120% 100% at 50% 50%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.22) 100%)',
+                      mixBlendMode: 'multiply'
+                    }}
+                  />
+                  {/* Luminous core */}
+                  <span
+                    className="pointer-events-none absolute inset-[6px] rounded-full"
+                    style={{
+                      background: 'radial-gradient(46% 46% at 50% 50%, rgba(255,223,94,0.30) 0%, rgba(255,223,94,0.10) 36%, rgba(255,223,94,0) 65%)',
+                      filter: 'blur(2px)',
+                      mixBlendMode: 'screen'
+                    }}
+                  />
+                  {/* Specular highlight */}
                   <span
                     className="pointer-events-none absolute inset-0 rounded-full"
-                    style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10)' }}
+                    style={{
+                      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)'
+                    }}
                   />
-                  <span className="relative z-10" style={{ color: '#CFEFFF', letterSpacing: '0.2px' }}>
-                    Make PRD draft
+                  <span 
+                    className="relative z-10" 
+                    style={{
+                      color: '#FFE96A',
+                      textShadow: '0 0 16px rgba(255,223,94,0.60), 0 0 36px rgba(255,223,94,0.28), 0 0 2px rgba(255,223,94,0.90)',
+                      letterSpacing: '0.2px'
+                    }}
+                  >
+                    Make PRD
                   </span>
                 </button>
                 
@@ -1622,15 +1646,14 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
                 </div>
                 
                 <div className="flex items-center gap-3">
-                  {/* Open full PRD button */}
+                  {/* Open full PRD button - standardized pill button */}
                   <button
                     className="group relative inline-flex items-center justify-center rounded-full font-semibold text-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] focus:outline-none"
                     style={{
                       background: 'transparent',
                       border: 'none',
-                      minWidth: '160px',
-                      height: '44px',
-                      padding: '0 24px',
+                      height: '36px',
+                      padding: '0 20px',
                       filter: 'saturate(1.02)'
                     }}
                     onClick={handleOpenFullPRD}
@@ -1643,11 +1666,11 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
                       style={{
                         padding: '2px',
                         borderRadius: '9999px',
-                        background: 'linear-gradient(90deg, rgba(72,224,216,0.92) 0%, rgba(21,241,204,0.78) 38%, rgba(160,255,223,0.70) 100%)',
+                        background: 'linear-gradient(90deg, rgba(255,216,77,0.92) 0%, rgba(223,255,160,0.78) 38%, rgba(21,241,204,0.70) 100%)',
                         WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
                         WebkitMaskComposite: 'xor',
                         maskComposite: 'exclude',
-                        boxShadow: '0 0 18px rgba(72,224,216,0.35), 0 0 24px rgba(21,241,204,0.25)'
+                        boxShadow: '0 0 18px rgba(255,216,77,0.25), 0 0 24px rgba(21,241,204,0.15)'
                       } as React.CSSProperties}
                     />
                     {/* Edge vignette */}
@@ -1662,7 +1685,7 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
                     <span
                       className="pointer-events-none absolute inset-[6px] rounded-full"
                       style={{
-                        background: 'radial-gradient(46% 46% at 50% 50%, rgba(72,224,216,0.30) 0%, rgba(72,224,216,0.10) 36%, rgba(72,224,216,0) 65%)',
+                        background: 'radial-gradient(46% 46% at 50% 50%, rgba(255,223,94,0.30) 0%, rgba(255,223,94,0.10) 36%, rgba(255,223,94,0) 65%)',
                         filter: 'blur(2px)',
                         mixBlendMode: 'screen'
                       }}
@@ -1674,35 +1697,33 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
                         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)'
                       }}
                     />
-                    {/* Label */}
                     <span
                       className="relative z-10"
                       style={{
-                        color: '#48E0D8',
-                        textShadow: '0 0 16px rgba(72,224,216,0.60), 0 0 36px rgba(72,224,216,0.28), 0 0 2px rgba(72,224,216,0.90)',
+                        color: '#FFE96A',
+                        textShadow: '0 0 16px rgba(255,223,94,0.60), 0 0 36px rgba(255,223,94,0.28), 0 0 2px rgba(255,223,94,0.90)',
                         letterSpacing: '0.2px'
                       }}
                     >
-                      Open full PRD
+                      Open PRD
                     </span>
                   </button>
 
-                  {/* Freeze PRD button */}
+                  {/* Freeze PRD button - standardized pill button */}
                   <button
                   className="group relative inline-flex items-center justify-center rounded-full font-semibold text-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] focus:outline-none"
                   style={{
                     background: 'transparent',
                     border: 'none',
-                    minWidth: '200px',
-                    height: '52px',
-                    padding: '0 30px',
+                    height: '36px',
+                    padding: '0 20px',
                     filter: 'saturate(1.02)'
                   }}
                   onClick={handleFreezePRD}
                   aria-disabled={status !== 'ready'}
                   title={status === 'ready' ? 'Freeze PRD' : 'PRD not ready yet'}
                 >
-                  {/* 1) Gradient ring only (masked) */}
+                  {/* Gradient ring */}
                   <span
                     className="pointer-events-none absolute inset-0 rounded-full"
                     style={{
@@ -1712,10 +1733,10 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
                       WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
                       WebkitMaskComposite: 'xor',
                       maskComposite: 'exclude',
-                      boxShadow: '0 0 22px rgba(255,216,77,0.35), 0 0 28px rgba(21,241,204,0.25)'
+                      boxShadow: '0 0 18px rgba(255,216,77,0.25), 0 0 24px rgba(21,241,204,0.15)'
                     } as React.CSSProperties}
                   />
-                  {/* 2) Edge vignette (darkens very outer interior to sell hollowness) */}
+                  {/* Edge vignette */}
                   <span
                     className="pointer-events-none absolute inset-[2px] rounded-full"
                     style={{
@@ -1723,23 +1744,22 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
                       mixBlendMode: 'multiply'
                     }}
                   />
-                  {/* 3) Luminous core under text (subtle, not a fill) */}
+                  {/* Luminous core */}
                   <span
-                    className="pointer-events-none absolute inset-[8px] rounded-full"
+                    className="pointer-events-none absolute inset-[6px] rounded-full"
                     style={{
                       background: 'radial-gradient(46% 46% at 50% 50%, rgba(255,223,94,0.30) 0%, rgba(255,223,94,0.10) 36%, rgba(255,223,94,0) 65%)',
                       filter: 'blur(2px)',
                       mixBlendMode: 'screen'
                     }}
                   />
-                  {/* 4) Specular highlight across top */}
+                  {/* Specular highlight */}
                   <span
                     className="pointer-events-none absolute inset-0 rounded-full"
                     style={{
                       boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)'
                     }}
                   />
-                  {/* 5) Label */}
                   <span
                     className="relative z-10"
                     style={{

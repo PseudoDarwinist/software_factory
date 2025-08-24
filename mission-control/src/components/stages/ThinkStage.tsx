@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useDrag } from 'react-dnd'
 import { clsx } from 'clsx'
 import { LiquidCard } from '@/components/core/LiquidCard'
+import { AppleStyleIdeaGrid } from '@/components/core/AppleStyleIdeaGrid'
 
 import { SpecWorkflowEditor } from './SpecWorkflowEditor'
 import { SourcesTrayCard } from './SourcesTrayCard'
@@ -87,9 +88,22 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
     }
 
     // Only show items that are in Think stage or have no stage assigned
-    filtered = filtered.filter(item => 
-      !item.metadata?.stage || item.metadata.stage === 'think'
-    )
+    // Also filter out snoozed items that haven't expired yet
+    filtered = filtered.filter(item => {
+      // Check stage
+      const stage = item.metadata?.stage
+      if (stage && stage !== 'think') return false
+      
+      // Check if snoozed
+      if (item.metadata?.snoozed) {
+        const snoozeUntil = item.metadata?.snoozeUntil
+        if (snoozeUntil && new Date(snoozeUntil) > new Date()) {
+          return false // Still snoozed
+        }
+      }
+      
+      return true
+    })
 
     // Apply category filters
     switch (filter) {
@@ -374,39 +388,35 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
 
               {/* Other Tabs - Ideas and Alerts Feed */}
               {filter !== 'refine' && (
-                <>
+                <div className="space-y-8">
                   {/* Ideas Section */}
-                  {ideas.length > 0 && (
-                    <FeedSection
-                      title="Untriaged Ideas"
-                      subtitle="Ideas ready to be promoted to Define"
-                      items={ideas}
-                      selectedItem={selectedFeedItem}
-                      hoveredItem={hoveredItem}
-                      onItemSelect={handleItemSelect}
-                      onItemHover={setHoveredItem}
-                      onItemAction={handleItemAction}
-                      isDraggable={true}
-                    />
-                  )}
+                  <AppleStyleIdeaGrid
+                    title="Untriaged Ideas"
+                    subtitle="Ideas ready to be promoted to Define"
+                    items={ideas}
+                    selectedItem={selectedFeedItem}
+                    onItemSelect={handleItemSelect}
+                    onItemAction={handleItemAction}
+                    isDraggable={true}
+                    emptyStateIcon="💡"
+                    emptyStateMessage="No ideas to review"
+                  />
 
                   {/* Alerts Section */}
-                  {alerts.length > 0 && (
-                    <FeedSection
-                      title="Needs Attention"
-                      subtitle="Issues and updates requiring decisions"
-                      items={alerts}
-                      selectedItem={selectedFeedItem}
-                      hoveredItem={hoveredItem}
-                      onItemSelect={handleItemSelect}
-                      onItemHover={setHoveredItem}
-                      onItemAction={handleItemAction}
-                      isDraggable={false}
-                    />
-                  )}
+                  <AppleStyleIdeaGrid
+                    title="Needs Attention"
+                    subtitle="Issues and updates requiring decisions"
+                    items={alerts}
+                    selectedItem={selectedFeedItem}
+                    onItemSelect={handleItemSelect}
+                    onItemAction={handleItemAction}
+                    isDraggable={false}
+                    emptyStateIcon="⚠️"
+                    emptyStateMessage="No alerts to review"
+                  />
 
-                  {/* Empty state - only show if no ideas, alerts */}
-                  {processedItems.length === 0 && (
+                  {/* Global Empty state - only show if no items at all */}
+                  {processedItems.length === 0 && ideas.length === 0 && alerts.length === 0 && (
                     <div className="text-center py-12">
                       <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/5 flex items-center justify-center">
                         <svg className="w-8 h-8 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -422,7 +432,7 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
                       </p>
                     </div>
                   )}
-                </>
+                </div>
               )}
             </>
           )}

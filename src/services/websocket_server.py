@@ -9,7 +9,7 @@ import logging
 from typing import Dict, Any, Optional, Set, List
 from flask import Flask, request
 from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
-import eventlet
+# import eventlet  # Disabled for Python 3.13 compatibility
 from datetime import datetime, timedelta
 
 try:
@@ -43,7 +43,7 @@ class WebSocketServer:
         self.socketio = SocketIO(
             app,
             cors_allowed_origins="*",
-            async_mode='eventlet',
+            async_mode='gevent',
             logger=True,
             engineio_logger=True,
             max_http_buffer_size=10000000,  # 10MB (default is 1MB)
@@ -308,6 +308,12 @@ class WebSocketServer:
                 return
             
             try:
+                # Add a check to ensure data is a dictionary
+                if not isinstance(data, dict):
+                    emit('error', {'message': f'Invalid unsubscribe format: expected a JSON object, got {type(data).__name__}'})
+                    logger.warning(f"Client {client_id} sent invalid unsubscribe data: {data}")
+                    return
+
                 subscription_type = data.get('type')
                 subscription_id = data.get('id')
                 
@@ -662,17 +668,21 @@ class WebSocketServer:
                                 logger.error(f"Error disconnecting client {client_id}: {disconnect_error}")
                         
                         # Sleep until next check
-                        eventlet.sleep(self.heartbeat_interval)
+                        import time
+                        time.sleep(self.heartbeat_interval)
                         
                     except Exception as e:
                         logger.error(f"Error in heartbeat monitor: {e}")
-                        eventlet.sleep(self.heartbeat_interval)
+                        import time
+                        time.sleep(self.heartbeat_interval)
             finally:
                 # Clean up context when thread exits
                 ctx.pop()
         
         # Start heartbeat monitor in background
-        eventlet.spawn(heartbeat_monitor)
+        import threading
+        heartbeat_thread = threading.Thread(target=heartbeat_monitor, daemon=True)
+        heartbeat_thread.start()
     
     def _broadcast_presence_update(self, user_id: str, status: str):
         """Broadcast user presence update to relevant clients"""
@@ -686,6 +696,64 @@ class WebSocketServer:
         # Find clients that should receive this presence update
         # (users who share projects with this user)
         target_clients = set()
+    
+    def broadcast_work_order_created(self, spec_id: str, work_order_data: Dict[str, Any]):
+        """Broadcast work order creation to relevant clients"""
+        try:
+            event_data = {
+                'type': 'work_order_created',
+                'spec_id': spec_id,
+                'work_order': work_order_data,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            # Broadcast to all connected clients (for now)
+            # TODO: Add project-based filtering
+            self.socketio.emit('work_order_created', event_data)
+            self.stats['messages_sent'] += 1
+            
+            logger.info(f"Broadcasted work order creation for spec {spec_id}")
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting work order creation: {e}")
+            self.stats['errors'] += 1
+    
+    def broadcast_work_order_enhanced(self, work_order_id: str, implementation_plan: Dict[str, Any]):
+        """Broadcast work order enhancement completion"""
+        try:
+            event_data = {
+                'type': 'work_order_enhanced',
+                'work_order_id': work_order_id,
+                'implementation_plan': implementation_plan,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            self.socketio.emit('work_order_enhanced', event_data)
+            self.stats['messages_sent'] += 1
+            
+            logger.info(f"Broadcasted work order enhancement for {work_order_id}")
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting work order enhancement: {e}")
+            self.stats['errors'] += 1
+    
+    def broadcast_work_order_ready(self, work_order_id: str):
+        """Broadcast work order ready status"""
+        try:
+            event_data = {
+                'type': 'work_order_ready',
+                'work_order_id': work_order_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            self.socketio.emit('work_order_ready', event_data)
+            self.stats['messages_sent'] += 1
+            
+            logger.info(f"Broadcasted work order ready for {work_order_id}")
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting work order ready: {e}")
+            self.stats['errors'] += 1
         
         for client_id, client_info in self.connected_clients.items():
             if not client_info.get('authenticated'):
@@ -1055,6 +1123,114 @@ class WebSocketServer:
         except Exception as e:
             logger.error(f"Error broadcasting validation checks for project {project_id}: {e}")
             self.stats['errors'] += 1
+    
+    def broadcast_work_order_generation_start(self, spec_id: str, project_id: str):
+        """Broadcast work order generation start event"""
+        try:
+            # Get authorized clients for this project
+            authorized_clients = self._get_authorized_clients_for_project(project_id)
+            
+            if not authorized_clients:
+                logger.debug(f"No authorized clients for work order generation start in project {project_id}")
+                return
+            
+            generation_data = {
+                'type': 'work_order_generation_start',
+                'spec_id': spec_id,
+                'project_id': project_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            # Broadcast to authorized clients
+            for client_id in authorized_clients:
+                self.socketio.emit('work_order_generation', generation_data, room=client_id)
+            
+            self.stats['messages_sent'] += len(authorized_clients)
+            logger.info(f"Broadcasted work order generation start to {len(authorized_clients)} clients for spec {spec_id}")
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting work order generation start for spec {spec_id}: {e}")
+            self.stats['errors'] += 1
+    
+    def broadcast_work_order_update(self, work_order_data: Dict[str, Any], project_id: str):
+        """Broadcast work order update event"""
+        try:
+            # Get authorized clients for this project
+            authorized_clients = self._get_authorized_clients_for_project(project_id)
+            
+            if not authorized_clients:
+                logger.debug(f"No authorized clients for work order update in project {project_id}")
+                return
+            
+            update_data = {
+                'type': 'work_order_update',
+                'work_order': work_order_data,
+                'project_id': project_id,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            # Broadcast to authorized clients
+            for client_id in authorized_clients:
+                self.socketio.emit('work_order_update', update_data, room=client_id)
+            
+            self.stats['messages_sent'] += len(authorized_clients)
+            logger.debug(f"Broadcasted work order update to {len(authorized_clients)} clients")
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting work order update: {e}")
+            self.stats['errors'] += 1
+    
+    def broadcast_work_order_generation_complete(self, spec_id: str, project_id: str, total_generated: int):
+        """Broadcast work order generation completion event"""
+        try:
+            # Get authorized clients for this project
+            authorized_clients = self._get_authorized_clients_for_project(project_id)
+            
+            if not authorized_clients:
+                logger.debug(f"No authorized clients for work order generation complete in project {project_id}")
+                return
+            
+            completion_data = {
+                'type': 'work_order_generation_complete',
+                'spec_id': spec_id,
+                'project_id': project_id,
+                'total_generated': total_generated,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            # Broadcast to authorized clients
+            for client_id in authorized_clients:
+                self.socketio.emit('work_order_generation', completion_data, room=client_id)
+            
+            self.stats['messages_sent'] += len(authorized_clients)
+            logger.info(f"Broadcasted work order generation complete to {len(authorized_clients)} clients for spec {spec_id}")
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting work order generation complete for spec {spec_id}: {e}")
+            self.stats['errors'] += 1
+    
+    def _get_authorized_clients_for_project(self, project_id: str) -> Set[str]:
+        """Get list of client IDs authorized to receive events for a specific project"""
+        authorized_clients = set()
+        
+        for client_id, client_info in self.connected_clients.items():
+            if not client_info.get('authenticated'):
+                continue
+            
+            permissions = client_info.get('permissions')
+            if not permissions:
+                continue
+            
+            # Admin users get all events
+            if permissions.is_admin:
+                authorized_clients.add(client_id)
+                continue
+            
+            # Check project-specific access
+            if permissions.has_project_access(project_id):
+                authorized_clients.add(client_id)
+        
+        return authorized_clients
     
     def health_check(self) -> bool:
         """Check if WebSocket server is healthy"""

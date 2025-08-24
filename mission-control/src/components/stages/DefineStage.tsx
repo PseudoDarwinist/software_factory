@@ -115,6 +115,13 @@ export const DefineStage: React.FC<DefineStageProps> = ({
   // Async spec generation state
   const specGeneration = useSpecGeneration(selectedProject || '')
 
+  // Clear spec immediately when project changes to prevent cross-project data leakage
+  useEffect(() => {
+    console.log('🔄 DEBUG: Project changed, clearing current spec')
+    setCurrentSpec(null)
+    setSpecError(null)
+  }, [selectedProject])
+
   // Filter ideas that are in definition stage
   useEffect(() => {
     const definitionItems = feedItems.filter(item => 

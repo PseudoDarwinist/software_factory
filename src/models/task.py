@@ -18,6 +18,7 @@ class TaskStatus(Enum):
     status during the start endpoint.
     """
 
+    BACKLOG = "backlog"
     READY = "ready"
     RUNNING = "running"
     REVIEW = "review"
@@ -53,8 +54,22 @@ class Task(db.Model):
     parent_task_id = db.Column(db.String(100))  # For sub-tasks
     
     # Task metadata
-    status = db.Column(db.Enum(TaskStatus), default=TaskStatus.READY, nullable=False)
-    priority = db.Column(db.Enum(TaskPriority), default=TaskPriority.MEDIUM, nullable=False)
+    status = db.Column(
+        db.Enum(
+            TaskStatus,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        default=TaskStatus.READY,
+        nullable=False,
+    )
+    priority = db.Column(
+        db.Enum(
+            TaskPriority,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        default=TaskPriority.MEDIUM,
+        nullable=False,
+    )
     effort_estimate_hours = db.Column(db.Float)  # Estimated effort in hours
     
     # Task execution fields (required by task execution API)
@@ -107,6 +122,21 @@ class Task(db.Model):
     pr_url = db.Column(db.String(500))  # Pull request URL when task generates code
     pr_number = db.Column(db.Integer)  # Pull request number for API operations
     build_status = db.Column(db.String(50))  # Build status for this task
+    
+    # Work order enhancement fields
+    enhancement_status = db.Column(db.String(50), default='basic')  # basic, enhancing, enhanced, approved, failed
+    implementation_approach = db.Column(db.Text)  # AI-generated implementation approach
+    implementation_goals = db.Column(JSON)  # List of implementation goals
+    implementation_strategy = db.Column(db.Text)  # Detailed implementation strategy
+    technical_dependencies = db.Column(JSON)  # List of technical dependencies
+    files_to_create = db.Column(JSON)  # List of files to create with reasoning
+    files_to_modify = db.Column(JSON)  # List of files to modify with reasoning
+    blueprint_section_ref = db.Column(db.String(200))  # Reference to blueprint section
+    codebase_context = db.Column(JSON)  # Codebase analysis context
+    enhanced_at = db.Column(db.DateTime)  # When enhancement was completed
+    enhanced_by = db.Column(db.String(100))  # Who/what enhanced the task
+    approved_at = db.Column(db.DateTime)  # When enhancement was approved
+    approved_by = db.Column(db.String(100))  # Who approved the enhancement
     
     # Indexes
     __table_args__ = (

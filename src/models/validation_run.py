@@ -130,35 +130,9 @@ class ValidationRun(db.Model):
             status=ValidationStatus.INITIALIZING
         )
 
-        # Seed basic checks for UI visibility; real systems will stream updates later.
-        now_iso = _dt.utcnow().isoformat()
+        # Initialize with empty checks - real validation data will be populated by actual systems
         validation_run.validation_metadata = {
-            'checks': [
-                {
-                    'id': f'{validation_run_id}-deploy',
-                    'name': 'Deploy to staging',
-                    'type': 'deployment',
-                    'status': 'running',
-                    'timestamp': now_iso,
-                    'metadata': {'env': 'staging'}
-                },
-                {
-                    'id': f'{validation_run_id}-tests',
-                    'name': 'Unit tests',
-                    'type': 'test',
-                    'status': 'success',
-                    'timestamp': now_iso,
-                    'metadata': {'passed': 132, 'failed': 0}
-                },
-                {
-                    'id': f'{validation_run_id}-security',
-                    'name': 'Security scan',
-                    'type': 'security',
-                    'status': 'warning',
-                    'timestamp': now_iso,
-                    'metadata': {'findings': 2}
-                }
-            ]
+            'checks': []
         }
         
         db.session.add(validation_run)
@@ -204,6 +178,75 @@ class ValidationRun(db.Model):
         
         self.updated_at = datetime.utcnow()
         db.session.commit()
+    
+    def add_validation_check(self, check_id: str, name: str, check_type: str, 
+                           status: str = 'pending', metadata: dict = None):
+        """Add a validation check to this run"""
+        import datetime as _dt
+        
+        if not self.validation_metadata:
+            self.validation_metadata = {}
+        
+        if 'checks' not in self.validation_metadata:
+            self.validation_metadata['checks'] = []
+        
+        # Remove existing check with same ID if it exists
+        self.validation_metadata['checks'] = [
+            c for c in self.validation_metadata['checks'] 
+            if c.get('id') != check_id
+        ]
+        
+        # Add new check
+        check = {
+            'id': check_id,
+            'name': name,
+            'type': check_type,
+            'status': status,
+            'timestamp': _dt.datetime.utcnow().isoformat(),
+            'metadata': metadata or {}
+        }
+        
+        self.validation_metadata['checks'].append(check)
+        
+        # Mark the JSON field as modified so SQLAlchemy detects the change
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(self, 'validation_metadata')
+        
+        self.updated_at = datetime.utcnow()
+        db.session.commit()
+        
+        # Broadcast update
+        self._broadcast_status_update()
+    
+    def update_validation_check(self, check_id: str, status: str = None, 
+                              metadata: dict = None):
+        """Update an existing validation check"""
+        import datetime as _dt
+        
+        if not self.validation_metadata or 'checks' not in self.validation_metadata:
+            return False
+        
+        # Find and update the check
+        for check in self.validation_metadata['checks']:
+            if check.get('id') == check_id:
+                if status:
+                    check['status'] = status
+                if metadata:
+                    check['metadata'].update(metadata)
+                check['timestamp'] = _dt.datetime.utcnow().isoformat()
+                
+                # Mark the JSON field as modified
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(self, 'validation_metadata')
+                
+                self.updated_at = datetime.utcnow()
+                db.session.commit()
+                
+                # Broadcast update
+                self._broadcast_status_update()
+                return True
+        
+        return False
     
     def _broadcast_status_update(self):
         """Broadcast validation run status update via WebSocket to the Mission Control UI.

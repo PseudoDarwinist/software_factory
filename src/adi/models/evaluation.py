@@ -26,8 +26,8 @@ class EvalSet(db.Model):
     blueprint = db.Column(JSONB, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Relationship to evaluation results
-    results = db.relationship('EvalResult', backref='eval_set', lazy='dynamic', cascade='all, delete-orphan')
+    # Relationship to evaluation results (use callable to avoid string resolution conflicts)
+    results = db.relationship(lambda: EvalResult, backref='eval_set', lazy='dynamic', cascade='all, delete-orphan')
     
     __table_args__ = (
         db.Index('idx_project_name', 'project_id', 'name'),

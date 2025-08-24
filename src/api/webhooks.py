@@ -246,9 +246,11 @@ def handle_github_pr_event(payload):
                     # Create validation run for the merged PR
                     try:
                         from ..models.validation_run import ValidationRun
+                        from ..services.real_validation_detector import get_real_validation_detector
                         
                         commit_sha = pull_request.get('merge_commit_sha', '')
                         merged_by = pull_request.get('merged_by', {}).get('login', 'unknown')
+                        repo_url = pull_request.get('html_url', '').replace(f'/pull/{pr_number}', '')
                         
                         validation_run = ValidationRun.create_from_pr_merge(
                             project_id=task.project_id,
@@ -261,6 +263,14 @@ def handle_github_pr_event(payload):
                         
                         db.session.commit()
                         logger.info(f"✅ Created validation run {validation_run.id} for merged PR #{pr_number}")
+                        
+                        # Detect and populate real validation checks
+                        try:
+                            detector = get_real_validation_detector()
+                            detector.detect_and_populate_validation_checks(validation_run, repo_url)
+                            logger.info(f"✅ Populated real validation checks for {validation_run.id}")
+                        except Exception as detection_error:
+                            logger.warning(f"Failed to detect real validation processes: {detection_error}")
                         
                         # Trigger phase transition to Validate via polling system
                         try:
