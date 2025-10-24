@@ -14,6 +14,5 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
-    postDeployCommand: "python run_migration.py"
 
 
