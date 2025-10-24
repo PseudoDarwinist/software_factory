@@ -26,7 +26,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 
 # 2) Copy mission-control sources and build to ../mission-control-dist as per vite.config.ts
 COPY mission-control/ ./mission-control/
-RUN npm ci --prefix mission-control \
+RUN npm install --prefix mission-control --no-audit --no-fund \
     && npm run build --prefix mission-control
 
 # Create directories for logs and instance data
