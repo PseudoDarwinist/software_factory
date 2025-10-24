@@ -76,7 +76,7 @@ export const BuildStage: React.FC<BuildStageProps> = ({
 
   // WebSocket connection for real-time updates
   useEffect(() => {
-    const newSocket = io('http://localhost:8000')
+    const newSocket = io(undefined, { transports: ['websocket'] }) // same-origin
     setSocket(newSocket)
 
     newSocket.on('connect', () => {

@@ -1,0 +1,117 @@
+{
+  "success": true,
+  "data": {
+    "blocks": [
+      {
+        "id": "21e13990-ae59-491a-af62-e1b41b1f5a53",
+        "type": "header",
+        "content": {
+          "level": 2,
+          "text": "Technical Architecture"
+        }
+      },
+      {
+        "id": "6ef94568-53b8-44b7-b56f-f04231acbf58",
+        "type": "header",
+        "content": {
+          "level": 3,
+          "text": "System Overview"
+        }
+      },
+      {
+        "id": "248e860b-78b5-42ed-bb84-7a2d736ad464",
+        "type": "paragraph",
+        "content": {
+          "text": "TaskFlow employs a modern microservices architecture designed for scalability and maintainability. The system consists of a React Native mobile application, cloud-based API services, and a PostgreSQL database cluster."
+        }
+      },
+      {
+        "id": "741e4c08-c26b-45a3-9421-1bac37ca740f",
+        "type": "header",
+        "content": {
+          "level": 3,
+          "text": "High-Level Architecture"
+        }
+      },
+      {
+        "id": "76a44c0b-8936-4e13-b162-16548e551334",
+        "type": "mermaid-diagram",
+        "content": {
+          "code": "graph TD\n    A[React Native App] --> B[API Gateway]\n    B --> C[Authentication Service]\n    B --> D[Task Management Service]\n    B --> E[Notification Service]\n    D --> F[(PostgreSQL Database)]\n    C --> G[(User Database)]\n    E --> H[Push Notification Provider]\n    \n    subgraph \"AWS Cloud\"\n        B\n        C\n        D\n        E\n        F\n        G\n    end"
+        }
+      },
+      {
+        "id": "26563be7-c4b8-4099-a301-87825bc25150",
+        "type": "header",
+        "content": {
+          "level": 3,
+          "text": "Data Architecture"
+        }
+      },
+      {
+        "id": "fc4871b6-ccb8-4843-b2d0-c0e7c4efd9b2",
+        "type": "paragraph",
+        "content": {
+          "text": "The data layer consists of multiple PostgreSQL instances optimized for different workloads:"
+        }
+      },
+      {
+        "id": "234d767b-a4ba-4d9b-8964-6a978de096a8",
+        "type": "mermaid-diagram",
+        "content": {
+          "code": "erDiagram\n    users {\n        uuid id PK\n        string email\n        string name\n        timestamp created_at\n    }\n    \n    tasks {\n        uuid id PK\n        uuid user_id FK\n        string title\n        text description\n        enum status\n        timestamp due_date\n        timestamp created_at\n    }\n    \n    projects {\n        uuid id PK\n        uuid owner_id FK\n        string name\n        text description\n        timestamp created_at\n    }\n    \n    users ||--o{ tasks : creates\n    users ||--o{ projects : owns\n    projects ||--o{ tasks : contains"
+        }
+      },
+      {
+        "id": "172d032f-9ed8-4bd6-8399-ce37ae375821",
+        "type": "header",
+        "content": {
+          "level": 3,
+          "text": "Technology Stack"
+        }
+      },
+      {
+        "id": "2cab3b1f-230e-45f6-8f8e-9b92efa97246",
+        "type": "paragraph",
+        "content": {
+          "text": "**Frontend:** React Native 0.72+ with TypeScript"
+        }
+      },
+      {
+        "id": "20e893b5-f244-40b9-b931-31cfc121e5e1",
+        "type": "paragraph",
+        "content": {
+          "text": "**Backend:** Node.js with Express.js and TypeScript"
+        }
+      },
+      {
+        "id": "04088f69-fcdb-4375-a7d5-f960074ab0fd",
+        "type": "paragraph",
+        "content": {
+          "text": "**Database:** PostgreSQL 15 with Redis for caching"
+        }
+      },
+      {
+        "id": "c56a663e-ebe8-48e7-8d19-73222edc512f",
+        "type": "paragraph",
+        "content": {
+          "text": "**Cloud Infrastructure:** AWS (API Gateway, Lambda, RDS, ElastiCache)"
+        }
+      },
+      {
+        "id": "1aec638b-f8c6-4c46-86c7-bec4621e3295",
+        "type": "paragraph",
+        "content": {
+          "text": "**Authentication:** JWT tokens with OAuth 2.0 integration"
+        }
+      }
+    ]
+  },
+  "metadata": {
+    "model_used": "mock-generator",
+    "tokens_used": 1000,
+    "validation_score": 1.0,
+    "generation_method": "mock",
+    "generated_at": "2025-09-08T23:30:00Z"
+  }
+}

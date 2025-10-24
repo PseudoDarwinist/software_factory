@@ -7,14 +7,14 @@ class ProductOwnerAssistant {
             type: 'goose', // 'goose' or 'model-garden'
             model: 'claude-opus-4' // for model-garden
         };
-        
+
         console.log('ProductOwnerAssistant initialized with provider:', this.aiProvider);
-        
+
         this.chatHistory = [];
         this.isTyping = false;
         this.isSplitScreen = false;
         this.documents = []; // Store generated documents
-        
+
         // Evolution tracking
         this.evolutionState = {
             currentStage: 1, // 1: BRD, 2: PRD, 3: User Stories, 4: Implementation
@@ -25,7 +25,7 @@ class ProductOwnerAssistant {
             userStories: null,
             implementationChecklist: null
         };
-        
+
         // Stage definitions
         this.stages = {
             1: { name: 'BRD', title: 'Business Requirements Document', description: 'Define business requirements and stakeholder needs' },
@@ -33,7 +33,7 @@ class ProductOwnerAssistant {
             3: { name: 'User Stories', title: 'User Stories', description: 'Breakdown into actionable user stories' },
             4: { name: 'Implementation', title: 'Implementation Checklist', description: 'Detailed implementation checklist for development' }
         };
-        
+
         this.init();
     }
 
@@ -61,7 +61,7 @@ class ProductOwnerAssistant {
 
         if (token && projectId && prdId && from === 'mission') {
             console.log('🔗 Deep link detected, validating JWT token...');
-            
+
             try {
                 // Validate JWT token
                 const response = await fetch('/api/upload/prd/validate-token', {
@@ -77,16 +77,16 @@ class ProductOwnerAssistant {
 
                 if (data.valid && data.session_info && data.prd_info) {
                     console.log('✅ JWT token validated successfully');
-                    
+
                     // Load PRD context from the validated session
                     await this.loadPRDFromSession(data.session_info.id, data.prd_info);
-                    
+
                     // Update UI to show PRD is loaded
                     this.showPRDLoadedMessage(data.prd_info.version);
-                    
+
                     // Clear URL parameters for security
                     window.history.replaceState({}, document.title, window.location.pathname);
-                    
+
                 } else {
                     console.error('❌ JWT token validation failed:', data.error || result.error);
                     this.showTokenError(data.error || result.error || 'Invalid or expired link');
@@ -102,26 +102,26 @@ class ProductOwnerAssistant {
     async loadPRDFromSession(sessionId, prdInfo) {
         try {
             console.log('📄 Loading PRD from session:', sessionId);
-            
+
             // Get session context with PRD content
             const response = await fetch(`/api/upload/session/context/${sessionId}`);
             const contextResult = await response.json();
-            
+
             if (contextResult.data && contextResult.data.ai_analysis) {
                 // Load the PRD content into the current state
                 this.evolutionState.currentStage = 2; // PRD stage
                 this.evolutionState.prd = contextResult.data.ai_analysis;
                 this.evolutionState.completedStages = [1, 2]; // Mark BRD and PRD as complete
-                
+
                 // Save state
                 this.saveEvolutionState();
-                
+
                 // Update UI to show loaded PRD
                 this.updateStageUI();
                 this.showSplitScreen(); // Auto-show document panel
                 this.updateContentPanel(this.evolutionState.prd);
                 this.switchToPreviewView(); // Show rendered content by default
-                
+
                 console.log('✅ PRD loaded successfully from session');
             } else {
                 throw new Error('No PRD content found in session');
@@ -206,10 +206,10 @@ class ProductOwnerAssistant {
         // Debug image loading
         const images = document.querySelectorAll('.evolution-silhouette-small img');
         images.forEach((img, index) => {
-            img.onerror = function() {
+            img.onerror = function () {
                 console.error(`Failed to load image ${index}:`, this.src);
             };
-            img.onload = function() {
+            img.onload = function () {
                 console.log(`Successfully loaded image ${index}:`, this.src);
             };
         });
@@ -227,15 +227,15 @@ class ProductOwnerAssistant {
 
         // Auto-resize chat input
         document.getElementById('chatInput')?.addEventListener('input', (e) => this.autoResizeTextarea(e.target));
-        
+
         // AI Provider Selection
         document.getElementById('aiProviderSelect')?.addEventListener('change', (e) => this.selectAIProvider(e.target.value));
         document.getElementById('modelSelect')?.addEventListener('change', (e) => this.updateModel(e.target.value));
-        
+
         // New AI Model Selector - Floating Logos
         document.getElementById('gooseProvider')?.addEventListener('click', () => this.showModelPopup('goose'));
         document.getElementById('aiStudioProvider')?.addEventListener('click', () => this.showModelPopup('ai-studio'));
-        
+
         // Model Popup Controls
         document.getElementById('popupClose')?.addEventListener('click', () => this.hideModelPopup());
         document.addEventListener('click', (e) => {
@@ -243,7 +243,7 @@ class ProductOwnerAssistant {
                 this.hideModelPopup();
             }
         });
-        
+
         // Model Selection in Popup
         document.querySelectorAll('.model-item').forEach(item => {
             item.addEventListener('click', (e) => {
@@ -252,25 +252,25 @@ class ProductOwnerAssistant {
                 this.selectModelFromPopup(provider, model);
             });
         });
-        
+
         // Content Panel
         document.getElementById('closePanel')?.addEventListener('click', () => this.closeSplitScreen());
-        
+
         // View Mode Buttons
         document.getElementById('codeViewBtn')?.addEventListener('click', () => this.switchToCodeView());
         document.getElementById('previewViewBtn')?.addEventListener('click', () => this.switchToPreviewView());
-        
+
         // Document Actions
         document.getElementById('saveDocument')?.addEventListener('click', () => this.saveDocument());
         document.getElementById('exportDocument')?.addEventListener('click', () => this.exportDocument());
         document.getElementById('historyDocument')?.addEventListener('click', () => this.showHistory());
         document.getElementById('improveDocument')?.addEventListener('click', () => this.improveDocument());
-        
+
         // Stage progression
         document.getElementById('approveStage')?.addEventListener('click', () => this.approveCurrentStage());
         document.getElementById('nextStage')?.addEventListener('click', () => this.moveToNextStage());
         document.getElementById('previousStage')?.addEventListener('click', () => this.moveToPreviousStage());
-        
+
         // Format toolbar
         document.getElementById('formatSelector')?.addEventListener('change', (e) => this.changeFormat(e.target.value));
         document.getElementById('aiAssist')?.addEventListener('click', () => this.aiAssist());
@@ -286,7 +286,7 @@ class ProductOwnerAssistant {
         // Hide welcome message when user starts typing
         const chatInput = document.getElementById('chatInput');
         const welcomeMessage = document.querySelector('.welcome-message');
-        
+
         if (chatInput && welcomeMessage) {
             chatInput.addEventListener('focus', () => {
                 welcomeMessage.style.display = 'none';
@@ -298,7 +298,7 @@ class ProductOwnerAssistant {
         const workspace = document.querySelector('.po-workspace');
         const documentPanel = document.getElementById('documentPanel');
         const floatingControls = document.querySelector('.floating-controls');
-        
+
         workspace.classList.add('split-screen');
         documentPanel.classList.remove('hidden');
         floatingControls.classList.add('visible');
@@ -309,7 +309,7 @@ class ProductOwnerAssistant {
         const workspace = document.querySelector('.po-workspace');
         const documentPanel = document.getElementById('documentPanel');
         const floatingControls = document.querySelector('.floating-controls');
-        
+
         workspace.classList.remove('split-screen');
         documentPanel.classList.add('hidden');
         floatingControls.classList.remove('visible');
@@ -320,14 +320,14 @@ class ProductOwnerAssistant {
         // Only show split screen if AI generated an actual document (not questions)
         return this.isActualDocument(output) && !this.isAskingForMoreInformation(output);
     }
-    
+
     isActualDocument(output) {
         // Check if output contains substantial structured content (not just questions)
         const hasHeaders = /^#+\s+/m.test(output);
         const hasStructure = /^\d+\.|^-\s+|^\*\s+/m.test(output);
         const hasSubstantialContent = output.length > 500;
         const hasDocumentTitle = /^#\s+(Business|Product)\s+Requirements\s+Document/m.test(output);
-        
+
         return hasDocumentTitle || (hasHeaders && hasStructure && hasSubstantialContent);
     }
 
@@ -347,7 +347,7 @@ class ProductOwnerAssistant {
             return this.getNaturalConversationPrompt(userMessage);
         }
     }
-    
+
     getStagePrompt(userMessage) {
         const stage = this.stages[this.evolutionState.currentStage];
         return `**Current Stage: ${stage.name} - ${stage.title}**
@@ -358,7 +358,7 @@ ${stage.description}
 
 ${userMessage}`;
     }
-    
+
     // This method is no longer used in the new conversation-first approach
     // The AI now determines when it has enough information through natural conversation
     hasAdequateInformationForStage(userMessage, stage) {
@@ -366,7 +366,7 @@ ${userMessage}`;
         // The AI will determine when to create documents based on conversation context
         return false;
     }
-    
+
     hasBusinessContext(userMessage) {
         // Look for business-related keywords that indicate real requirements
         const businessKeywords = [
@@ -379,19 +379,19 @@ ${userMessage}`;
             'notifications?', 'messaging', 'communications?', 'interface',
             'mobile', 'web', 'desktop', 'cloud', 'saas', 'enterprise'
         ];
-        
+
         const keywordPattern = new RegExp(businessKeywords.join('|'), 'i');
         const hasKeywords = keywordPattern.test(userMessage);
-        
+
         // Also check for descriptive length (substantial description)
         const hasSubstantialContent = userMessage.split(/\s+/).length >= 10;
-        
+
         return hasKeywords && hasSubstantialContent;
     }
-    
+
     getDocumentGenerationPrompt(userMessage) {
         const currentStage = this.stages[this.evolutionState.currentStage];
-        
+
         if (this.evolutionState.currentStage === 1) {
             // Stage 1: Generate BRD from business specs
             return this.getBRDPrompt(userMessage);
@@ -405,7 +405,7 @@ ${userMessage}`;
             // Stage 4: Generate Implementation Checklist from User Stories
             return this.getImplementationPrompt(userMessage);
         }
-        
+
         // Fallback
         return `You are a Product Owner expert. The user provided detailed information:
 
@@ -413,11 +413,11 @@ ${userMessage}`;
 
 Create a comprehensive ${currentStage.title} based on this information. Start with: "Based on your detailed description, I can create a comprehensive ${currentStage.name}. Here it is:" followed by the actual document with proper markdown formatting.`;
     }
-    
+
     getPRDReviewPrompt(userMessage) {
         const prdContent = this.evolutionState.prd;
         const conversationHistory = this.chatHistory.slice(-3).map(msg => `${msg.type}: ${msg.content}`).join('\n');
-        
+
         return `You are a Product Owner expert. A PRD has been loaded from Mission Control and is available for review and modification.
 
 CURRENT PRD CONTENT:
@@ -446,7 +446,7 @@ How can I help you work with this loaded PRD?`;
     getNaturalConversationPrompt(userMessage) {
         const currentStage = this.stages[this.evolutionState.currentStage];
         const conversationHistory = this.chatHistory.slice(-3).map(msg => `${msg.type}: ${msg.content}`).join('\n');
-        
+
         return `You are a thoughtful Product Owner expert. The user's request needs more detail for creating a comprehensive document.
 
 User's message: "${userMessage}"
@@ -469,9 +469,9 @@ Instructions:
 
 Ask focused questions to gather essential information efficiently.`;
     }
-    
+
     getRequiredInformationForStage(stage) {
-        switch(stage) {
+        switch (stage) {
             case 1: // BRD
                 return `- What is the main purpose/goal of the application?
 - Who are the target users/customers?
@@ -507,7 +507,7 @@ Ask focused questions to gather essential information efficiently.`;
         // Store business specs for later use
         this.evolutionState.businessSpecs = businessSpecs;
         this.saveEvolutionState();
-        
+
         return `You are a Senior Product Manager. Create a comprehensive Business Requirements Document (BRD) based on the high-level specs below.
 
 <SPECS>
@@ -664,23 +664,23 @@ Format as markdown with checkboxes for each task.`;
     updateContentPanel(docData) {
         const markdownEditor = document.getElementById('markdownEditor');
         const renderedContent = document.getElementById('renderedContent');
-        
+
         if (markdownEditor && renderedContent) {
             let content = '';
-            
+
             // Handle both document objects and plain content
             if (typeof docData === 'object' && docData.content) {
                 content = docData.content;
             } else {
                 content = docData;
             }
-            
+
             // Clean the content for code view (remove JSON wrapper)
             const cleanContent = this.cleanContentForDisplay(content);
-            
+
             // Update code view with clean content
             markdownEditor.value = cleanContent;
-            
+
             // Update preview view
             this.updatePreview(cleanContent);
         }
@@ -696,7 +696,7 @@ Format as markdown with checkboxes for each task.`;
                 if (jsonMatch) {
                     content = jsonMatch[1];
                 }
-                
+
                 // Remove markdown code blocks
                 content = content.replace(/```(?:json|markdown)?\n?/g, '').replace(/```\n?$/g, '');
             } catch (e) {
@@ -711,7 +711,7 @@ Format as markdown with checkboxes for each task.`;
             .replace(/\\'/g, "'")
             .replace(/\\\\/g, '\\')
             .trim();
-        
+
         return content;
     }
 
@@ -721,10 +721,10 @@ Format as markdown with checkboxes for each task.`;
         if (documentTitle) {
             documentTitle.textContent = title;
         }
-        
+
         // Update content panel with the document
         this.updateContentPanel(content);
-        
+
         // Show split screen if not already visible
         if (!this.isSplitScreen) {
             this.showSplitScreen();
@@ -733,12 +733,12 @@ Format as markdown with checkboxes for each task.`;
 
     extractDocuments(output) {
         const documents = [];
-        
+
         // Smart document extraction - look for AI signals AND actual document structure
         const isReadySignal = /Based on (our conversation|your detailed? description).*I.*can.*create.*comprehensive/i.test(output);
         const hasDocumentStructure = this.isActualDocument(output);
         const isNotAskingQuestions = !this.isAskingForMoreInformation(output);
-        
+
         // Must have readiness signal OR (document structure AND not asking questions)
         if (isReadySignal || (hasDocumentStructure && isNotAskingQuestions)) {
             // Look for document type indicators
@@ -746,10 +746,10 @@ Format as markdown with checkboxes for each task.`;
             const prdPattern = /(?:product\s+requirements?\s+document|PRD)/i;
             const userStoriesPattern = /user\s+stories?/i;
             const implementationPattern = /implementation\s+checklist/i;
-            
+
             let docType = 'BRD';
             let docTitle = 'Business Requirements Document';
-            
+
             if (prdPattern.test(output)) {
                 docType = 'PRD';
                 docTitle = 'Product Requirements Document';
@@ -760,27 +760,27 @@ Format as markdown with checkboxes for each task.`;
                 docType = 'Implementation';
                 docTitle = 'Implementation Checklist';
             }
-            
+
             documents.push({
                 type: docType,
                 title: docTitle,
                 content: output.trim()
             });
         }
-        
+
         return documents;
     }
 
     createDocumentCardsResponse(documents, modelInfo) {
         const cards = documents.map(doc => {
-            const icon = doc.type === 'PRD' ? 
+            const icon = doc.type === 'PRD' ?
                 '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/></svg>' :
-                doc.type === 'BRD' ? 
-                '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19,3H5C3.9,3 3,3.9 3,5V19C3,20.1 3.9,21 5,21H19C20.1,21 21,20.1 21,19V5C21,3.9 20.1,3 19,3M19,19H5V5H19V19M17,12H7V10H17V12M15,16H7V14H15V16M17,8H7V6H17V8Z"/></svg>' :
-                '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/></svg>';
-            
+                doc.type === 'BRD' ?
+                    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19,3H5C3.9,3 3,3.9 3,5V19C3,20.1 3.9,21 5,21H19C20.1,21 21,20.1 21,19V5C21,3.9 20.1,3 19,3M19,19H5V5H19V19M17,12H7V10H17V12M15,16H7V14H15V16M17,8H7V6H17V8Z"/></svg>' :
+                    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/></svg>';
+
             const shortTitle = doc.type === 'PRD' ? 'PRD' : doc.type === 'BRD' ? 'BRD' : 'Document';
-            
+
             return `<span class="document-card hero-card" data-doc-type="${doc.type}"><span class="doc-icon">${icon}</span><span class="doc-info"><span class="doc-title">${shortTitle}</span></span></span>`;
         }).join('');
 
@@ -813,10 +813,10 @@ Format as markdown with checkboxes for each task.`;
     async sendMessage() {
         const chatInput = document.getElementById('chatInput');
         if (!chatInput) return;
-        
+
         const userMessage = chatInput.value.trim();
         if (!userMessage) return;
-        
+
         // Detect if the user is explicitly asking for the next stage (e.g., "Create PRD")
         this.autoAdvanceStageByKeywords(userMessage);
 
@@ -826,7 +826,7 @@ Format as markdown with checkboxes for each task.`;
             content: userMessage,
             timestamp: new Date()
         };
-        
+
         this.addMessage(userChat);
         chatInput.value = '';
         this.autoResizeTextarea(chatInput);
@@ -862,19 +862,19 @@ Format as markdown with checkboxes for each task.`;
     async generateAIResponse(userMessage) {
         try {
             this.showTypingIndicator();
-            
+
             // Add intelligent prompting for better responses
             const enhancedInstruction = this.enhanceInstruction(userMessage);
-            
+
             let response;
-            
+
             if (this.aiProvider.type === 'goose') {
                 // Use Goose API
                 const requestData = {
                     instruction: enhancedInstruction,
                     role: 'po'
                 };
-                
+
                 response = await fetch('/api/goose/execute', {
                     method: 'POST',
                     headers: {
@@ -889,7 +889,7 @@ Format as markdown with checkboxes for each task.`;
                     model: this.aiProvider.model,
                     role: 'po'
                 };
-                
+
                 response = await fetch('/api/model-garden/execute', {
                     method: 'POST',
                     headers: {
@@ -898,17 +898,17 @@ Format as markdown with checkboxes for each task.`;
                     body: JSON.stringify(requestData)
                 });
             }
-            
+
             this.hideTypingIndicator();
-            
+
             if (!response.ok) {
                 throw new Error(`API call failed: ${response.status}`);
             }
-            
+
             const result = await response.json();
-            
+
             let aiResponse = '';
-            
+
             if (result.success) {
                 let modelInfo;
                 if (result.provider === 'model-garden') {
@@ -921,16 +921,16 @@ Format as markdown with checkboxes for each task.`;
 
                 // Check if this is a document creation response
                 const documents = this.extractDocuments(result.output);
-                
+
                 if (documents.length > 0) {
                     // Store documents and create clean cards
                     this.documents = documents;
-                    
+
                     // Store document in evolution state
                     this.storeDocumentInEvolutionState(documents[0], result.output);
-                    
+
                     aiResponse = this.createDocumentCardsResponse(documents, modelInfo);
-                    
+
                     // Show the hero card immediately (real document was generated)
                     const aiMessage = {
                         type: 'ai',
@@ -938,16 +938,16 @@ Format as markdown with checkboxes for each task.`;
                         timestamp: new Date(),
                         gooseResponse: result
                     };
-                    
+
                     this.addMessage(aiMessage);
-                    
+
                     // THEN do smooth transition to split screen
                     setTimeout(() => {
                         this.showSplitScreen();
                         this.updateContentPanel(documents[0]);
                         this.updateStageUI();
                     }, 500);
-                    
+
                     return; // Exit early
                 } else {
                     // Regular chat response - either conversation or other response
@@ -955,7 +955,7 @@ Format as markdown with checkboxes for each task.`;
 
 ---
 *${modelInfo}*`;
-                    
+
                     // Smart approach: conversation for vague inputs, documents for detailed inputs
                     console.log('Conversation mode: AI is gathering information or responding naturally');
                 }
@@ -966,19 +966,19 @@ ${result.error}
 
 Please try rephrasing your request or ask for help with a specific product management task.`;
             }
-            
+
             const aiMessage = {
                 type: 'ai',
                 content: aiResponse,
                 timestamp: new Date(),
                 gooseResponse: result
             };
-            
+
             this.addMessage(aiMessage);
-            
+
         } catch (error) {
             this.hideTypingIndicator();
-            
+
             const errorMessage = {
                 type: 'ai',
                 content: `**🔌 Connection Error:**
@@ -996,7 +996,7 @@ While waiting, you can still use the context panel to organize your product info
                 timestamp: new Date(),
                 error: error.message
             };
-            
+
             this.addMessage(errorMessage);
         }
     }
@@ -1004,7 +1004,7 @@ While waiting, you can still use the context panel to organize your product info
     addMessage(message) {
         this.chatHistory.push(message);
         this.renderMessage(message);
-        
+
         // Scroll after a short delay to ensure content is rendered
         setTimeout(() => {
             this.scrollToBottom();
@@ -1014,17 +1014,17 @@ While waiting, you can still use the context panel to organize your product info
     renderMessage(message) {
         const messagesContainer = document.getElementById('chatMessages');
         const messageElement = document.createElement('div');
-        
+
         messageElement.className = `message ${message.type}-message`;
-        
+
         // Show avatar for AI messages (but not for special content types)
         const hasHeroCard = message.content && message.content.includes('hero-card');
         const hasGeneratingProcess = message.content && message.content.includes('generating-process');
-        
+
         if ((message.type === 'ai' || message.type === 'system') && !hasHeroCard && !hasGeneratingProcess) {
             const avatar = document.createElement('div');
             avatar.className = 'message-avatar';
-            
+
             if (message.type === 'system') {
                 // Use a system/workflow icon for system messages
                 avatar.innerHTML = '⚙️';
@@ -1047,23 +1047,23 @@ While waiting, you can still use the context panel to organize your product info
                 avatarImg.style.width = '100%';
                 avatarImg.style.height = '100%';
                 avatarImg.style.objectFit = 'cover';
-                
+
                 // Debug image loading
                 avatarImg.onload = () => console.log('Avatar image loaded successfully:', avatarImg.src);
                 avatarImg.onerror = () => console.error('Failed to load avatar image:', avatarImg.src);
-                
+
                 avatar.appendChild(avatarImg);
             }
-            
+
             messageElement.appendChild(avatar);
         }
-        
+
         const content = document.createElement('div');
         content.className = 'message-content';
-        
+
         const formattedContent = this.formatMessageContent(message.content);
         content.innerHTML = formattedContent;
-        
+
         // Add click handlers for document cards
         const documentCards = content.querySelectorAll('.document-card');
         documentCards.forEach(card => {
@@ -1076,14 +1076,14 @@ While waiting, you can still use the context panel to organize your product info
                 }
             });
         });
-        
+
         const timestamp = document.createElement('div');
         timestamp.className = 'message-timestamp';
         timestamp.textContent = this.formatTimestamp(message.timestamp);
-        
+
         messageElement.appendChild(content);
         content.appendChild(timestamp);
-        
+
         messagesContainer.appendChild(messageElement);
     }
 
@@ -1101,11 +1101,11 @@ While waiting, you can still use the context panel to organize your product info
 
     showTypingIndicator() {
         const messagesContainer = document.getElementById('chatMessages');
-        
+
         const typingElement = document.createElement('div');
         typingElement.className = 'message ai-message typing-indicator';
         typingElement.id = 'typingIndicator';
-        
+
         const content = document.createElement('div');
         content.className = 'message-content';
         content.innerHTML = `<div class="generating-process">
@@ -1120,12 +1120,12 @@ While waiting, you can still use the context panel to organize your product info
                 <span class="progress-text">Creating enhanced document with your expertise...</span>
             </div>
         </div>`;
-        
+
         typingElement.appendChild(content);
-        
+
         messagesContainer.appendChild(typingElement);
         this.scrollToBottom();
-        
+
         // Start progress animation for real API call
         setTimeout(() => {
             const progressFill = document.querySelector('#typingIndicator .progress-fill');
@@ -1141,7 +1141,7 @@ While waiting, you can still use the context panel to organize your product info
             clearInterval(this.processingInterval);
             this.processingInterval = null;
         }
-        
+
         const typingIndicator = document.getElementById('typingIndicator');
         if (typingIndicator) {
             typingIndicator.remove();
@@ -1154,7 +1154,7 @@ While waiting, you can still use the context panel to organize your product info
             // Use requestAnimationFrame to ensure DOM is updated
             requestAnimationFrame(() => {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                
+
                 // Double-check after a short delay in case content is still loading
                 setTimeout(() => {
                     messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -1223,29 +1223,29 @@ While waiting, you can still use the context panel to organize your product info
         } else {
             modelSelect?.classList.add('hidden');
         }
-        
+
         // Update new AI model selector
         this.updateModelSelectorUI();
     }
-    
+
     // New AI Model Selector Methods - Minimal Floating Interface
     showModelPopup(clickedProvider) {
         const popup = document.getElementById('modelPopup');
         if (popup) {
             popup.classList.remove('hidden');
-            
+
             // Update active states in popup
             this.updatePopupActiveStates();
         }
     }
-    
+
     hideModelPopup() {
         const popup = document.getElementById('modelPopup');
         if (popup) {
             popup.classList.add('hidden');
         }
     }
-    
+
     selectModelFromPopup(provider, model) {
         if (provider === 'goose') {
             this.aiProvider.type = 'goose';
@@ -1253,19 +1253,19 @@ While waiting, you can still use the context panel to organize your product info
             this.aiProvider.type = 'model-garden';
             this.aiProvider.model = model;
         }
-        
+
         this.saveAIProvider();
         this.updateFloatingLogos();
         this.updatePopupActiveStates();
         this.hideModelPopup();
-        
+
         console.log('Model selected:', provider, model, 'AI Provider:', this.aiProvider);
     }
-    
+
     updateFloatingLogos() {
         const gooseProvider = document.getElementById('gooseProvider');
         const aiStudioProvider = document.getElementById('aiStudioProvider');
-        
+
         // Update active states
         if (this.aiProvider.type === 'goose') {
             gooseProvider?.classList.add('active');
@@ -1275,13 +1275,13 @@ While waiting, you can still use the context panel to organize your product info
             aiStudioProvider?.classList.add('active');
         }
     }
-    
+
     updatePopupActiveStates() {
         // Update active states in popup
         document.querySelectorAll('.model-item').forEach(item => {
             const provider = item.getAttribute('data-provider');
             const model = item.getAttribute('data-model');
-            
+
             if (provider === 'goose' && this.aiProvider.type === 'goose') {
                 item.classList.add('active');
             } else if (provider === 'ai-studio' && this.aiProvider.type === 'model-garden' && model === this.aiProvider.model) {
@@ -1291,7 +1291,7 @@ While waiting, you can still use the context panel to organize your product info
             }
         });
     }
-    
+
     updateModelSelectorUI() {
         // Update the floating logos
         this.updateFloatingLogos();
@@ -1302,11 +1302,11 @@ While waiting, you can still use the context panel to organize your product info
     // Document Management Methods
     saveDocument() {
         const markdownEditor = document.getElementById('markdownEditor');
-        
+
         if (markdownEditor) {
             const content = markdownEditor.value;
             const title = 'Document';
-            
+
             // Create a blob and download
             const blob = new Blob([content], { type: 'text/markdown' });
             const url = URL.createObjectURL(blob);
@@ -1322,11 +1322,11 @@ While waiting, you can still use the context panel to organize your product info
 
     exportDocument() {
         const markdownEditor = document.getElementById('markdownEditor');
-        
+
         if (markdownEditor) {
             const content = markdownEditor.value;
             const title = 'Document';
-            
+
             const blob = new Blob([content], { type: 'text/markdown' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -1343,26 +1343,26 @@ While waiting, you can still use the context panel to organize your product info
     setupSplitDivider() {
         const divider = document.getElementById('splitDivider');
         if (!divider) return;
-        
+
         let isResizing = false;
         let startX = 0;
         let startLeftWidth = 0;
-        
+
         divider.addEventListener('mousedown', (e) => {
             isResizing = true;
             startX = e.clientX;
-            
+
             const workspace = document.querySelector('.po-workspace');
             const chatInterface = document.querySelector('.chat-interface');
             const rect = workspace.getBoundingClientRect();
             const chatRect = chatInterface.getBoundingClientRect();
-            
+
             startLeftWidth = ((chatRect.width / rect.width) * 100);
-            
+
             divider.classList.add('dragging');
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
-            
+
             // Add overlay to prevent iframe interference
             const overlay = document.createElement('div');
             overlay.id = 'resize-overlay';
@@ -1377,40 +1377,40 @@ While waiting, you can still use the context panel to organize your product info
                 cursor: col-resize;
             `;
             document.body.appendChild(overlay);
-            
+
             e.preventDefault();
         });
-        
+
         document.addEventListener('mousemove', (e) => {
             if (!isResizing) return;
-            
+
             const workspace = document.querySelector('.po-workspace');
             const rect = workspace.getBoundingClientRect();
             const deltaX = e.clientX - startX;
             const deltaPercentage = (deltaX / rect.width) * 100;
-            
+
             let newLeftWidth = startLeftWidth + deltaPercentage;
-            
+
             // Constrain between 25% and 75%
             newLeftWidth = Math.max(25, Math.min(75, newLeftWidth));
             const newRightWidth = 100 - newLeftWidth;
-            
+
             const chatInterface = document.querySelector('.chat-interface');
             const documentPanel = document.querySelector('.document-panel');
-            
+
             if (chatInterface && documentPanel) {
                 chatInterface.style.flex = `0 0 ${newLeftWidth}%`;
                 documentPanel.style.flex = `0 0 ${newRightWidth}%`;
             }
         });
-        
+
         document.addEventListener('mouseup', () => {
             if (isResizing) {
                 isResizing = false;
                 divider.classList.remove('dragging');
                 document.body.style.cursor = '';
                 document.body.style.userSelect = '';
-                
+
                 // Remove overlay
                 const overlay = document.getElementById('resize-overlay');
                 if (overlay) {
@@ -1419,7 +1419,7 @@ While waiting, you can still use the context panel to organize your product info
             }
         });
     }
-    
+
     setupViewModes() {
         const markdownEditor = document.getElementById('markdownEditor');
         if (markdownEditor) {
@@ -1428,55 +1428,55 @@ While waiting, you can still use the context panel to organize your product info
             });
         }
     }
-    
+
     switchToCodeView() {
         const codeView = document.getElementById('codeView');
         const previewView = document.getElementById('previewView');
         const codeBtn = document.getElementById('codeViewBtn');
         const previewBtn = document.getElementById('previewViewBtn');
-        
+
         if (codeView && previewView) {
             codeView.classList.remove('hidden');
             previewView.classList.add('hidden');
-            
+
             // Update pill buttons
             codeBtn?.classList.add('active');
             previewBtn?.classList.remove('active');
         }
     }
-    
+
     // Remove split view method since we only have CODE and PREVIEW now
-    
+
     switchToPreviewView() {
         const codeView = document.getElementById('codeView');
         const previewView = document.getElementById('previewView');
         const codeBtn = document.getElementById('codeViewBtn');
         const previewBtn = document.getElementById('previewViewBtn');
-        
+
         if (codeView && previewView) {
             codeView.classList.add('hidden');
             previewView.classList.remove('hidden');
-            
+
             // Update pill buttons
             codeBtn?.classList.remove('active');
             previewBtn?.classList.add('active');
         }
     }
-    
+
     updatePreview(markdownContent) {
         const renderedContent = document.getElementById('renderedContent');
         if (!renderedContent) return;
-        
+
         // Use the sophisticated PRD editor for preview
         if (window.PRDEditor && markdownContent.length > 100) {
             // Initialize the rich-text PRD editor
             const prdEditor = new PRDEditor(renderedContent);
-            
+
             // Parse markdown content into structured document
             prdEditor.document = this.parseMarkdownToPRDDocument(markdownContent);
             prdEditor.renderSections();
             prdEditor.updateOutline();
-            
+
             // Store reference for global access
             window.prdEditorInstance = prdEditor;
         } else {
@@ -1500,16 +1500,16 @@ While waiting, you can still use the context panel to organize your product info
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
-            
+
             // Skip empty lines
             if (!line) continue;
-            
+
             // Extract title from first header
             if (i === 0 && line.startsWith('# ')) {
                 document.title = line.substring(2).trim();
                 continue;
             }
-            
+
             // Detect section headers
             if (line.match(/^#{2,3}\s+/)) {
                 // Save previous section
@@ -1521,7 +1521,7 @@ While waiting, you can still use the context panel to organize your product info
                 // Start new section
                 const level = (line.match(/^#+/) || [''])[0].length - 2; // Adjust for h2, h3
                 const title = line.replace(/^#+\s*/, '').trim();
-                
+
                 currentSection = {
                     id: this.generateSectionId(title),
                     title,
@@ -1560,7 +1560,7 @@ While waiting, you can still use the context panel to organize your product info
                     });
                     currentParagraph = [];
                 }
-                
+
                 const todoText = line.replace(/^[-*]\s*\[\s*\]\s*/, '');
                 items.push({
                     type: 'todo',
@@ -1577,7 +1577,7 @@ While waiting, you can still use the context panel to organize your product info
                     });
                     currentParagraph = [];
                 }
-                
+
                 const todoText = line.replace(/^[-*]\s*\[x\]\s*/i, '');
                 items.push({
                     type: 'todo',
@@ -1615,7 +1615,7 @@ While waiting, you can still use the context panel to organize your product info
     generateId() {
         return 'item-' + Math.random().toString(36).substr(2, 9);
     }
-    
+
     markdownToHTML(markdown) {
         return markdown
             // Headers
@@ -1650,18 +1650,18 @@ While waiting, you can still use the context panel to organize your product info
             .replace(/<p>(<ol>.*<\/ol>)<\/p>/g, '$1')
             .replace(/<p>(<pre>.*<\/pre>)<\/p>/g, '$1');
     }
-    
+
     // Document Toolbar Methods
     updateDocumentStats() {
         const markdownEditor = document.getElementById('markdownEditor');
         const wordCount = document.getElementById('wordCount');
         const charCount = document.getElementById('charCount');
-        
+
         if (markdownEditor && wordCount && charCount) {
             const text = markdownEditor.value || '';
             const words = text.trim().split(/\s+/).filter(word => word.length > 0).length;
             const characters = text.length;
-            
+
             wordCount.textContent = `${words} words`;
             charCount.textContent = `${characters} characters`;
         }
@@ -1731,18 +1731,18 @@ While waiting, you can still use the context panel to organize your product info
     smoothTransitionToSplitScreen(document) {
         // Start transition
         this.showSplitScreen();
-        
+
         // Update content with a slight delay for smoothness
         setTimeout(() => {
             this.updateContentPanel(document);
         }, 300);
     }
-    
+
     // Stage progression methods
     storeDocumentInEvolutionState(document, fullContent) {
         const stage = this.evolutionState.currentStage;
-        
-        switch(stage) {
+
+        switch (stage) {
             case 1:
                 this.evolutionState.brd = fullContent;
                 break;
@@ -1756,43 +1756,43 @@ While waiting, you can still use the context panel to organize your product info
                 this.evolutionState.implementationChecklist = fullContent;
                 break;
         }
-        
+
         // Mark current stage as completed
         if (!this.evolutionState.completedStages.includes(stage)) {
             this.evolutionState.completedStages.push(stage);
         }
-        
+
         this.saveEvolutionState();
     }
-    
+
     approveCurrentStage() {
         const currentStage = this.evolutionState.currentStage;
         const hasDocument = this.hasDocumentForStage(currentStage);
-        
+
         if (!hasDocument) {
             // Generate the document for the current stage
             this.generateDocumentForCurrentStage();
             return;
         }
-        
+
         // Mark stage as approved and move to next
         if (!this.evolutionState.completedStages.includes(currentStage)) {
             this.evolutionState.completedStages.push(currentStage);
         }
-        
+
         if (currentStage < 4) {
             this.moveToNextStage();
         } else {
             this.showMessage('🎉 Workflow complete! Your implementation checklist is ready for development.');
         }
     }
-    
+
     generateDocumentForCurrentStage() {
         const currentStage = this.stages[this.evolutionState.currentStage];
-        
+
         // Check if we have adequate information from previous stages or stored specs
         let prompt = '';
-        
+
         if (this.evolutionState.currentStage === 1 && this.evolutionState.businessSpecs) {
             // Use stored business specs for BRD
             prompt = this.getBRDPrompt(this.evolutionState.businessSpecs);
@@ -1804,20 +1804,20 @@ While waiting, you can still use the context panel to organize your product info
             this.showMessage(`Please provide detailed information about your project before generating the ${currentStage.title}. I need to understand your business requirements, target users, and core functionality.`);
             return;
         }
-        
+
         // Trigger AI generation with proper prompt
         this.generateAIResponse(prompt);
     }
-    
+
     getPromptForStage(stage) {
-        switch(stage) {
+        switch (stage) {
             case 2: return this.getPRDPrompt('');
             case 3: return this.getUserStoriesPrompt('');
             case 4: return this.getImplementationPrompt('');
             default: return `Generate ${this.stages[stage].title} based on previous work`;
         }
     }
-    
+
     moveToNextStage() {
         if (this.evolutionState.currentStage < 4) {
             this.evolutionState.currentStage += 1;
@@ -1826,7 +1826,7 @@ While waiting, you can still use the context panel to organize your product info
             this.showStageTransitionMessage();
         }
     }
-    
+
     moveToPreviousStage() {
         if (this.evolutionState.currentStage > 1) {
             this.evolutionState.currentStage -= 1;
@@ -1835,9 +1835,9 @@ While waiting, you can still use the context panel to organize your product info
             this.showStageTransitionMessage();
         }
     }
-    
+
     hasDocumentForStage(stage) {
-        switch(stage) {
+        switch (stage) {
             case 1: return !!this.evolutionState.brd;
             case 2: return !!this.evolutionState.prd;
             case 3: return !!this.evolutionState.userStories;
@@ -1845,7 +1845,7 @@ While waiting, you can still use the context panel to organize your product info
             default: return false;
         }
     }
-    
+
     updateStageUI() {
         // Update stage indicator in the UI
         const currentStage = this.stages[this.evolutionState.currentStage];
@@ -1861,38 +1861,38 @@ While waiting, you can still use the context panel to organize your product info
         if (documentTitle && this.isSplitScreen) {
             documentTitle.textContent = currentStage.title;
         }
-        
+
         // Update stage progression buttons
         this.updateStageButtons();
-        
+
         // Add stage progression indicator to welcome message if not in split screen
         if (!this.isSplitScreen) {
             this.updateWelcomeMessage();
         }
     }
-    
+
     updateStageButtons() {
         const previousBtn = document.getElementById('previousStage');
         const approveBtn = document.getElementById('approveStage');
         const nextBtn = document.getElementById('nextStage');
-        
+
         if (previousBtn && approveBtn && nextBtn) {
             // Enable/disable previous button
             previousBtn.disabled = this.evolutionState.currentStage <= 1;
-            
+
             // Enable/disable next button
             nextBtn.disabled = this.evolutionState.currentStage >= 4;
-            
+
             // Update approve button text based on stage
             const currentStage = this.stages[this.evolutionState.currentStage];
             const hasDocument = this.hasDocumentForStage(this.evolutionState.currentStage);
-            
+
             if (this.evolutionState.currentStage === 4) {
                 approveBtn.textContent = hasDocument ? 'Complete Workflow' : 'Generate Implementation';
             } else {
                 approveBtn.textContent = hasDocument ? `Approve ${currentStage.name} & Continue` : `Generate ${currentStage.name}`;
             }
-            
+
             // Show/hide stage controls only in split screen
             const stageControls = document.getElementById('stageControls');
             if (stageControls) {
@@ -1900,65 +1900,65 @@ While waiting, you can still use the context panel to organize your product info
             }
         }
     }
-    
+
     updateWelcomeMessage() {
         const welcomeMessage = document.querySelector('.welcome-message');
         const currentStage = this.stages[this.evolutionState.currentStage];
-        
+
         if (welcomeMessage) {
             // Keep the hero question only – progress now shown in compact bar
             welcomeMessage.innerHTML = `<h1>What will you build today?</h1>`;
         }
     }
-    
+
     renderStageProgress() {
         let progressHTML = '<div class="progress-dots">';
-        
+
         for (let i = 1; i <= 4; i++) {
             const isCompleted = this.evolutionState.completedStages.includes(i);
             const isCurrent = this.evolutionState.currentStage === i;
             const stageClass = isCompleted ? 'completed' : (isCurrent ? 'current' : 'pending');
-            
+
             progressHTML += `<div class="progress-dot ${stageClass}" title="${this.stages[i].name}"></div>`;
         }
-        
+
         progressHTML += '</div>';
         return progressHTML;
     }
-    
+
     showStageTransitionMessage() {
         const currentStage = this.stages[this.evolutionState.currentStage];
-        
+
         const transitionMessage = {
             type: 'system',
             content: `**Stage ${this.evolutionState.currentStage}: ${currentStage.title}**\n\n${currentStage.description}\n\nYou can now create the ${currentStage.name} by providing your requirements.`,
             timestamp: new Date()
         };
-        
+
         this.addMessage(transitionMessage);
     }
-    
+
     showMessage(message) {
         const systemMessage = {
             type: 'system',
             content: message,
             timestamp: new Date()
         };
-        
+
         this.addMessage(systemMessage);
     }
-    
+
     saveEvolutionState() {
         localStorage.setItem('evolutionState', JSON.stringify(this.evolutionState));
     }
-    
+
     loadEvolutionState() {
         const saved = localStorage.getItem('evolutionState');
         if (saved) {
             this.evolutionState = JSON.parse(saved);
         }
     }
-    
+
     isAskingForMoreInformation(aiResponse) {
         // Check if the AI response contains questions or requests for more information
         const questionPatterns = [
@@ -1991,11 +1991,11 @@ While waiting, you can still use the context panel to organize your product info
             /first.*tell me/i,
             /need to understand/i
         ];
-        
+
         // Also check if response is conversational (not a formal document)
         const isConversational = !/^#\s+/m.test(aiResponse) && // No markdown headers
-                                 !/^\d+\.|^-\s+|^\*\s+/m.test(aiResponse.split('\n').slice(0, 3).join('\n')); // No immediate structure
-        
+            !/^\d+\.|^-\s+|^\*\s+/m.test(aiResponse.split('\n').slice(0, 3).join('\n')); // No immediate structure
+
         return questionPatterns.some(pattern => pattern.test(aiResponse)) || isConversational;
     }
 }

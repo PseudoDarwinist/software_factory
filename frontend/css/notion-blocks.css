@@ -1,0 +1,527 @@
+/* Notion-like Block Editor Styles */
+
+/* Main editor takes full width */
+.editor-content {
+  max-width: 100%;
+  padding: 40px 80px;
+}
+
+#editorjs {
+  max-width: 100%;
+}
+
+/* Hide Editor.js default UI elements completely */
+.ce-toolbar {
+  display: none !important;
+}
+
+.ce-toolbar__plus {
+  display: none !important;
+}
+
+.ce-toolbar__settings-btn {
+  display: none !important;
+}
+
+.ce-inline-toolbar {
+  display: none !important;
+}
+
+.ce-conversion-toolbar {
+  display: none !important;
+}
+
+.ce-settings {
+  display: none !important;
+}
+
+.codex-editor__redactor {
+  padding-bottom: 100px !important;
+}
+
+/* Ensure full width layout */
+.codex-editor {
+  max-width: none !important;
+  width: 100% !important;
+}
+
+.ce-block {
+  max-width: none !important;
+  width: 100% !important;
+}
+
+.ce-block__content {
+  max-width: none !important;
+  width: 100% !important;
+}
+
+/* Notion-style block wrapper */
+.notion-block {
+  position: relative;
+  margin: 1px 0;
+  padding: 4px 8px;
+  transition: all 0.15s ease;
+  border-radius: 6px;
+  min-height: 32px;
+}
+
+.notion-block:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* Selected block with green border - exactly like reference */
+.notion-block.selected,
+.notion-block:hover.editing {
+  outline: 2px solid #22c55e;
+  outline-offset: 1px;
+  border-radius: 6px;
+  background: rgba(34, 197, 94, 0.01);
+}
+
+/* Make sure text is always visible and dark */
+.notion-block .notion-block-content {
+  color: #1a1a1a !important;
+  font-weight: 400;
+}
+
+/* Block content - fully editable */
+.notion-block-content {
+  position: relative;
+  padding: 4px 8px;
+  min-height: 28px;
+  line-height: 1.5;
+  font-size: 16px;
+  color: #1a1a1a;
+  font-weight: 400;
+  cursor: text;
+  outline: none;
+  opacity: 1;
+}
+
+.notion-block-content[contenteditable="true"]:focus {
+  outline: none;
+}
+
+/* Block controls - positioned inside the block at top-right */
+.block-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  z-index: 10;
+}
+
+/* Label text - subtle gray like in mockup */
+.block-controls-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #9ca3af;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.notion-block.selected .block-controls {
+  display: flex;
+}
+
+/* Control buttons - circular with proper icons */
+.block-control-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+/* Default muted state for all buttons */
+.block-control-btn.add-above,
+.block-control-btn.add-below {
+  background: #d1d5db;
+  color: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: all 0.15s ease;
+}
+
+.block-control-btn.delete {
+  background: #d1d5db;
+  color: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: all 0.15s ease;
+}
+
+/* Full color state when hovering over the entire pill */
+.block-controls:hover .block-control-btn.add-above,
+.block-controls:hover .block-control-btn.add-below {
+  background: #22c55e;
+  box-shadow: 0 2px 6px rgba(34, 197, 94, 0.3);
+}
+
+.block-controls:hover .block-control-btn.delete {
+  background: #ef4444;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
+}
+
+/* Individual button hover effects (subtle) */
+.block-control-btn:hover {
+  transform: scale(1.05);
+}
+
+/* Drag handle */
+.block-drag-handle {
+  position: absolute;
+  left: -24px;
+  top: 4px;
+  width: 18px;
+  height: 18px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: move;
+  color: #9ca3af;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.notion-block:hover .block-drag-handle {
+  display: flex;
+  opacity: 1;
+}
+
+.block-drag-handle:hover {
+  color: #6b7280;
+}
+
+/* Different block types */
+.notion-block[data-type="header-1"] .notion-block-content {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 24px 0 8px 0;
+}
+
+.notion-block[data-type="header-2"] .notion-block-content {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 20px 0 6px 0;
+}
+
+.notion-block[data-type="header-3"] .notion-block-content {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 16px 0 4px 0;
+}
+
+.notion-block[data-type="paragraph"] .notion-block-content {
+  font-size: 16px;
+  line-height: 1.6;
+  margin: 4px 0;
+}
+
+.notion-block[data-type="bullet-list"] .notion-block-content {
+  padding-left: 24px;
+  position: relative;
+}
+
+.notion-block[data-type="bullet-list"] .notion-block-content::before {
+  content: "•";
+  position: absolute;
+  left: 8px;
+  color: #6b7280;
+}
+
+.notion-block[data-type="numbered-list"] .notion-block-content {
+  padding-left: 32px;
+  position: relative;
+  counter-increment: list-counter;
+}
+
+.notion-block[data-type="numbered-list"] .notion-block-content::before {
+  content: counter(list-counter) ".";
+  position: absolute;
+  left: 8px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* Collapsible sections */
+.notion-section {
+  margin: 16px 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.notion-section:hover {
+  border-color: #e2e8f0;
+  background: #fafbfc;
+}
+
+.notion-section-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+  font-size: 18px;
+  color: #1e293b;
+}
+
+.notion-section-arrow {
+  margin-right: 8px;
+  transition: transform 0.2s ease;
+  color: #6b7280;
+}
+
+.notion-section.collapsed .notion-section-arrow {
+  transform: rotate(-90deg);
+}
+
+.notion-section-content {
+  padding: 0 16px 16px 40px;
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.notion-section.collapsed .notion-section-content {
+  max-height: 0;
+  padding: 0 16px 0 40px;
+  opacity: 0;
+}
+
+/* Section types with colors */
+.notion-section[data-section="product"] {
+  border-left: 4px solid #3b82f6;
+}
+
+.notion-section[data-section="technical"] {
+  border-left: 4px solid #8b5cf6;
+}
+
+.notion-section[data-section="implementation"] {
+  border-left: 4px solid #22c55e;
+}
+
+.notion-section[data-section="filetree"] {
+  border-left: 4px solid #f59e0b;
+}
+
+/* File tree styling */
+.file-tree {
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 14px;
+  line-height: 1.4;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 16px;
+  margin: 8px 0;
+}
+
+.file-tree-item {
+  display: flex;
+  align-items: center;
+  padding: 2px 0;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.file-tree-item:hover {
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.file-tree-icon {
+  margin-right: 8px;
+  color: #64748b;
+}
+
+.file-tree-folder {
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.file-tree-file {
+  color: #374151;
+}
+
+/* Block type selector (when adding new blocks) */
+.block-type-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  padding: 8px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  min-width: 200px;
+}
+
+.block-type-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.block-type-item:hover {
+  background: #f3f4f6;
+}
+
+.block-type-icon {
+  margin-right: 12px;
+  width: 20px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.block-type-label {
+  font-size: 14px;
+  color: #374151;
+}
+
+/* Inline formatting toolbar */
+.inline-toolbar {
+  position: absolute;
+  display: none;
+  padding: 4px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  gap: 2px;
+}
+
+.inline-toolbar.active {
+  display: flex;
+}
+
+.inline-toolbar-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #6b7280;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.inline-toolbar-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.inline-toolbar-btn.active {
+  background: #3b82f6;
+  color: white;
+}
+
+/* Sidebar adjustments for full-width editor */
+.sidebar {
+  width: 280px;
+  min-width: 240px;
+  max-width: 360px;
+}
+
+/* Main area takes more space */
+.main-area {
+  flex: 1;
+  max-width: none;
+}
+
+/* When chat is open, adjust layout */
+.split-chat-open .main-area {
+  margin-right: var(--chat-width, 400px);
+}
+
+/* Responsive adjustments */
+@media (max-width: 1024px) {
+  .editor-content {
+    padding: 20px 40px;
+  }
+  
+  .block-controls {
+    right: 8px;
+  }
+}
+
+@media (max-width: 768px) {
+  .editor-content {
+    padding: 16px 20px;
+  }
+  
+  .sidebar {
+    display: none;
+  }
+  
+  .main-area {
+    margin-left: 0;
+  }
+}
+
+/* Smooth animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.notion-block.new {
+  animation: slideIn 0.2s ease;
+}
+
+/* Focus mode */
+.focus-mode .notion-block:not(.selected) {
+  opacity: 0.5;
+}
+
+.focus-mode .notion-block.selected {
+  opacity: 1;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .notion-block-content {
+    color: #e2e8f0;
+  }
+  
+  .notion-block:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+  
+  .block-controls {
+    background: #1e293b;
+    border-color: #334155;
+  }
+  
+  .notion-section {
+    background: #0f172a;
+    border-color: #1e293b;
+  }
+}

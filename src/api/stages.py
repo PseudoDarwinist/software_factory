@@ -2003,7 +2003,10 @@ def generate_work_orders_stream(spec_id):
                 'version': '1.0.0',
             }), 400
         
-        logger.info(f"Starting work order generation for spec {spec_id} in project {project_id}")
+        # Check if enhanced generation is requested
+        enhanced = data.get('enhanced', True)  # Default to enhanced generation
+        
+        logger.info(f"Starting work order generation for spec {spec_id} in project {project_id} (enhanced={enhanced})")
         
         # Import work order generation service
         try:
@@ -2025,7 +2028,7 @@ def generate_work_orders_stream(spec_id):
                 # Ensure we have an active Flask application context while streaming
                 with app_obj.app_context():
                     chunk_count = 0
-                    for chunk in work_order_service.generate_work_orders_stream(spec_id, project_id):
+                    for chunk in work_order_service.generate_work_orders_stream(spec_id, project_id, enhanced):
                         # Ensure chunk has a type for UI handling
                         if isinstance(chunk, dict) and 'type' not in chunk:
                             if 'error' in chunk:
@@ -2228,6 +2231,138 @@ def generate_work_order_implementation_plan(work_order_id):
             'error': 'Failed to generate implementation plan',
             'timestamp': datetime.utcnow().isoformat(),
             'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/work-orders/<work_order_id>/enhance-all-tabs', methods=['POST'])
+def enhance_work_order_all_tabs(work_order_id):
+    """Enhance work order with content for all four tabs (Description, Implementation, Blueprint, PRD)"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body must be JSON',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        spec_id = data.get('specId')
+        project_id = data.get('projectId')
+        
+        if not spec_id or not project_id:
+            return jsonify({
+                'success': False,
+                'error': 'Spec ID and Project ID are required',
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 400
+        
+        logger.info(f"Enhancing all tabs for work order {work_order_id}")
+        
+        # Import work order generation service
+        try:
+            from ..services.work_order_generation_service import WorkOrderGenerationService
+        except ImportError:
+            from services.work_order_generation_service import WorkOrderGenerationService
+        
+        work_order_service = WorkOrderGenerationService()
+        result = work_order_service.enhance_work_order_with_ai(work_order_id, spec_id, project_id)
+        
+        if result.get('success'):
+            return jsonify({
+                'success': True,
+                'data': {
+                    'all_tabs_populated': result.get('all_tabs_populated'),
+                    'status': result.get('status', 'enhanced')
+                },
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Failed to enhance work order'),
+                'timestamp': datetime.utcnow().isoformat(),
+                'version': '1.0.0',
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"Error enhancing all tabs for work order {work_order_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': 'Failed to enhance work order',
+            'timestamp': datetime.utcnow().isoformat(),
+            'version': '1.0.0',
+        }), 500
+
+
+@stages_bp.route('/api/work-orders/<work_order_id>', methods=['DELETE'])
+def delete_work_order(work_order_id):
+    """Delete a specific work order"""
+    try:
+        logger.info(f"Deleting work order: {work_order_id}")
+        
+        # Import Task model
+        try:
+            from ..models.task import Task
+            from ..models.base import db
+        except ImportError:
+            from models.task import Task
+            from models.base import db
+        
+        # Find the work order (task)
+        task = Task.query.get(work_order_id)
+        if not task:
+            logger.warning(f"Work order not found: {work_order_id}")
+            return jsonify({
+                'success': False,
+                'error': 'Work order not found',
+                'timestamp': datetime.utcnow().isoformat()
+            }), 404
+        
+        # Store info for response
+        task_title = task.title
+        spec_id = task.spec_id
+        project_id = task.project_id
+        
+        # Delete the task
+        db.session.delete(task)
+        db.session.commit()
+        
+        logger.info(f"Successfully deleted work order: {work_order_id} ({task_title})")
+        
+        # Broadcast deletion via WebSocket if available
+        try:
+            from ..services.websocket_server import get_websocket_server
+            websocket_server = get_websocket_server()
+            if websocket_server:
+                websocket_server.socketio.emit('work_order_deleted', {
+                    'work_order_id': work_order_id,
+                    'spec_id': spec_id,
+                    'project_id': project_id,
+                    'title': task_title,
+                    'timestamp': datetime.utcnow().isoformat()
+                })
+        except Exception as ws_error:
+            logger.warning(f"Failed to broadcast work order deletion: {ws_error}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Work order "{task_title}" deleted successfully',
+            'work_order_id': work_order_id,
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error deleting work order {work_order_id}: {e}")
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': f'Failed to delete work order: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat()
         }), 500
 
 @stages_bp.route('/api/debug/frozen-specs', methods=['GET'])

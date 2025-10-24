@@ -340,15 +340,18 @@ class ModelGardenIntegration:
     
     def __init__(self):
         self.api_url = os.environ.get('MODEL_GARDEN_API_URL', 
-                                     'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions')
+                                     'https://quasarmarket.coforge.com/qag/llmrouter-api/v2/chat/completions')
         self.api_key = os.environ.get('MODEL_GARDEN_API_KEY', 
                                      '4b7103fd-77b1-4db6-9ab7-a88e92a0e835')
+        if self.api_key:
+            self.api_key = self.api_key.strip()
         
         # Available models mapping
         self.available_models = {
             'claude-opus-4': 'Claude Opus 4',
-            'claude-sonnet-3.5': 'Claude Sonnet 3.5',
-            'gemini-2.5-flash': 'Gemini 2.5 Flash',
+            'claude-sonnet-4': 'Claude Sonnet 4',
+            'claude-sonnet-3-5': 'Claude Sonnet 3.5',
+            'gemini-2-5-flash': 'Gemini 2.5 Flash',
             'gpt-4o': 'GPT-4o'
         }
     
@@ -369,20 +372,55 @@ class ModelGardenIntegration:
             
             # Prepare API request
             headers = {
+                "Accept": "application/json",
                 "Content-Type": "application/json",
                 "X-API-KEY": self.api_key
             }
             
+            # Optimize token limits based on model and environment config
+            max_output_tokens = int(os.environ.get('CLAUDE_CODE_MAX_OUTPUT_TOKENS', 4096))
+            if model == 'claude-opus-4':
+                max_tokens = max_output_tokens  # Use environment config
+                temperature = 0.3  # Lower for more focused output
+            else:
+                max_tokens = 2000
+                temperature = 0.7
+                
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": enhanced_instruction}],
-                "temperature": 0.7,
+                "temperature": temperature,
                 "top_p": 0.9,
-                "max_tokens": 2000
+                "max_tokens": max_tokens
             }
             
-            # Make API request
-            response = requests.post(self.api_url, headers=headers, json=payload, timeout=60)
+            # Configure session with SSL and connection settings
+            session = requests.Session()
+            session.headers.update(headers)
+            
+            # SSL and connection configuration
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            
+            # Configure retry strategy for SSL issues
+            retry_strategy = Retry(
+                total=3,
+                backoff_factor=1,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["POST"]
+            )
+            
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
+            
+            # Make API request with configurable timeout for thinking models
+            opus_timeout = int(os.environ.get('CLAUDE_OPUS_TIMEOUT_SECONDS', 300))
+            default_timeout = int(os.environ.get('DEFAULT_MODEL_TIMEOUT_SECONDS', 120))
+            timeout_seconds = opus_timeout if model in ['claude-opus-4', 'claude-sonnet-3-5'] else default_timeout
+            
+            logger.info(f"Using {timeout_seconds}s timeout for model {model}")
+            response = session.post(self.api_url, json=payload, timeout=timeout_seconds)
             response.raise_for_status()
             
             result = response.json()
@@ -410,6 +448,125 @@ class ModelGardenIntegration:
                 'success': False,
                 'error': str(e),
                 'output': '',
+                'provider': 'model-garden'
+            }
+    
+    def execute_task_with_tools(self, instruction: str, tools: list, tool_choice: dict, product_context: Dict = None, model: str = 'claude-opus-4', role: str = 'po') -> Dict[str, Any]:
+        """Execute AI task using Model Garden with Anthropic tool-use for structured output"""
+        try:
+            if not instruction:
+                raise AIServiceError('No instruction provided')
+            
+            # Enhance instruction with role and context
+            enhanced_instruction = self._enhance_instruction(instruction, product_context, role)
+            
+            # Prepare API request with tools
+            headers = {
+                "Content-Type": "application/json",
+                "X-API-KEY": self.api_key
+            }
+            
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": enhanced_instruction}],
+                "tools": tools,
+                "tool_choice": tool_choice,
+                "temperature": 0.3,  # Lower temperature for structured output
+                "top_p": 0.9,
+                "max_tokens": 2000
+            }
+            
+            # Configure session with SSL and connection settings
+            session = requests.Session()
+            session.headers.update(headers)
+            
+            # SSL and connection configuration
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            
+            # Configure retry strategy for SSL issues
+            retry_strategy = Retry(
+                total=3,
+                backoff_factor=1,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["POST"]
+            )
+            
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
+            
+            # Make API request with configurable timeout for thinking models
+            opus_timeout = int(os.environ.get('CLAUDE_OPUS_TIMEOUT_SECONDS', 300))
+            default_timeout = int(os.environ.get('DEFAULT_MODEL_TIMEOUT_SECONDS', 120))
+            timeout_seconds = opus_timeout if model in ['claude-opus-4', 'claude-sonnet-3-5'] else default_timeout
+            
+            logger.info(f"Using {timeout_seconds}s timeout for model {model} with tools")
+            response = session.post(self.api_url, json=payload, timeout=timeout_seconds)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            # Debug: Log the full response to understand the format
+            logger.info(f"Tool-use API response: {json.dumps(result, indent=2)}")
+            
+            # Extract tool use result from response
+            message = result['choices'][0]['message']
+            logger.info(f"Message content: {json.dumps(message, indent=2)}")
+            
+            if 'tool_calls' in message and message['tool_calls']:
+                # Anthropic tool-use format
+                tool_call = message['tool_calls'][0]
+                tool_result = json.loads(tool_call['function']['arguments'])
+                
+                return {
+                    'success': True,
+                    'tool_result': tool_result,
+                    'model': self.available_models.get(model, model),
+                    'provider': 'model-garden',
+                    'enhanced_instruction': enhanced_instruction
+                }
+            else:
+                # Check if it's a regular text response and try to extract JSON
+                content = message.get('content', '')
+                logger.warning(f"No tool calls found. Message content: {content}")
+                
+                # Try to parse the content as JSON (fallback for non-tool-use models)
+                try:
+                    if content.strip().startswith('{') and content.strip().endswith('}'):
+                        tool_result = json.loads(content.strip())
+                        return {
+                            'success': True,
+                            'tool_result': tool_result,
+                            'model': self.available_models.get(model, model),
+                            'provider': 'model-garden',
+                            'enhanced_instruction': enhanced_instruction
+                        }
+                except json.JSONDecodeError:
+                    pass
+                
+                # Fallback if no tool calls
+                return {
+                    'success': False,
+                    'error': f'No tool calls in response. Content: {content}',
+                    'tool_result': None,
+                    'provider': 'model-garden'
+                }
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Model Garden API error with tools: {e}")
+            return {
+                'success': False,
+                'error': f'Model Garden API error: {str(e)}',
+                'tool_result': None,
+                'provider': 'model-garden'
+            }
+        except Exception as e:
+            logger.error(f"Model Garden tool execution failed: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'tool_result': None,
                 'provider': 'model-garden'
             }
     
@@ -456,7 +613,7 @@ Please consider the product context above when providing your response."""
         """Check if Model Garden is available"""
         try:
             # Simple health check
-            headers = {"X-API-KEY": self.api_key}
+            headers = {"Accept": "application/json", "X-API-KEY": self.api_key}
             response = requests.get(self.api_url.replace('/chat/completions', '/health'), 
                                   headers=headers, timeout=5)
             return response.status_code == 200
@@ -498,6 +655,16 @@ Please respond as a {role} expert, providing practical, actionable insights rele
     
     def execute_model_garden_task(self, instruction: str, product_context: Dict = None, model: str = 'claude-opus-4', role: str = 'po') -> Dict[str, Any]:
         """Execute task using Model Garden with vector context"""
+        # Normalize model IDs to router-supported forms
+        model_aliases = {
+            'claude-sonnet-3.5': 'claude-sonnet-3-5',
+            'gemini-2.5-flash': 'gemini-2-5-flash'
+        }
+        normalized_model = model_aliases.get(model, model)
+        if normalized_model != model:
+            self.logger.info(f"Normalizing model id '{model}' -> '{normalized_model}'")
+            model = normalized_model
+        
         self.logger.info(f"Executing Model Garden task with model: {model}, role: {role}")
         
         # Check if this is a DefineAgent prompt that should be passed through unchanged
@@ -518,6 +685,31 @@ Please respond as a {role} expert, providing practical, actionable insights rele
             enhanced_instruction = instruction
         
         return self.model_garden.execute_task(enhanced_instruction, product_context, model, role)
+    
+    def execute_model_garden_task_with_tools(self, instruction: str, tools: list, tool_choice: dict, product_context: Dict = None, model: str = 'claude-opus-4', role: str = 'po') -> Dict[str, Any]:
+        """Execute task using Model Garden with Anthropic tool-use for structured output"""
+        # Normalize model IDs to router-supported forms
+        model_aliases = {
+            'claude-sonnet-3.5': 'claude-sonnet-3-5',
+            'gemini-2.5-flash': 'gemini-2-5-flash'
+        }
+        normalized_model = model_aliases.get(model, model)
+        if normalized_model != model:
+            self.logger.info(f"Normalizing model id '{model}' -> '{normalized_model}' (tools)")
+            model = normalized_model
+        
+        self.logger.info(f"Executing Model Garden task with tools - model: {model}, role: {role}")
+        
+        # Get relevant context from vector database
+        vector_context = self._get_vector_context(instruction, role)
+        
+        # Add vector context to instruction
+        if vector_context:
+            enhanced_instruction = f"{vector_context}{instruction}"
+        else:
+            enhanced_instruction = instruction
+        
+        return self.model_garden.execute_task_with_tools(enhanced_instruction, tools, tool_choice, product_context, model, role)
     
     def _get_vector_context(self, instruction: str, role: str = None) -> str:
         """Get relevant context from vector database for AI model calls"""

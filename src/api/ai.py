@@ -73,7 +73,7 @@ def goose_execute():
                 'success': True,
                 'output': response_content,
                 'provider': 'goose',
-                'model': 'gemini-2.5-flash'
+                    'model': 'gemini-2-5-flash'
             })
         except Exception as e:
             logger.error(f"Goose execution failed: {e}")
@@ -83,8 +83,9 @@ def goose_execute():
                 import requests
                 import json
                 
-                model_garden_url = 'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions'
-                api_key = '4b7103fd-77b1-4db6-9ab7-a88e92a0e835'
+                import os
+                model_garden_url = os.getenv('MODEL_GARDEN_API_URL', 'https://quasarmarket.coforge.com/qag/llmrouter-api/v2/chat/completions')
+                api_key = os.getenv('MODEL_GARDEN_API_KEY', '4b221bdc-4ea5-4ac0-a676-2558e86b2d61')
                 
                 payload = {
                     "model": "claude-opus-4",
@@ -100,7 +101,7 @@ def goose_execute():
                 
                 headers = {
                     'Content-Type': 'application/json',
-                    'Authorization': f'Bearer {api_key}'
+                    'X-API-KEY': api_key
                 }
                 
                 resp = requests.post(model_garden_url, headers=headers, json=payload, timeout=60)
@@ -137,7 +138,7 @@ def goose_execute():
 
 @ai_bp.route('/api/model-garden/execute', methods=['POST'])
 def model_garden_execute():
-    """Model Garden execution endpoint for frontend compatibility - Direct API calls only"""
+    """Model Garden execution endpoint for frontend compatibility - Supports comprehensive conversation"""
     try:
         data = request.get_json()
         if not data:
@@ -156,13 +157,29 @@ def model_garden_execute():
                 'error': 'No prompt or instruction provided'
             }), 400
 
-        # Call the actual Model Garden API directly for speed
+        # Check if this is a document creation request that needs comprehensive conversation
+        prompt_lower = prompt.lower()
+        is_creation_request = any(keyword in prompt_lower for keyword in [
+            'create prd', 'build prd', 'generate prd', 'new prd',
+            'create trd', 'build trd', 'generate trd', 'new trd',
+            'create product requirements', 'build product requirements',
+            'create technical requirements', 'build technical requirements',
+            'build system', 'create system', 'develop application',
+            'build app', 'create app', 'new project', 'new system'
+        ])
+        
+        if is_creation_request:
+            # Handle comprehensive conversation flow
+            return handle_comprehensive_conversation(prompt, model)
+        
+        # Call the actual Model Garden API directly for regular requests
         try:
             import requests
             import json
             
-            model_garden_url = 'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions'
-            api_key = '4b7103fd-77b1-4db6-9ab7-a88e92a0e835'
+            import os
+            model_garden_url = os.getenv('MODEL_GARDEN_API_URL', 'https://quasarmarket.coforge.com/qag/llmrouter-api/v2/chat/completions')
+            api_key = os.getenv('MODEL_GARDEN_API_KEY', '4b221bdc-4ea5-4ac0-a676-2558e86b2d61')
             
             payload = {
                 "model": model,
@@ -178,7 +195,7 @@ def model_garden_execute():
             
             headers = {
                 'Content-Type': 'application/json',
-                'Authorization': f'Bearer {api_key}'
+                'X-API-KEY': api_key
             }
             
             logger.info(f"Making direct Model Garden API call with model: {model}")
@@ -213,6 +230,102 @@ def model_garden_execute():
         return jsonify({
             'success': False,
             'error': 'Internal server error'
+        }), 500
+
+
+def handle_comprehensive_conversation(prompt, model):
+    """Handle comprehensive conversation flow for PRD/TRD creation"""
+    try:
+        # Detect project type
+        prompt_lower = prompt.lower()
+        
+        if 'ai' in prompt_lower or 'machine learning' in prompt_lower or 'ml' in prompt_lower:
+            project_type = 'AI/ML System'
+        elif 'api' in prompt_lower or 'backend' in prompt_lower or 'service' in prompt_lower:
+            project_type = 'Backend Service'
+        elif 'web' in prompt_lower or 'frontend' in prompt_lower or 'ui' in prompt_lower:
+            project_type = 'Web Application'
+        elif 'mobile' in prompt_lower or 'app' in prompt_lower:
+            project_type = 'Mobile Application'
+        elif 'platform' in prompt_lower or 'infrastructure' in prompt_lower:
+            project_type = 'Platform/Infrastructure'
+        elif 'analytics' in prompt_lower or 'dashboard' in prompt_lower or 'reporting' in prompt_lower:
+            project_type = 'Analytics Platform'
+        else:
+            project_type = 'Software System'
+        
+        # Generate the first comprehensive question
+        questions = {
+            'AI/ML System': f"""What specific AI/ML problem are you trying to solve? Please describe:
+      
+1. What type of data will you be working with?
+2. What kind of predictions or insights do you want to generate?
+3. Who will be using this system and how?
+4. What's the current manual process you're trying to automate or improve?""",
+            
+            'Backend Service': f"""Let me understand your backend service requirements:
+      
+1. What specific business problem does this service solve?
+2. What are the main operations/functions it needs to perform?
+3. What other systems or services will it integrate with?
+4. What's your expected scale (users, requests per second, data volume)?""",
+            
+            'Web Application': f"""I need to understand your web application vision:
+      
+1. What's the main purpose and value proposition of this application?
+2. Who are your target users (roles, technical level, use cases)?
+3. What are the core workflows users will follow?
+4. Do you have any existing systems this needs to integrate with?""",
+            
+            'Mobile Application': f"""Tell me about your mobile application concept:
+      
+1. What problem does this app solve for users?
+2. Is this iOS, Android, or cross-platform?
+3. What are the main user journeys and features?
+4. Will it need backend services or work offline?""",
+            
+            'Platform/Infrastructure': f"""Help me understand your platform requirements:
+      
+1. What services or capabilities will this platform provide?
+2. Who are the internal/external users of this platform?
+3. What's the current infrastructure landscape you're working with?
+4. What are your scalability and reliability requirements?""",
+            
+            'Analytics Platform': f"""Let's define your analytics platform:
+      
+1. What data sources will you be analyzing?
+2. What types of insights or reports do stakeholders need?
+3. Who will be the primary users (analysts, executives, engineers)?
+4. What's your data volume and real-time requirements?""",
+            
+            'Software System': f"""Let me understand what you want to build:
+      
+1. What's the main business problem this system will solve?
+2. Who will use this system and how?
+3. What are the key functions or capabilities needed?
+4. Are there any existing systems or constraints I should know about?"""
+        }
+        
+        first_question = questions.get(project_type, questions['Software System'])
+        
+        response_message = f"I'll help you create a comprehensive {project_type} specification. Let me ask you some detailed questions to ensure we build exactly what you need.\n\n{first_question}"
+        
+        return jsonify({
+            'success': True,
+            'output': response_message,
+            'conversation_data': {
+                'stage': 'gathering',
+                'project_type': project_type,
+                'current_topic': 'overview'
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in comprehensive conversation handler: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'output': ''
         }), 500
 
 
@@ -623,7 +736,7 @@ def list_available_models():
         
         # Add Goose model info
         goose_info = {
-            'gemini-2.5-flash': 'Gemini 2.5 Flash (via Goose)'
+            'gemini-2-5-flash': 'Gemini 2.5 Flash (via Goose)'
         }
         
         return jsonify({

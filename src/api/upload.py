@@ -110,8 +110,9 @@ def create_session():
         project_id = data['project_id']
         description = data.get('description', '')
         feed_item_id = data.get('feed_item_id')  # NEW: Optional idea linking
-        print(f"🔍 [DEBUG] Received data: {data}")
-        print(f"🔍 [DEBUG] feed_item_id from request: {feed_item_id}")
+        print(f"🔍 [CREATE_SESSION] Received data: {data}")
+        print(f"🔍 [CREATE_SESSION] feed_item_id from request: {feed_item_id}")
+        print(f"🔍 [CREATE_SESSION] project_id: {project_id}, description: {description}")
         
         # Verify project exists
         project = MissionControlProject.query.get(project_id)
@@ -126,10 +127,11 @@ def create_session():
         
         # Store feed_item_id in session metadata if provided
         if feed_item_id:
-            session.metadata = session.metadata or {}
-            session.metadata['feed_item_id'] = feed_item_id
+            session.session_metadata = session.session_metadata or {}
+            session.session_metadata['feed_item_id'] = feed_item_id
             current_app.logger.info(f"Linked upload session {session.id} to idea {feed_item_id}")
             print(f"🔗 [LINK] Session {session.id} linked to idea {feed_item_id}")
+            print(f"🔗 [LINK] Session metadata: {session.session_metadata}")
         else:
             print(f"⚠️ [LINK] No feed_item_id provided for session {session.id}")
         
@@ -256,8 +258,8 @@ def update_ai_analysis(session_id):
         
         # Enhance idea summary if this session is linked to a specific idea
         try:
-            if hasattr(session, 'metadata') and session.metadata and 'feed_item_id' in session.metadata:
-                feed_item_id = session.metadata['feed_item_id']
+            if hasattr(session, 'session_metadata') and session.session_metadata and 'feed_item_id' in session.session_metadata:
+                feed_item_id = session.session_metadata['feed_item_id']
                 from ..services.idea_enhancement import enhance_idea_summary
                 enhance_idea_summary(feed_item_id)
                 current_app.logger.info(f"Enhanced summary for idea {feed_item_id}")
@@ -706,7 +708,16 @@ def get_project_sessions(project_id):
                 'created_at': session.created_at.isoformat(),
                 'updated_at': session.updated_at.isoformat()
             }
+            
+            # Add feed_item_id from metadata if available
+            if session.session_metadata and 'feed_item_id' in session.session_metadata:
+                session_info['feed_item_id'] = session.session_metadata['feed_item_id']
+                print(f"🔍 [GET_SESSIONS] Session {session.id[:8]} has feed_item_id: {session.session_metadata['feed_item_id']}")
+            else:
+                print(f"🔍 [GET_SESSIONS] Session {session.id[:8]} has no feed_item_id (metadata: {session.session_metadata})")
             session_list.append(session_info)
+        
+        print(f"🔍 [GET_SESSIONS] Returning {len(session_list)} sessions for project {project_id}")
         
         current_app.logger.info(f"Retrieved {len(session_list)} sessions for project {project_id}")
         
@@ -1012,21 +1023,24 @@ def generate_prd_deep_link(session_id):
         
         # Create deep link URL
         base_url = request.host_url.rstrip('/')
-        deep_link_url = f"{base_url}/po.html?projectId={session.project_id}&prdId={latest_prd.id}&version={latest_prd.version}&from=mission&token={token}"
+        # Route deep links to the new full-screen PRD editor
+        deep_link_url = f"{base_url}/intelligent-prd-editor.html?projectId={session.project_id}&prdId={latest_prd.id}&version={latest_prd.version}&from=mission&token={token}"
         
         current_app.logger.info(f"Generated PRD deep link for session {session_id}")
         
         return jsonify({
             'success': True,
             'data': {
-                'deep_link_url': deep_link_url,
-                'token': token,
-                'expires_at': (datetime.utcnow() + timedelta(minutes=15)).isoformat(),
-                'prd_info': {
-                    'id': str(latest_prd.id),
-                    'version': latest_prd.version,
-                    'status': latest_prd.status,
-                    'created_at': latest_prd.created_at.isoformat()
+                'data': {
+                    'deep_link_url': deep_link_url,
+                    'token': token,
+                    'expires_at': (datetime.utcnow() + timedelta(minutes=15)).isoformat(),
+                    'prd_info': {
+                        'id': str(latest_prd.id),
+                        'version': latest_prd.version,
+                        'status': latest_prd.status,
+                        'created_at': latest_prd.created_at.isoformat()
+                    }
                 }
             },
             'timestamp': datetime.utcnow().isoformat(),
@@ -1272,19 +1286,13 @@ def freeze_prd(prd_id):
         }
         
         # Store audit trail in session metadata (simple approach)
-        if not hasattr(session, 'metadata') or not session.metadata:
-            session.metadata = '{}'
+        if not hasattr(session, 'session_metadata') or not session.session_metadata:
+            session.session_metadata = {}
         
-        try:
-            metadata = json.loads(session.metadata) if session.metadata else {}
-        except (json.JSONDecodeError, TypeError):
-            metadata = {}
+        if 'audit_trail' not in session.session_metadata:
+            session.session_metadata['audit_trail'] = []
         
-        if 'audit_trail' not in metadata:
-            metadata['audit_trail'] = []
-        
-        metadata['audit_trail'].append(audit_entry)
-        session.metadata = json.dumps(metadata)
+        session.session_metadata['audit_trail'].append(audit_entry)
         db.session.commit()
         
         # Trigger webhook event for Po.html integration
@@ -1392,7 +1400,16 @@ def analyze_session_files(session_id):
         
         # Get preferred model from request data
         data = request.get_json() or {}
-        preferred_model = data.get('preferred_model', 'claude-opus-4')
+        # Default to Claude Opus; then normalize known aliases to router-supported IDs
+        preferred_model_raw = data.get('preferred_model', 'claude-opus-4')
+        alias_map = {
+            # Normalize dotted variants to router-supported hyphenated IDs
+            'claude-sonnet-3.5': 'claude-sonnet-3-5',
+            'gemini-2.5-flash': 'gemini-2-5-flash'
+        }
+        preferred_model = alias_map.get(preferred_model_raw, preferred_model_raw)
+        if preferred_model != preferred_model_raw:
+            current_app.logger.info(f"Normalized preferred model '{preferred_model_raw}' to '{preferred_model}' for router compatibility")
         
         # Analyze files
         print(f"🤖 [ANALYZE] Calling AI broker for {session_id} with {len(file_data)} files using {preferred_model}")
@@ -1417,9 +1434,9 @@ def analyze_session_files(session_id):
             
             # Generate structured PRD summary using the PRD model
             try:
-                from ..models.prd import extract_prd_summary, PRD
+                from ..models.prd import extract_prd_summary, PRD, _parse_ai_json, extract_summary_from_markdown
             except ImportError:
-                from models.prd import extract_prd_summary, PRD
+                from models.prd import extract_prd_summary, PRD, _parse_ai_json, extract_summary_from_markdown
             
             # Extract source IDs from files for attribution
             source_ids = [f.source_id for f in files if f.source_id]
@@ -1430,34 +1447,74 @@ def analyze_session_files(session_id):
                 current_app.logger.info(f"PRD summary generated successfully for session {session_id}")
             except Exception as summary_error:
                 current_app.logger.error(f"Failed to generate PRD summary: {summary_error}")
-                # Create a fallback summary that shows the analysis was completed
-                # but structured parsing failed - this still allows the user to see the full analysis
-                prd_summary = {
-                    'problem': {'text': 'Analysis completed but summary extraction failed - see full PRD for details', 'sources': source_ids},
-                    'audience': {'text': 'Target audience information available in full analysis', 'sources': source_ids},
-                    'goals': {'items': ['Goals available in full analysis document'], 'sources': source_ids},
-                    'risks': {'items': ['Risk analysis available in full document'], 'sources': source_ids},
-                    'competitive_scan': {'items': ['Competitive insights available in full analysis'], 'sources': source_ids},
-                    'open_questions': {'items': ['Questions and next steps available in full document'], 'sources': source_ids}
-                }
+                # Attempt heuristic markdown-based summary
+                try:
+                    prd_summary = extract_summary_from_markdown(analysis_result['analysis'], source_ids)
+                    current_app.logger.info("Generated markdown-based PRD summary as fallback")
+                except Exception:
+                    # Final basic fallback
+                    prd_summary = {
+                        'problem': {'text': 'Analysis completed but summary extraction failed - see full PRD for details', 'sources': source_ids},
+                        'audience': {'text': 'Target audience information available in full analysis', 'sources': source_ids},
+                        'goals': {'items': ['Goals available in full analysis document'], 'sources': source_ids},
+                        'risks': {'items': ['Risk analysis available in full document'], 'sources': source_ids},
+                        'competitive_scan': {'items': ['Competitive insights available in full analysis'], 'sources': source_ids},
+                        'open_questions': {'items': ['Questions and next steps available in full document'], 'sources': source_ids}
+                    }
             
             # Create PRD record in database
             try:
                 current_app.logger.info(f"Creating PRD record for session {session_id}, project {session.project_id}")
                 
+                # Extract the full PRD markdown content from the JSON response
+                prd_markdown_content = analysis_result['analysis']  # Default fallback
+                try:
+                    # Try robust JSON parsing and extract full_prd if present
+                    if isinstance(analysis_result['analysis'], str):
+                        json_data = _parse_ai_json(analysis_result['analysis'])
+                        if 'full_prd' in json_data and json_data['full_prd']:
+                            prd_markdown_content = json_data['full_prd']
+                            # Convert escaped newlines to actual newlines
+                            prd_markdown_content = prd_markdown_content.replace('\\n', '\n')
+                            current_app.logger.info(
+                                f"Extracted and processed full_prd markdown content ({len(prd_markdown_content)} chars)"
+                            )
+                        else:
+                            current_app.logger.warning("No full_prd field found in JSON response, using raw analysis")
+                except Exception as e:
+                    current_app.logger.warning(f"Could not extract full_prd from JSON: {e}, using raw analysis")
+                    # Keep the original analysis_result['analysis'] as fallback
+
+                # If PRD content is missing/too small, fall back to comprehensive template with placeholders
+                try:
+                    minimal_len = 800
+                    if not prd_markdown_content or len(prd_markdown_content) < minimal_len:
+                        template_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'templates', 'comprehensive_prd_template.md')
+                        template_path = os.path.normpath(template_path)
+                        if os.path.exists(template_path):
+                            with open(template_path, 'r', encoding='utf-8') as tf:
+                                template_md = tf.read()
+                            if template_md:
+                                current_app.logger.info("Using comprehensive_prd_template.md as content fallback")
+                                prd_markdown_content = template_md
+                        else:
+                            current_app.logger.warning("comprehensive_prd_template.md not found; retaining raw analysis")
+                except Exception as tpl_err:
+                    current_app.logger.warning(f"Template fallback failed: {tpl_err}")
+                
                 # Ensure we're in the Flask app context
                 with current_app.app_context():
                     # Get feed_item_id from session metadata if available
                     feed_item_id = None
-                    if session.metadata and 'feed_item_id' in session.metadata:
-                        feed_item_id = session.metadata['feed_item_id']
+                    if session.session_metadata and 'feed_item_id' in session.session_metadata:
+                        feed_item_id = session.session_metadata['feed_item_id']
                         current_app.logger.info(f"Creating idea-specific PRD for feed_item {feed_item_id}")
                     
                     prd_record = PRD.create_draft(
                         project_id=str(session.project_id),  # Ensure string conversion
                         draft_id=str(session.id),
                         feed_item_id=feed_item_id,  # NEW: Link to specific idea
-                        md_content=analysis_result['analysis'],  # Store full markdown content
+                        md_content=prd_markdown_content,  # Store extracted full PRD markdown content
                         json_summary=prd_summary,  # Store structured JSON summary
                         sources=source_ids,  # Link to source files for traceability
                         source_files=[{'filename': f.filename, 'id': str(f.id)} for f in session.files],  # NEW: Detailed file metadata

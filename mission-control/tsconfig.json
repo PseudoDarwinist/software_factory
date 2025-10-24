@@ -26,7 +26,8 @@
       "@/stores/*": ["src/stores/*"],
       "@/styles/*": ["src/styles/*"],
       "@/utils/*": ["src/utils/*"],
-      "@/types/*": ["src/types/*"]
+      "@/types/*": ["src/types/*"],
+      "@/lib/*": ["src/lib/*"]
     }
   },
   "include": ["src/**/*", "server/**/*"],

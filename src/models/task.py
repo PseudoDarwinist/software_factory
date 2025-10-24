@@ -138,6 +138,14 @@ class Task(db.Model):
     approved_at = db.Column(db.DateTime)  # When enhancement was approved
     approved_by = db.Column(db.String(100))  # Who approved the enhancement
     
+    # Work order tab content fields
+    description_content = db.Column(JSON)  # Purpose, requirements, out_of_scope sections
+    blueprint_content = db.Column(JSON)  # Relevant specs sections and task context
+    prd_content = db.Column(JSON)  # Related PRD sections and business context
+    
+    # Idea association
+    related_idea = db.Column(db.String(200))  # Name/title of the related idea from Define stage
+    
     # Indexes
     __table_args__ = (
         db.Index('idx_spec_project', 'spec_id', 'project_id'),
@@ -195,7 +203,13 @@ class Task(db.Model):
             'error': self.error,
             'userFriendlyError': self.get_user_friendly_error(),
             'latestProgressMessage': self.get_latest_progress_message(),
-            'progressPercent': self.get_progress_percent()
+            'progressPercent': self.get_progress_percent(),
+            # Work order tab content fields
+            'description_content': self.description_content,
+            'blueprint_content': self.blueprint_content,
+            'prd_content': self.prd_content,
+            # Idea association
+            'related_idea': self.related_idea
         }
     
     @classmethod

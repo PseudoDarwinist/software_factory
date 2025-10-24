@@ -1,0 +1,67 @@
+%% Software Factory — System Architecture (Minimalist)
+%% "Jony Ive on acid" — clean, high‑contrast, layered
+
+flowchart TB
+  classDef ext fill:#0e1116,stroke:#3b82f6,color:#cbd5e1,stroke-width:1.5px
+  classDef ui fill:#0b1220,stroke:#22d3ee,color:#e2e8f0,stroke-width:1.5px
+  classDef gw fill:#0d1321,stroke:#a78bfa,color:#f1f5f9,stroke-width:1.5px
+  classDef svc fill:#0f172a,stroke:#34d399,color:#e2e8f0,stroke-width:1.5px
+  classDef data fill:#111827,stroke:#f59e0b,color:#e5e7eb,stroke-width:1.5px
+  classDef note fill:#111827,stroke:#64748b,color:#cbd5e1,stroke-dasharray: 4 2
+
+  subgraph Ext[External Systems]
+    Slack[[Slack]]:::ext
+    GitHub[[GitHub]]:::ext
+    MCP[[MCP Clients]]:::ext
+  end
+
+  subgraph UI[Mission Control] 
+    FE[React SPA]:::ui
+    FEWS[(Socket.IO Client)]:::ui
+  end
+
+  subgraph GW[Gateway]
+    API[Flask REST Blueprints]:::gw
+    WS[(Socket.IO Server)]:::gw
+    AUTH[JWT Auth Service]:::gw
+  end
+
+  subgraph SVC[Core Services]
+    EB[(Event Bus\nRedis Pub/Sub)]:::svc
+    BG[Background Jobs]:::svc
+    AIB[AI Broker\nModel Selection + Queue]:::svc
+    VEC[Vector Service\nEmbeddings + Search]:::svc
+    WH[Webhook Service]:::svc
+  end
+
+  subgraph DATA[Data]
+    PG[(PostgreSQL)]:::data
+    RED[(Redis Cache)]:::data
+  end
+
+  Slack -- webhooks --> WH
+  GitHub -- webhooks --> WH
+  MCP -- tools --> API
+
+  FE -- https --> API
+  FEWS <-- events --> WS
+
+  API <--> AUTH
+  API <--> EB
+  API <--> BG
+  API <--> AIB
+  API <--> VEC
+  WS  <--> EB
+
+  EB <--> RED
+  API <--> PG
+  BG  <--> PG
+  AIB <--> PG
+  VEC <--> PG
+
+  note1[/Spec Artifacts\n(Requirements/Design/Tasks)/]:::note
+  note2[/Tasks & Runs\n(Plan/Build/Validate)/]:::note
+
+  AIB --> note1
+  API --> note2
+

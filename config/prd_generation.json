@@ -1,0 +1,110 @@
+{
+  "stages": {
+    "product_spec": {
+      "stage": "product_spec",
+      "enabled": true,
+      "max_tokens": 4000,
+      "timeout_seconds": 300.0,
+      "retry_attempts": 3,
+      "model_preference": "quality",
+      "preferred_models": [
+        "claude-opus-4",
+        "claude-sonnet-3.5"
+      ],
+      "excluded_models": [],
+      "dependencies": [],
+      "fallback_enabled": true,
+      "quality_threshold": 0.7,
+      "metadata": {
+        "description": "Generate product specification sections",
+        "priority": "high",
+        "estimated_duration": "2-3 minutes"
+      }
+    },
+    "technical_spec": {
+      "stage": "technical_spec",
+      "enabled": true,
+      "max_tokens": 4000,
+      "timeout_seconds": 300.0,
+      "retry_attempts": 3,
+      "model_preference": "quality",
+      "preferred_models": [
+        "claude-opus-4",
+        "claude-sonnet-3.5"
+      ],
+      "excluded_models": [],
+      "dependencies": [
+        "product_spec"
+      ],
+      "fallback_enabled": true,
+      "quality_threshold": 0.7,
+      "metadata": {
+        "description": "Generate technical specification sections",
+        "priority": "high",
+        "estimated_duration": "2-3 minutes"
+      }
+    },
+    "diagrams": {
+      "stage": "diagrams",
+      "enabled": true,
+      "max_tokens": 3000,
+      "timeout_seconds": 240.0,
+      "retry_attempts": 3,
+      "model_preference": "balanced",
+      "preferred_models": [
+        "claude-sonnet-3.5",
+        "gpt-4o"
+      ],
+      "excluded_models": [],
+      "dependencies": [
+        "technical_spec"
+      ],
+      "fallback_enabled": true,
+      "quality_threshold": 0.7,
+      "metadata": {
+        "description": "Generate Mermaid diagrams for technical sections",
+        "priority": "medium",
+        "estimated_duration": "1-2 minutes"
+      }
+    },
+    "implementation_plan": {
+      "stage": "implementation_plan",
+      "enabled": true,
+      "max_tokens": 4000,
+      "timeout_seconds": 300.0,
+      "retry_attempts": 3,
+      "model_preference": "balanced",
+      "preferred_models": [
+        "claude-sonnet-3.5",
+        "gpt-4o"
+      ],
+      "excluded_models": [],
+      "dependencies": [
+        "technical_spec",
+        "diagrams"
+      ],
+      "fallback_enabled": true,
+      "quality_threshold": 0.7,
+      "metadata": {
+        "description": "Generate implementation plan and file structure",
+        "priority": "medium",
+        "estimated_duration": "2-3 minutes"
+      }
+    }
+  },
+  "max_concurrent_stages": 2,
+  "global_timeout_seconds": 1800.0,
+  "fallback_enabled": true,
+  "quality_validation_enabled": true,
+  "template_name": "comprehensive_prd_template",
+  "template_validation_enabled": true,
+  "include_metadata": true,
+  "include_generation_comments": true,
+  "output_format": "markdown",
+  "continue_on_stage_failure": true,
+  "max_stage_failures": 2,
+  "enable_caching": true,
+  "cache_duration_hours": 24,
+  "enable_metrics": true,
+  "log_level": "INFO"
+}

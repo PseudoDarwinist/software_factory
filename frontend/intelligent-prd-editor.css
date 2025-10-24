@@ -1,0 +1,94 @@
+:root{
+  --bg:#0A0E12;--panel:rgba(12,17,25,.72);--stroke:rgba(255,255,255,.08);
+  --text:#EAF2FF;--text-dim:#8EA3B5;--accent:#15F1CC;--accent-amber:#FFD84D
+}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
+  font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+.editor-shell{position:relative;min-height:100%;display:grid;grid-template-rows:auto 1fr}
+.topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;padding:16px 24px;background:linear-gradient(180deg,rgba(10,14,18,.9),rgba(10,14,18,.6));border-bottom:1px solid var(--stroke);backdrop-filter:blur(10px)}
+.container{height:100%;display:grid;grid-template-columns:1fr}
+.editor-pane{max-width:920px;margin:32px auto 120px;padding:24px 28px;background:var(--panel);border:1px solid var(--stroke);border-radius:20px;box-shadow:0 0 0 1px rgba(255,255,255,.04),0 24px 64px rgba(0,0,0,.35)}
+.editorjs{min-height:60vh}
+/* Block hover controls */
+.prd-block{position:relative;border-radius:14px}
+.prd-controls{position:absolute;inset:auto 8px -14px auto;display:flex;gap:6px;opacity:0;transition:opacity .15s ease}
+.prd-block:hover .prd-controls{opacity:1}
+.prd-ctrl{border:1px solid var(--stroke);background:rgba(255,255,255,.05);color:var(--text);border-radius:10px;padding:4px 8px;font-size:12px;cursor:pointer}
+.prd-ctrl:hover{background:rgba(255,255,255,.1)}
+/* Advanced block controls for Editor.js native blocks */
+.sf-ctrls{position:absolute;right:8px;top:-12px;display:flex;gap:6px;z-index:2}
+.sf-ctrl{border:1px solid var(--stroke);background:rgba(255,255,255,.06);color:var(--text);border-radius:10px;padding:4px 8px;font-size:12px;cursor:pointer}
+.sf-ctrl:hover{background:rgba(255,255,255,.12)}
+.sf-ctrl.warn{background:rgba(255,84,84,.14);border-color:rgba(255,84,84,.25)}
+
+/* Collapsible sections (headers) */
+.sf-collapsed{opacity:.75}
+.sf-hidden{display:none !important}
+
+/* Yellow TODO block */
+.todo-wrap{border:1px solid rgba(255,210,64,.45);background:rgba(255,210,64,.18);border-radius:12px;padding:12px;color:#1a1a1a}
+.todo-wrap textarea{width:100%;min-height:64px;border:none;background:transparent;color:#1a1a1a;font:inherit;outline:none}
+.todo-wrap .todo-head{font-weight:600;margin-bottom:6px;color:#3a2a00}
+/* Mermaid block */
+.mermaid-toolbar{display:flex;gap:8px;margin-bottom:10px}
+.btn{border:1px solid var(--stroke);background:rgba(255,255,255,.05);color:var(--text);border-radius:10px;padding:6px 10px;font-size:13px;cursor:pointer}
+.btn:hover{background:rgba(255,255,255,.08)}
+.mermaid-code{width:100%;min-height:120px;border:1px solid var(--stroke);border-radius:12px;background:rgba(0,0,0,.2);color:var(--text);padding:10px}
+.mermaid-preview{border:1px solid var(--stroke);border-radius:12px;background:#0b1218;padding:12px}
+/* Fullscreen modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:80}
+.modal.open{display:flex}
+.modal-card{width:min(1100px,95vw);height:min(80vh,95vh);background:var(--panel);border:1px solid var(--stroke);border-radius:16px;padding:16px;overflow:auto}
+/* Chat UI */
+.chat-progress{display:flex;gap:6px;align-items:center;margin:8px 0;color:var(--text-dim);font-size:12px}
+.dot{width:6px;height:6px;border-radius:9999px;background:var(--text-dim);opacity:.6;animation:blink 1.4s infinite}
+.dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:.9}}
+
+/* Outline navigator */
+.sf-outline{position:fixed;left:16px;top:80px;bottom:24px;width:240px;max-width:32vw;background:var(--panel);border:1px solid var(--stroke);border-radius:14px;padding:10px 8px;overflow:auto;z-index:40}
+.sf-outline h4{margin:6px 10px 8px;font-size:13px;color:var(--text-dim);font-weight:600}
+.sf-outline a{display:block;padding:6px 10px;border-radius:10px;color:var(--text);text-decoration:none;font-size:13px;opacity:.9}
+.sf-outline a:hover{background:rgba(0,0,0,.06)}
+.sf-outline.light a:hover{background:rgba(0,0,0,.04)}
+
+/* Shift editor when outline visible */
+.sf-has-outline .editor-pane{margin-left:280px}
+
+/* Notion-like Section block */
+.sf-section{position:relative;border:1px solid var(--stroke);border-radius:16px;padding:14px 16px;margin:14px 0;background:var(--panel)}
+.sf-section.light{background:#fff}
+.sf-section-header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.sf-section-toggle{cursor:pointer;user-select:none;border:1px solid var(--stroke);border-radius:8px;background:rgba(0,0,0,.04);padding:2px 6px}
+.sf-section-title{flex:1;font-weight:700;font-size:18px;outline:none;border:none;background:transparent;color:var(--text)}
+.sf-section-body p, .sf-section-body ul, .sf-section-body ol, .sf-section-body table { color: var(--text); }
+.sf-section-body table { width:100%; border-collapse: collapse; }
+.sf-section-body td { border:1px solid var(--stroke); padding:6px 8px; }
+.sf-section-body blockquote { border-left: 2px solid var(--accent); padding-left: 12px; margin-left: 4px; color: var(--text-dim); }
+.sf-section-body pre.mermaid svg { max-width: 100%; }
+.light .sf-section-body blockquote { border-left-color: var(--accent); }
+.sf-section-controls{display:flex;gap:6px}
+.sf-btn{border:1px solid var(--stroke);background:rgba(0,0,0,.04);color:var(--text);border-radius:10px;padding:4px 8px;font-size:12px;cursor:pointer}
+.sf-btn:hover{background:rgba(0,0,0,.08)}
+.sf-btn.warn{background:rgba(255,84,84,.14);border-color:rgba(255,84,84,.25)}
+.sf-section-body{margin-top:6px}
+.sf-section-body[contenteditable="true"]{min-height:60px;outline:none}
+.sf-section.collapsed .sf-section-body{display:none}
+.sf-section.collapsed{opacity:.9}
+
+.sf-section-body .todo-wrap {
+    border:1px solid rgba(217,160,28,.6);
+    background:rgba(255,230,156,.5);
+    border-radius:12px;
+    padding:12px;
+    color:#3a2a00;
+}
+.sf-section-body .todo-wrap .todo-head {
+    font-weight:600;
+    margin-bottom:6px;
+    color:#3a2a00;
+}
+.light .sf-section-body .todo-wrap {
+    color: #443200;
+}
+

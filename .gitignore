@@ -51,3 +51,6 @@ websocket-api-client.js
 *_IMPLEMENTATION.md
 *.ini
 *.kiro
+
+#Ignore cursor AI rules
+.cursor/rules/codacy.mdc

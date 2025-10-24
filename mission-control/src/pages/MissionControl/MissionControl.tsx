@@ -91,6 +91,9 @@ export const MissionControl: React.FC = () => {
 
   // Load initial data
   const loadInitialData = async () => {
+    // Load PRD sessions from localStorage first
+    actions.loadAllPRDSessionsFromStorage()
+    
     await Promise.all([
       loadProjects(),
       loadFeedItems(),

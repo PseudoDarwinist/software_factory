@@ -6,6 +6,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { missionControlApi } from '@/services/api/missionControlApi'
+import { usePRDSession, usePRDSessionActions } from '@/stores/missionControlStore'
 
 // Types
 interface FileItem {
@@ -656,16 +657,59 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
   onUploadComplete
 }) => {
   console.log('SourcesTrayCard - selectedIdeaId:', selectedIdeaId, 'availableIdeas:', availableIdeas);
-  // Internal state for backend integration
+  // Use persistent store for session management
+  const prdSessionActions = usePRDSessionActions()
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [files, setFiles] = useState<FileItem[]>(propFiles || [])
-  const [status, setStatus] = useState<'idle' | 'uploading' | 'analyzing' | 'drafting' | 'ready'>(propStatus || 'idle')
+  const storedSession = usePRDSession(sessionId)
+  
+  // Use local state as fallback to prevent disappearing files during store updates
+  const [localFiles, setLocalFiles] = useState<FileItem[]>(propFiles || [])
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false)
+  
+  // Simplified file state logic - always use local files as source of truth during upload
+  const files = localFiles
+  const status = storedSession?.status || propStatus || 'idle'
+  const prdContent = storedSession?.prdContent || ''
+  
+  
+  // Sync local files with store when store updates (but not during upload operations)
+  useEffect(() => {
+    if (storedSession?.files && !isUploadingFiles && localFiles.length === 0) {
+      // Only sync from store if local files is empty (initial load)
+      console.log('📁 Syncing files from store:', storedSession.files.length)
+      setLocalFiles(storedSession.files)
+    }
+  }, [storedSession?.files, isUploadingFiles, localFiles.length])
+  
+  // Model selection for AI analysis
+  const [selectedModel, setSelectedModel] = useState<string>('claude-opus-4')
+  // Map UI model IDs to router-supported IDs
+  const resolveModel = useCallback((m: string) => {
+    const aliases: Record<string, string> = {
+      // Normalize dotted variant to hyphenated ID used by the router
+      'claude-sonnet-3.5': 'claude-sonnet-3-5',
+      'gemini-2.5-flash': 'gemini-2-5-flash'
+    }
+    return aliases[m] || m
+  }, [])
   const [isDragOver, setIsDragOver] = useState(false)
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [linkUrl, setLinkUrl] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [prdContent, setPrdContent] = useState<string>('')
+  // Local state for UI-only data
+  const [localPrdContent, setLocalPrdContent] = useState<string>('')
   const statusPollingRef = useRef<NodeJS.Timeout | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const isPickerOpenRef = useRef<boolean>(false)
+  // URL flag to explicitly resume a previous session; default is to start fresh
+  const shouldResume = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('resume') === '1'
+    } catch {
+      return false
+    }
+  })()
 
   // Load existing session state when resuming
   const loadExistingSessionState = async (sessionId: string) => {
@@ -675,9 +719,10 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
       // Get session context with files and PRD content
       const context = await missionControlApi.getSessionContext(sessionId)
       
-      // Restore files list
+      // Restore or update session in store
+      let sessionFiles: FileItem[] = []
       if (context.files && context.files.length > 0) {
-        const restoredFiles: FileItem[] = context.files.map((file: any) => ({
+        sessionFiles = context.files.map((file: any) => ({
           name: file.filename,
           type: file.file_type === 'url' ? 'link' : 
                 ['pdf', 'jpg', 'jpeg', 'png', 'gif'].includes(file.file_type) ? file.file_type as FileItem['type'] :
@@ -687,23 +732,41 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
                    file.processing_status === 'error' ? 0 : 1,
           error: file.processing_status === 'error' ? 'Processing failed' : undefined
         }))
-        
-        setFiles(restoredFiles)
-        console.log('✅ Restored', restoredFiles.length, 'files')
+        console.log('✅ Restored', sessionFiles.length, 'files')
       }
       
-      // Restore PRD content and status
+      // Update the session in store with restored data
+      let sessionStatus: 'idle' | 'uploading' | 'analyzing' | 'drafting' | 'ready' = 'idle'
+      let sessionPrdContent: string | undefined
+      
       if (context.ai_analysis || context.prd_preview) {
-        const prdText = context.prd_preview || context.ai_analysis
-        setPrdContent(prdText)
-        setStatus('ready')
+        sessionPrdContent = context.prd_preview || context.ai_analysis
+        sessionStatus = 'ready'
         console.log('✅ Restored PRD content and set status to ready')
       } else if (context.status === 'ready') {
-        setStatus('ready')
+        sessionStatus = 'ready'
       } else if (context.files && context.files.length > 0) {
-        // Has files but no PRD yet
-        setStatus('idle')
+        sessionStatus = 'idle'
         console.log('✅ Restored files, status set to idle (ready to analyze)')
+      }
+      
+      // Update or create the session in store
+      if (storedSession) {
+        prdSessionActions.updatePRDSession(sessionId, {
+          files: sessionFiles,
+          status: sessionStatus,
+          prdContent: sessionPrdContent
+        })
+      } else {
+        prdSessionActions.createPRDSession({
+          sessionId: sessionId,
+          projectId: projectId,
+          ideaId: selectedIdeaId || undefined,
+          description: 'Restored session',
+          status: sessionStatus,
+          files: sessionFiles,
+          prdContent: sessionPrdContent
+        })
       }
       
       console.log('✅ Successfully loaded existing session state')
@@ -716,44 +779,108 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
 
   // Initialize or resume session when component mounts
   useEffect(() => {
+    // Don't skip initialization - always check if we have the RIGHT session for the selected idea
+    if (sessionId) {
+      console.log('🔍 [GUARD] Session exists but checking if it matches selected idea:', sessionId.slice(0, 8), 'for idea:', selectedIdeaId)
+      // We'll continue to check if this is the right session for the idea
+    }
+    
     const initializeSession = async () => {
       try {
-        console.log('🔍 Checking for existing sessions for project:', projectId)
+        console.log('🔍 [INIT] Starting session initialization for project:', projectId, 'selectedIdeaId:', selectedIdeaId)
         
-        // First, try to find existing session for this project with PRD content
+        // Always check for existing sessions tied to the selected idea
         try {
-          // Get project sessions to see if we have an existing one
+          console.log('🔍 [API] Calling getProjectSessions for project:', projectId)
           const existingSessions = await missionControlApi.getProjectSessions?.(projectId)
+          console.log('🔍 [API] Retrieved sessions:', existingSessions?.length || 0, 'sessions')
           
           if (existingSessions && existingSessions.length > 0) {
-            // Find the most recent session with files or PRD content
-            const activeSession = existingSessions
-              .filter((s: any) => s.status === 'ready' || s.file_count > 0)
-              .sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0]
+            console.log('🔍 [DEBUG] All sessions:', existingSessions.map(s => ({
+              session_id: s.session_id?.slice(0, 8),
+              feed_item_id: s.feed_item_id,
+              status: s.status,
+              file_count: s.file_count
+            })))
             
-            if (activeSession) {
-              console.log('✅ Found existing session to resume:', activeSession.session_id)
-              setSessionId(activeSession.session_id)
-              
-              // Load existing session state
-              await loadExistingSessionState(activeSession.session_id)
-              return
+            // If we have a selected idea, look for sessions specifically tied to that idea
+            if (selectedIdeaId) {
+              console.log('🔍 [SEARCH] Looking for sessions with feed_item_id:', selectedIdeaId)
+              const ideaSession = existingSessions.find((s: any) => 
+                s.feed_item_id === selectedIdeaId && (s.status === 'ready' || s.file_count > 0)
+              )
+              if (ideaSession) {
+                console.log('✅ [FOUND] Existing PRD for idea:', selectedIdeaId, 'session:', ideaSession.session_id)
+                
+                // Check if we're already using the correct session
+                if (sessionId === ideaSession.session_id) {
+                  console.log('✅ [ALREADY_CORRECT] Already using the correct session for idea')
+                  return
+                }
+                
+                // Switch to the correct session
+                console.log('🔄 [SWITCH] Switching from session', sessionId?.slice(0, 8), 'to', ideaSession.session_id.slice(0, 8))
+                setSessionId(ideaSession.session_id)
+                await loadExistingSessionState(ideaSession.session_id)
+                return
+              } else {
+                console.log('❌ [NOT_FOUND] No existing PRD for idea:', selectedIdeaId)
+                
+                // If we have a current session but it doesn't match this idea, create new one
+                if (sessionId) {
+                  console.log('🔄 [CLEAR] Current session does not match idea, will create new one')
+                  setSessionId(null) // Clear current session
+                }
+              }
+            } else {
+              console.log('⚠️ [NO_IDEA] No selectedIdeaId provided')
+            }
+            
+            // Fallback: resume mode for any active session (legacy behavior)
+            if (shouldResume) {
+              const activeSession = existingSessions
+                .filter((s: any) => s.status === 'ready' || s.file_count > 0)
+                .sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0]
+              if (activeSession) {
+                console.log('✅ Found existing session to resume:', activeSession.session_id)
+                setSessionId(activeSession.session_id)
+                await loadExistingSessionState(activeSession.session_id)
+                return
+              }
             }
           }
         } catch (error) {
           console.log('⚠️ Could not check existing sessions, will create new one')
         }
         
-        // No existing session found, create new one
-        const selectedIdea = availableIdeas.find(idea => idea.id === selectedIdeaId)
-        const sessionDescription = selectedIdea 
-          ? `PRD for: ${selectedIdea.title}`
-          : 'Upload sources for PRD generation'
-        
-        console.log('🆕 Creating new upload session for project:', projectId, 'with idea:', selectedIdea?.title)
-        const session = await missionControlApi.createUploadSession(projectId, sessionDescription, selectedIdeaId || undefined)
-        setSessionId(session.session_id)
-        console.log('✅ Created new upload session:', session.session_id, 'linked to idea:', selectedIdeaId)
+        // No existing session found or session cleared, create new one if needed
+        let currentSessionId = sessionId
+        if (!sessionId && selectedIdeaId) {
+          const selectedIdea = availableIdeas.find(idea => idea.id === selectedIdeaId)
+          const sessionDescription = selectedIdea 
+            ? `PRD for: ${selectedIdea.title}`
+            : 'Upload sources for PRD generation'
+          
+          console.log('🆕 [CREATE] Creating new upload session for project:', projectId, 'with idea:', selectedIdea?.title, 'ideaId:', selectedIdeaId)
+          const session = await missionControlApi.createUploadSession(projectId, sessionDescription, selectedIdeaId || undefined)
+          console.log('✅ [CREATE] New session created:', session.session_id, 'linked to idea:', selectedIdeaId)
+          setSessionId(session.session_id)
+          currentSessionId = session.session_id
+          
+          // Store session in persistent store
+          prdSessionActions.createPRDSession({
+            sessionId: session.session_id,
+            projectId: projectId,
+            ideaId: selectedIdeaId || undefined,
+            description: sessionDescription,
+            status: 'idle',
+            files: []
+          })
+          
+          console.log('✅ [STORE] Stored new session in persistent store:', session.session_id)
+        } else if (sessionId) {
+          console.log('✅ [KEEP] Keeping current session:', sessionId.slice(0, 8))
+        }
         
       } catch (error) {
         console.error('❌ Failed to initialize upload session:', error)
@@ -769,7 +896,19 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
         clearInterval(statusPollingRef.current)
       }
     }
-  }, [projectId])
+  }, [projectId, selectedIdeaId])
+  
+  // Debug log for component state changes
+  useEffect(() => {
+    console.log('🔍 [STATE] SourcesTrayCard state update:', {
+      sessionId: sessionId?.slice(0, 8),
+      selectedIdeaId,
+      projectId,
+      hasStoredSession: !!storedSession,
+      localFilesCount: localFiles.length,
+      status
+    })
+  }, [sessionId, selectedIdeaId, projectId, storedSession, localFiles.length, status])
 
   // Set up WebSocket listener for PRD updates
   useEffect(() => {
@@ -810,8 +949,8 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
       try {
         const uploadStatus = await missionControlApi.getUploadStatus(sessionId)
         
-        // Update file statuses
-        setFiles(prev => prev.map(file => {
+        // Update file statuses in store
+        const filesWithUpdatedStatus = files.map(file => {
           const statusFile = uploadStatus.files.find(sf => sf.filename === file.name)
           if (statusFile) {
             return {
@@ -823,7 +962,11 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
             }
           }
           return file
-        }))
+        })
+        
+        prdSessionActions.updatePRDSession(sessionId, {
+          files: filesWithUpdatedStatus
+        })
 
         // Stop polling if all files are processed
         if (uploadStatus.overall_status === 'complete' || uploadStatus.overall_status === 'error') {
@@ -838,6 +981,148 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
       }
     }, 2000) // Poll every 2 seconds
   }, [sessionId])
+
+  // Handle file upload to backend
+  const handleFileUpload = useCallback(async (fileList: File[]) => {
+    if (!sessionId) {
+      setError('Upload session not ready')
+      return
+    }
+
+    // Validate idea selection if ideas are available
+    console.log('Upload validation - availableIdeas.length:', availableIdeas.length, 'selectedIdeaId:', selectedIdeaId, 'truthy check:', !!selectedIdeaId);
+    if (availableIdeas.length > 0 && !selectedIdeaId) {
+      console.log('Validation failed - setting error');
+      setError('Please select an idea before uploading documents')
+      return
+    }
+
+    // Set uploading flag to prevent race conditions
+    setIsUploadingFiles(true)
+    
+    // Update status in store
+    prdSessionActions.updatePRDSession(sessionId, {
+      status: 'uploading'
+    })
+    setError(null)
+
+    try {
+      // Filter supported files
+      const supportedFiles = fileList.filter(file => {
+        const extension = file.name.split('.').pop()?.toLowerCase()
+        return ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'md', 'txt', 'doc', 'docx'].includes(extension || '')
+      })
+
+      if (supportedFiles.length === 0) {
+        setError('No supported files found. Please upload PDF, JPG, PNG, GIF, MD, TXT, DOC, or DOCX files.')
+        // Update status in store
+        prdSessionActions.updatePRDSession(sessionId, {
+          status: 'idle'
+        })
+        // Clear uploading flag on early return
+        setIsUploadingFiles(false)
+        return
+      }
+
+      // Add files to store immediately with uploading status
+      const newFiles: FileItem[] = supportedFiles.map((file) => {
+        const extension = file.name.split('.').pop()?.toLowerCase()
+        const fileType = extension === 'pdf' ? 'pdf' : 
+                        ['jpg', 'jpeg', 'png', 'gif'].includes(extension || '') ? 'image' : 
+                        ['md', 'txt', 'doc', 'docx'].includes(extension || '') ? 'document' : 'document'
+        
+        return {
+          name: file.name,
+          type: fileType as FileItem['type'],
+          progress: 0
+        }
+      })
+
+      // Update files in store and local state immediately using functional updates
+      let allFiles: FileItem[] = []
+      setLocalFiles(currentFiles => {
+        allFiles = [...currentFiles, ...newFiles]
+        console.log('📁 Adding files to local state - before:', currentFiles.length, 'after:', allFiles.length)
+        return allFiles
+      })
+      
+      // Update store after local state (use setTimeout to avoid setState during render)
+      setTimeout(() => {
+        prdSessionActions.updatePRDSession(sessionId, {
+          files: allFiles,
+          status: 'uploading'
+        })
+      }, 0)
+
+      // Upload files to backend
+      const uploadResult = await missionControlApi.uploadFiles(sessionId, supportedFiles)
+      
+      console.log('Upload result:', uploadResult)
+
+      // Update file progress in store using functional update
+      setLocalFiles(currentFiles => {
+        const filesWithProgress = currentFiles.map(file => {
+          const uploadedFile = uploadResult.uploaded_files.find(uf => uf.filename === file.name)
+          if (uploadedFile) {
+            return { ...file, progress: 1 }
+          }
+          return file
+        })
+        
+        // Update store with setTimeout to avoid setState during render
+        setTimeout(() => {
+          prdSessionActions.updatePRDSession(sessionId, {
+            files: filesWithProgress,
+            status: 'idle' // Ready for analysis
+          })
+        }, 0)
+        
+        return filesWithProgress
+      })
+
+      // Start polling for processing status
+      startStatusPolling()
+
+      if (uploadResult.errors && uploadResult.errors.length > 0) {
+        setError(`Some files failed to upload: ${uploadResult.errors.join(', ')}`)
+      }
+
+      // Call original callback if provided
+      onFileAdd?.(supportedFiles)
+      
+      // Clear uploading flag on success
+      setIsUploadingFiles(false)
+
+    } catch (error) {
+      console.error('File upload failed:', error)
+      setError('Failed to upload files. Please try again.')
+      
+      // Update status in store
+      prdSessionActions.updatePRDSession(sessionId, {
+        status: 'idle'
+      })
+      
+      // Mark files as error in store and local state using functional update
+      setLocalFiles(currentFiles => {
+        const errorFiles = currentFiles.map(file => 
+          file.progress === 0 ? { ...file, error: 'Upload failed' } : file
+        )
+        
+        // Update store with setTimeout to avoid setState during render
+        setTimeout(() => {
+          prdSessionActions.updatePRDSession(sessionId, {
+            files: errorFiles,
+            status: 'idle'
+          })
+        }, 0)
+        
+        return errorFiles
+      })
+      
+      // Clear uploading flag on error
+      setIsUploadingFiles(false)
+    }
+  }, [sessionId, onFileAdd, startStatusPolling, selectedIdeaId, availableIdeas, prdSessionActions])
 
   // Drag and drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -855,13 +1140,34 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
     setIsDragOver(false)
     const droppedFiles = Array.from(e.dataTransfer.files)
     await handleFileUpload(droppedFiles)
-  }, [sessionId, selectedIdeaId, availableIdeas])
+  }, [handleFileUpload])
 
   // File input handler
   const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // release picker lock when user selects or cancels
+    isPickerOpenRef.current = false
     const selectedFiles = Array.from(e.target.files || [])
     await handleFileUpload(selectedFiles)
-  }, [sessionId, selectedIdeaId, availableIdeas])
+  }, [handleFileUpload])
+
+  // Unified opener with reentry guard
+  const openFilePicker = useCallback(() => {
+    if (availableIdeas.length > 0 && !selectedIdeaId) {
+      setError('Please select an idea before uploading documents')
+      return
+    }
+    if (!fileInputRef.current) return
+    if (isPickerOpenRef.current) return
+    isPickerOpenRef.current = true
+    try {
+      // clear so selecting same file twice still triggers change
+      fileInputRef.current.value = ''
+      fileInputRef.current.click()
+    } finally {
+      // auto-release even if user cancels (some browsers don't fire change)
+      setTimeout(() => { isPickerOpenRef.current = false }, 800)
+    }
+  }, [availableIdeas.length, selectedIdeaId])
 
   // Handle file removal
   const handleFileRemove = useCallback(async (index: number) => {
@@ -879,8 +1185,12 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
         console.log(`✅ Deleted file: ${fileToRemove.name}`)
       }
 
-      // Remove from UI immediately
-      setFiles(prev => prev.filter((_, i) => i !== index))
+      // Remove from store and local state immediately
+      const filteredFiles = files.filter((_, i) => i !== index)
+      setLocalFiles(filteredFiles) // Update local state immediately
+      prdSessionActions.updatePRDSession(sessionId, {
+        files: filteredFiles
+      })
       
       // Call original callback if provided
       onFileRemove?.(index)
@@ -891,94 +1201,15 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
     }
   }, [files, sessionId, onFileRemove])
 
-  // Handle file upload to backend
-  const handleFileUpload = useCallback(async (fileList: File[]) => {
-    if (!sessionId) {
-      setError('Upload session not ready')
-      return
-    }
-
-    // Validate idea selection if ideas are available
-    console.log('Upload validation - availableIdeas.length:', availableIdeas.length, 'selectedIdeaId:', selectedIdeaId, 'truthy check:', !!selectedIdeaId);
-    if (availableIdeas.length > 0 && !selectedIdeaId) {
-      console.log('Validation failed - setting error');
-      setError('Please select an idea before uploading documents')
-      return
-    }
-
-    setStatus('uploading')
-    setError(null)
-
-    try {
-      // Filter supported files
-      const supportedFiles = fileList.filter(file => {
-        const extension = file.name.split('.').pop()?.toLowerCase()
-        return ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'md', 'txt', 'doc', 'docx'].includes(extension || '')
-      })
-
-      if (supportedFiles.length === 0) {
-        setError('No supported files found. Please upload PDF, JPG, PNG, GIF, MD, TXT, DOC, or DOCX files.')
-        setStatus('idle')
-        return
-      }
-
-      // Add files to UI immediately with uploading status
-      const newFiles: FileItem[] = supportedFiles.map((file) => {
-        const extension = file.name.split('.').pop()?.toLowerCase()
-        const fileType = extension === 'pdf' ? 'pdf' : 
-                        ['jpg', 'jpeg', 'png', 'gif'].includes(extension || '') ? 'image' : 
-                        ['md', 'txt', 'doc', 'docx'].includes(extension || '') ? 'document' : 'document'
-        
-        return {
-          name: file.name,
-          type: fileType as FileItem['type'],
-          progress: 0
-        }
-      })
-
-      setFiles(prev => [...prev, ...newFiles])
-
-      // Upload files to backend
-      const uploadResult = await missionControlApi.uploadFiles(sessionId, supportedFiles)
-      
-      console.log('Upload result:', uploadResult)
-
-      // Update file progress
-      setFiles(prev => prev.map(file => {
-        const uploadedFile = uploadResult.uploaded_files.find(uf => uf.filename === file.name)
-        if (uploadedFile) {
-          return { ...file, progress: 1 }
-        }
-        return file
-      }))
-
-      // Start polling for processing status
-      startStatusPolling()
-
-      if (uploadResult.errors && uploadResult.errors.length > 0) {
-        setError(`Some files failed to upload: ${uploadResult.errors.join(', ')}`)
-      }
-
-      // Call original callback if provided
-      onFileAdd?.(supportedFiles)
-
-    } catch (error) {
-      console.error('File upload failed:', error)
-      setError('Failed to upload files. Please try again.')
-      setStatus('idle')
-      
-      // Mark files as error
-      setFiles(prev => prev.map(file => 
-        file.progress === 0 ? { ...file, error: 'Upload failed' } : file
-      ))
-    }
-  }, [sessionId, onFileAdd, startStatusPolling, selectedIdeaId, availableIdeas])
 
   // Link submission
   const handleLinkSubmit = useCallback(async () => {
     if (!linkUrl.trim() || !sessionId) return
 
-    setStatus('uploading')
+    // Update status in store
+    prdSessionActions.updatePRDSession(sessionId, {
+      status: 'uploading'
+    })
     setError(null)
 
     try {
@@ -1017,31 +1248,44 @@ export const SourcesTrayCard: React.FC<SourcesTrayCardProps> = ({
     } catch (error) {
       console.error('Link upload failed:', error)
       setError('Failed to upload link. Please try again.')
-      setStatus('idle')
       
-      // Mark link as error
-      setFiles(prev => prev.map(file => 
+      // Update status in store
+      prdSessionActions.updatePRDSession(sessionId, {
+        status: 'idle'
+      })
+      
+      // Mark link as error in store
+      const filesWithError = files.map(file => 
         file.name === new URL(linkUrl).hostname ? { ...file, error: 'Upload failed' } : file
-      ))
+      )
+      
+      prdSessionActions.updatePRDSession(sessionId, {
+        files: filesWithError
+      })
     }
-  }, [linkUrl, sessionId, onLinkAdd])
+  }, [linkUrl, sessionId, onLinkAdd, files, prdSessionActions])
 
   // Handle analyze button click
   const handleAnalyze = useCallback(async () => {
     if (!sessionId || files.length === 0) return
 
-    setStatus('analyzing')
+    // Update status in store
+    prdSessionActions.updatePRDSession(sessionId, {
+      status: 'analyzing'
+    })
     setError(null)
 
     try {
-      // Start AI analysis
-const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
+      // Start AI analysis with selected model
+      const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId, resolveModel(selectedModel))
       
       console.log('Analysis result:', analysisResult)
 
       if (analysisResult.status === 'success') {
-        // Simulate processing stages for better UX
-        setStatus('drafting')
+        // Update status to drafting in store
+        prdSessionActions.updatePRDSession(sessionId, {
+          status: 'drafting'
+        })
         
         setTimeout(async () => {
           try {
@@ -1055,26 +1299,44 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
               const prdText = context.prd_preview || context.ai_analysis
               console.log('📝 PRD text length:', prdText.length)
               console.log('📝 PRD preview available:', !!context.prd_preview)
-              setPrdContent(prdText)
-              setStatus('ready')
+              
+              // Update PRD content in store
+              prdSessionActions.updatePRDSession(sessionId, {
+                prdContent: prdText,
+                status: 'ready'
+              })
+              
+              setLocalPrdContent(prdText)
               console.log('PRD generated successfully')
               
 
             } else {
               console.error('❌ No AI analysis in context:', context)
               setError('No AI analysis available')
-              setStatus('idle')
+              
+              // Update status in store
+              prdSessionActions.updatePRDSession(sessionId, {
+                status: 'idle'
+              })
             }
           } catch (error) {
             console.error('Failed to get session context:', error)
             setError('Failed to retrieve generated PRD')
-            setStatus('idle')
+            
+            // Update status in store
+            prdSessionActions.updatePRDSession(sessionId, {
+              status: 'idle'
+            })
           }
         }, 2000) // 2 second delay for drafting stage
 
       } else {
         setError(analysisResult.error || 'AI analysis failed')
-        setStatus('idle')
+        
+        // Update status in store
+        prdSessionActions.updatePRDSession(sessionId, {
+          status: 'idle'
+        })
       }
 
       // Call original callback if provided
@@ -1082,10 +1344,44 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
 
     } catch (error) {
       console.error('PRD generation failed:', error)
-      setError('Failed to generate PRD. Please try again.')
-      setStatus('idle')
+      
+      // Check if PRD was actually created despite network error
+      if (error.message?.includes('Network Error') || error.code === 'ERR_NETWORK') {
+        console.log('🔍 [NETWORK_ERROR] Network error occurred, checking if PRD was actually created...')
+        setError('Network timeout occurred. Checking if PRD was created...')
+        
+        // Wait a moment then check session status
+        setTimeout(async () => {
+          try {
+            console.log('🔍 [CHECK] Checking session context for PRD...')
+            const context = await missionControlApi.getSessionContext(sessionId)
+            if (context?.prd_preview) {
+              console.log('✅ [SUCCESS] PRD was actually created despite network error!')
+              setError(null)
+              // The existing polling will pick up the PRD
+            } else {
+              console.log('❌ [FAILED] Confirmed: PRD was not created')
+              setError('Failed to generate PRD due to network timeout. Please try again.')
+              prdSessionActions.updatePRDSession(sessionId, {
+                status: 'idle'
+              })
+            }
+          } catch (checkError) {
+            console.log('❌ [FAILED] Error checking PRD status:', checkError)
+            setError('Failed to generate PRD due to network timeout. Please try again.')
+            prdSessionActions.updatePRDSession(sessionId, {
+              status: 'idle'
+            })
+          }
+        }, 3000)
+      } else {
+        setError('Failed to generate PRD. Please try again.')
+        prdSessionActions.updatePRDSession(sessionId, {
+          status: 'idle'
+        })
+      }
     }
-  }, [sessionId, files.length, onAnalyze, availableIdeas, selectedIdeaId])
+  }, [sessionId, files.length, onAnalyze, availableIdeas, selectedIdeaId, selectedModel])
 
   // Handle freeze PRD
   const handleFreezePRD = useCallback(async () => {
@@ -1132,33 +1428,39 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
 
   // Handle open full PRD
   const handleOpenFullPRD = useCallback(async () => {
-    if (status === 'ready' && sessionId) {
-      try {
-        console.log('🔗 Generating PRD deep link for session:', sessionId)
-        
-        // Generate JWT deep link
-        const response = await missionControlApi.generatePRDDeepLink(sessionId)
-        
-        console.log('🔗 Deep link response:', response)
-        
-        if (response && response.deep_link_url) {
-          console.log('✅ Opening PRD in new tab:', response.deep_link_url)
-          // Open in new tab
-          window.open(response.deep_link_url, '_blank')
-        } else {
-          console.error('❌ Invalid deep link response:', response)
-          setError('Failed to generate PRD link - invalid response')
-        }
-      } catch (error) {
-        console.error('❌ Error opening full PRD:', error)
-        setError(`Failed to open full PRD: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      }
-    } else {
+    if (status !== 'ready' || !sessionId) {
       console.warn('⚠️ Cannot open PRD - status:', status, 'sessionId:', sessionId)
-      if (status !== 'ready') {
-        setError('PRD is not ready yet')
-      } else {
-        setError('No active session')
+      setError(status !== 'ready' ? 'PRD is not ready yet' : 'No active session')
+      return
+    }
+
+    try {
+      // Prefer new React PRD editor route; use deep link only to fetch PRD id for context
+      console.log('🔗 Preparing PRD editor for session:', sessionId)
+      let prdId: string | undefined
+      let version: string | undefined
+      try {
+        const link = await missionControlApi.generatePRDDeepLink(sessionId)
+        prdId = (link as any)?.prd_info?.id
+        version = (link as any)?.prd_info?.version
+      } catch (e) {
+        console.warn('Deep link fetch failed, proceeding with session-only:', e)
+      }
+      const url = prdId
+        ? `/prd-editor/${encodeURIComponent(sessionId)}?prd=${encodeURIComponent(prdId)}${version ? `&version=${encodeURIComponent(version)}` : ''}`
+        : `/prd-editor/${encodeURIComponent(sessionId)}`
+      console.log('✅ Opening PRD Editor route:', url)
+      window.open(url, '_blank')
+    } catch (error) {
+      console.error('❌ Error opening PRD editor:', error)
+      // Fallback to legacy editor if something goes wrong
+      try {
+        const editorUrl = `/intelligent-prd-editor.html?session_id=${sessionId}`
+        console.log('🔄 Fallback: Opening legacy PRD editor:', editorUrl)
+        window.open(editorUrl, '_blank')
+      } catch (fallbackError) {
+        console.error('❌ Final fallback failed:', fallbackError)
+        setError(`Failed to open PRD editor: ${error instanceof Error ? error.message : 'Unknown error'}`)
       }
     }
   }, [status, sessionId])
@@ -1271,6 +1573,26 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
               
               {/* actions: Make PRD + Add (+) */}
               <div className="flex items-center gap-3">
+                {/* Model selector */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs" style={{ color: 'var(--text-dim)' }}>
+                    Model
+                  </label>
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="text-sm rounded-lg px-3 py-2 bg-gray-900 border"
+                    style={{ borderColor: 'var(--stroke-dim)', color: 'var(--text-strong)' }}
+                    aria-label="Select AI model"
+                    disabled={status === 'analyzing' || status === 'drafting'}
+                  >
+                    <option value="claude-opus-4">Claude Opus 4</option>
+                    <option value="claude-sonnet-4">Claude Sonnet 4</option>
+                    <option value="claude-sonnet-3-5">Claude Sonnet 3.5</option>
+                    <option value="gemini-2-5-flash">Gemini 2.5 Flash</option>
+                    <option value="gpt-4o">GPT-4o</option>
+                  </select>
+                </div>
                 {/* Make PRD draft - standardized pill button */}
                 <button
                   className="relative inline-flex items-center justify-center rounded-full font-semibold text-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] focus:outline-none"
@@ -1422,7 +1744,7 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
 
             {/* Drop Zone */}
             <div
-              className={`relative w-full h-[120px] rounded-2xl mb-6 flex items-center justify-center transition-all duration-300 ${!selectedIdeaId && availableIdeas.length > 0 ? 'opacity-50 pointer-events-none' : ''}`}
+              className={`relative w-full h-[120px] rounded-2xl mb-6 flex items-center justify-center transition-all duration-300 ${!selectedIdeaId && availableIdeas.length > 0 ? 'opacity-50' : ''}`}
               style={{
                 background: 'rgba(255,255,255,0.015)',
                 border: '1px dashed',
@@ -1433,6 +1755,7 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               aria-label="Upload sources drop zone"
+              onClick={openFilePicker}
             >
               <p 
                 className="text-sm text-center px-4"
@@ -1445,12 +1768,29 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
                     : 'Drop PDFs, decks, Zoom links, webpages, Figma, screenshots…'
                 }
               </p>
+              {/* Fallback clickable control for browsers blocking invisible input */}
+              <div className="absolute bottom-3 right-3">
+                <button
+                  type="button"
+                  onClick={openFilePicker}
+                  className="px-3 py-1.5 rounded-lg text-xs"
+                  style={{
+                    border: '1px solid var(--stroke-dim)',
+                    background: 'rgba(255,255,255,0.04)',
+                    color: 'var(--text-strong)'
+                  }}
+                  aria-label="Browse files"
+                >
+                  Browse files…
+                </button>
+              </div>
               
-              {/* Hidden file input */}
+              {/* Hidden file input (triggered by click handlers) */}
               <input
                 type="file"
                 multiple
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                ref={fileInputRef}
+                style={{ display: 'none' }}
                 onChange={handleFileInput}
                 accept=".pdf,.doc,.docx,.md,.txt,.jpg,.jpeg,.png,.gif"
               />
@@ -1829,7 +2169,7 @@ const analysisResult = await missionControlApi.analyzeSessionFiles(sessionId)
                 </div>
               ) : (
                 <PRDSummaryDisplay 
-                  prdContent={prdContent}
+                  prdContent={prdContent || localPrdContent}
                   sessionId={sessionId}
                 />
               )}

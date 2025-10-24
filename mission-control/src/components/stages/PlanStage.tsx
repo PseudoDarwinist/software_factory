@@ -27,6 +27,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 interface PlanStageProps {
   selectedProject: string | null
+  selectedFeedItem: string | null  // Add selectedFeedItem to get idea-specific work orders
   onStageChange?: (stage: string) => void
 }
 
@@ -42,6 +43,7 @@ const AGENTS: Agent[] = [
 
 export const PlanStage: React.FC<PlanStageProps> = ({
   selectedProject,
+  selectedFeedItem,  // Add selectedFeedItem parameter
   onStageChange
 }) => {
   // Work Order Enhancement state
@@ -97,7 +99,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
     } finally {
       setLoading(false)
     }
-  }, [selectedProject])
+  }, [selectedProject, selectedFeedItem])
 
   // Load initial tasks on mount and project change
   useEffect(() => {
@@ -107,7 +109,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
   // WebSocket connection for real-time updates
   useEffect(() => {
     // Connect to the WebSocket server
-    const newSocket = io('http://localhost:8000'); // Adjust URL if needed
+    const newSocket = io(undefined, { transports: ['websocket'] }); // same-origin
     setSocket(newSocket);
 
     newSocket.on('connect', () => {
@@ -392,39 +394,162 @@ export const PlanStage: React.FC<PlanStageProps> = ({
   // Generate implementation plan for a work order
   const handleGenerateImplementation = useCallback(async (workOrderId: string) => {
     try {
-      // TODO: Implement API call to generate implementation plan
       console.log('Generating implementation plan for work order:', workOrderId)
-      // const implementationPlan = await missionControlApi.generateImplementationPlan(workOrderId)
-      // Update work order with implementation plan
-      // setWorkOrders(prev => prev.map(wo => wo.id === workOrderId ? { ...wo, implementation_plan: implementationPlan } : wo))
+      
+      // Call the API to generate implementation plan (this will also populate Blueprint and PRD tabs)
+      const result = await missionControlApi.generateWorkOrderImplementationPlan(
+        workOrderId, 
+        `spec_${selectedProject}`, 
+        selectedProject
+      )
+      
+      if (result.success) {
+        console.log('Implementation plan generated successfully:', result)
+        
+        // Refresh the work orders to get the updated data
+        const updatedWorkOrders = await missionControlApi.getWorkOrders(`spec_${selectedProject}`, selectedProject)
+        setWorkOrders(updatedWorkOrders)
+        
+        // Update the selected work order if it's currently open
+        if (selectedWorkOrder && selectedWorkOrder.id === workOrderId) {
+          const updatedWorkOrder = updatedWorkOrders.find(wo => wo.id === workOrderId)
+          if (updatedWorkOrder) {
+            setSelectedWorkOrder(updatedWorkOrder)
+          }
+        }
+      } else {
+        console.error('Failed to generate implementation plan:', result.error)
+      }
     } catch (error) {
       console.error('Error generating implementation plan:', error)
     }
-  }, [])
+  }, [selectedProject, selectedWorkOrder])
+
+  // Enhance work order with all tabs (Description, Implementation, Blueprint, PRD)
+  const handleEnhanceAllTabs = useCallback(async (workOrderId: string) => {
+    try {
+      console.log('Enhancing all tabs for work order:', workOrderId)
+      
+      // Call the new API to enhance all four tabs
+      const result = await missionControlApi.enhanceWorkOrderAllTabs(
+        workOrderId, 
+        `spec_${selectedFeedItem}`,  // Use selectedFeedItem for idea-specific spec
+        selectedProject
+      )
+      
+      if (result.success) {
+        console.log('All tabs enhanced successfully:', result)
+        
+        // Refresh the work orders to get the updated data
+        const specId = `spec_${selectedFeedItem}`
+        const updatedWorkOrders = await missionControlApi.getWorkOrders(specId, selectedProject)
+        setWorkOrders(updatedWorkOrders)
+        
+        // Update the selected work order if it's currently open
+        if (selectedWorkOrder && selectedWorkOrder.id === workOrderId) {
+          const updatedWorkOrder = updatedWorkOrders.find(wo => wo.id === workOrderId)
+          if (updatedWorkOrder) {
+            setSelectedWorkOrder(updatedWorkOrder)
+          }
+        }
+        
+        // Show success message
+        console.log('Work order enhanced with all tabs populated and status changed to Ready')
+      } else {
+        console.error('Failed to enhance all tabs:', result.error)
+        alert(`Failed to enhance work order: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Error enhancing all tabs:', error)
+      alert(`Error enhancing work order: ${error.message}`)
+    }
+  }, [selectedProject, selectedFeedItem, selectedWorkOrder])
+
+  // Delete a work order
+  const handleDeleteWorkOrder = useCallback(async (workOrderId: string) => {
+    console.log('handleDeleteWorkOrder called with ID:', workOrderId);
+    console.log('Current workOrders:', workOrders);
+    
+    try {
+      // Confirm deletion
+      const workOrder = workOrders.find(wo => wo.id === workOrderId)
+      console.log('Found work order:', workOrder);
+      
+      const confirmDelete = window.confirm(
+        `Are you sure you want to delete work order "${workOrder?.title || workOrderId}"?\n\nThis action cannot be undone.`
+      )
+      
+      console.log('User confirmed deletion:', confirmDelete);
+      if (!confirmDelete) return
+      
+      console.log('Calling API to delete work order:', workOrderId)
+      
+      // Call the delete API
+      const result = await missionControlApi.deleteWorkOrder(workOrderId)
+      console.log('API delete result:', result);
+      
+      if (result.success) {
+        console.log('Work order deleted successfully:', result.message)
+        
+        // Remove from local state
+        setWorkOrders(prev => {
+          const filtered = prev.filter(wo => wo.id !== workOrderId)
+          console.log(`Updated work orders state: ${prev.length} -> ${filtered.length} items`)
+          return filtered
+        })
+        
+        // Close modal if this work order was selected
+        if (selectedWorkOrder?.id === workOrderId) {
+          setSelectedWorkOrder(null)
+          setShowWorkOrderModal(false)
+        }
+        
+        // Show success message (you could add a toast notification here)
+        console.log(`Work order "${workOrder?.title}" deleted successfully`)
+        
+      } else {
+        console.error('Failed to delete work order:', result.error)
+        alert(`Failed to delete work order: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Error deleting work order:', error)
+      alert(`Error deleting work order: ${error.message}`)
+    }
+  }, [workOrders, selectedWorkOrder])
 
   // Persist work orders to ensure they don't disappear when navigating stages
   useEffect(() => {
-    if (workOrders.length > 0) {
-      // Store work orders in localStorage as a fallback
+    if (selectedProject) {
+      // Always store work orders in localStorage, even if empty
       const storageKey = `work-orders-${selectedProject}`
       localStorage.setItem(storageKey, JSON.stringify(workOrders))
+      console.log(`Saved ${workOrders.length} work orders to localStorage for project ${selectedProject}`)
     }
   }, [workOrders, selectedProject])
 
-  // Load persisted work orders on component mount
+  // Load persisted work orders on component mount - PRIORITY LOADING
   useEffect(() => {
     if (selectedProject) {
       const storageKey = `work-orders-${selectedProject}`
       const storedWorkOrders = localStorage.getItem(storageKey)
+      
+      console.log(`Loading work orders for project: ${selectedProject}`)
+      console.log(`Storage key: ${storageKey}`)
+      console.log(`Stored work orders:`, storedWorkOrders)
+      
       if (storedWorkOrders) {
         try {
           const parsed = JSON.parse(storedWorkOrders)
+          console.log(`Parsed work orders:`, parsed)
+          
           if (parsed.length > 0) {
+            console.log(`Setting ${parsed.length} work orders from localStorage`)
             setWorkOrders(parsed)
             setWorkOrdersGenerated(true)
             setGenerationStatus('completed')
           } else {
             // If stored work orders is empty, reset to idle state
+            console.log('Stored work orders array is empty, resetting to idle state')
             setWorkOrders([])
             setWorkOrdersGenerated(false)
             setGenerationStatus('idle')
@@ -438,6 +563,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
         }
       } else {
         // No stored work orders, reset to idle state
+        console.log('No stored work orders found, resetting to idle state')
         setWorkOrders([])
         setWorkOrdersGenerated(false)
         setGenerationStatus('idle')
@@ -445,36 +571,55 @@ export const PlanStage: React.FC<PlanStageProps> = ({
     }
   }, [selectedProject])
 
-  // Load work orders when component mounts or project changes
-  const loadWorkOrders = useCallback(async () => {
-    if (!selectedProject) return
+  // Load work orders from API (only when localStorage is empty)
+  const loadWorkOrdersFromAPI = useCallback(async () => {
+    if (!selectedProject || !selectedFeedItem) return
+    
+    console.log(`API Loading work orders for idea: ${selectedFeedItem}, project: ${selectedProject}`)
     
     try {
-      const specId = `spec_${selectedProject}`
+      // Use idea-specific spec_id instead of project-wide spec_id
+      const specId = `spec_${selectedFeedItem}`  // Each idea has its own spec and work orders
       const workOrdersData = await missionControlApi.getWorkOrders(specId, selectedProject)
-      setWorkOrders(workOrdersData)
       
-      const status = await missionControlApi.getWorkOrderGenerationStatus(specId, selectedProject)
-      if (status.status === 'completed') {
-        setWorkOrdersGenerated(true)
-        setGenerationStatus('completed')
-      } else if (status.generated_work_orders > 0) {
-        setWorkOrdersGenerated(true)
-        setGenerationStatus('idle')
+      console.log(`API returned ${workOrdersData.length} work orders:`, workOrdersData)
+      
+      // Debug: Check work order structure for delete functionality
+      if (workOrdersData.length > 0) {
+        console.log('First work order structure:', workOrdersData[0])
+        console.log('Work order IDs:', workOrdersData.map(wo => wo.id))
+      }
+      
+      // Only set work orders from API if we don't already have them locally
+      if (workOrders.length === 0 && workOrdersData.length > 0) {
+        console.log('Setting work orders from API since localStorage was empty')
+        setWorkOrders(workOrdersData)
+        
+        const status = await missionControlApi.getWorkOrderGenerationStatus(specId, selectedProject)
+        if (status.status === 'completed') {
+          setWorkOrdersGenerated(true)
+          setGenerationStatus('completed')
+        } else if (status.generated_work_orders > 0) {
+          setWorkOrdersGenerated(true)
+          setGenerationStatus('idle')
+        }
+      } else {
+        console.log(`Skipping API work orders: local=${workOrders.length}, api=${workOrdersData.length}`)
       }
     } catch (error) {
-      console.error('Error loading work orders:', error)
+      console.error('Error loading work orders from API:', error)
     }
-  }, [selectedProject])
+  }, [selectedProject, workOrders.length])
 
   // Generate work orders with AI streaming
   const handleGenerateWorkOrders = useCallback(async () => {
-    if (!selectedProject) return
+    if (!selectedProject || !selectedFeedItem) return
 
     try {
       setGenerationStatus('generating')
       setWorkOrders([]) // Clear existing work orders
-      const specId = `spec_${selectedProject}`
+      // Use idea-specific spec_id for work order generation
+      const specId = `spec_${selectedFeedItem}`
       
       const stream = await missionControlApi.generateWorkOrders(specId, selectedProject)
       const reader = stream.getReader()
@@ -510,7 +655,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
                 console.log('Work order generation skipped - loading existing work orders')
                 setGenerationStatus('completed')
                 setWorkOrdersGenerated(true)
-                await loadWorkOrders() // Load existing work orders
+                await loadWorkOrdersFromAPI() // Load existing work orders
               } else if (data.type === 'generation_error') {
                 setGenerationStatus('error')
                 console.error('Work order generation error:', data.error)
@@ -528,12 +673,16 @@ export const PlanStage: React.FC<PlanStageProps> = ({
       console.error('Error generating work orders:', error)
       setGenerationStatus('error')
     }
-  }, [selectedProject, loadWorkOrders])
+  }, [selectedProject, loadWorkOrdersFromAPI])
 
-  // Load work orders on mount and project change
+  // Load work orders from API only as fallback after localStorage is loaded
   useEffect(() => {
-    loadWorkOrders()
-  }, [loadWorkOrders])
+    // Add a slight delay to ensure localStorage loading completes first
+    const timer = setTimeout(() => {
+      loadWorkOrdersFromAPI()
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [loadWorkOrdersFromAPI])
 
   // Handle side panel resize
   const handleSidePanelResize = useCallback((e: React.MouseEvent) => {
@@ -627,6 +776,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
             onGenerateWorkOrders={handleGenerateWorkOrders}
             workOrders={workOrders}
             onWorkOrderSelect={handleWorkOrderSelect}
+            onDeleteWorkOrder={handleDeleteWorkOrder}
           />
         ) : (
           /* Kanban Board for Task Execution */
@@ -732,6 +882,7 @@ export const PlanStage: React.FC<PlanStageProps> = ({
             workOrder={selectedWorkOrder}
             onClose={handleCloseWorkOrderModal}
             onGenerateImplementation={handleGenerateImplementation}
+            onEnhanceAllTabs={handleEnhanceAllTabs}
           />
         )}
       </AnimatePresence>
@@ -1446,6 +1597,7 @@ interface WorkOrderEnhancementViewProps {
   onGenerateWorkOrders: () => void
   workOrders: any[]
   onWorkOrderSelect: (workOrder: any) => void
+  onDeleteWorkOrder: (workOrderId: string) => void
 }
 
 const WorkOrderEnhancementView: React.FC<WorkOrderEnhancementViewProps> = ({
@@ -1454,7 +1606,8 @@ const WorkOrderEnhancementView: React.FC<WorkOrderEnhancementViewProps> = ({
   generationStatus,
   onGenerateWorkOrders,
   workOrders,
-  onWorkOrderSelect
+  onWorkOrderSelect,
+  onDeleteWorkOrder
 }) => {
   // Table state
   const [searchTerm, setSearchTerm] = useState('');
@@ -1626,6 +1779,7 @@ const WorkOrderEnhancementView: React.FC<WorkOrderEnhancementViewProps> = ({
                       <th className="px-4 py-3 text-left text-sm font-medium text-white/70">Assignee</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-white/70">Status</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-white/70">Implementation</th>
+                      <th className="px-4 py-3 text-center text-sm font-medium text-white/70">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1663,6 +1817,19 @@ const WorkOrderEnhancementView: React.FC<WorkOrderEnhancementViewProps> = ({
                           ) : (
                             <span className="text-yellow-400 text-xs">⚠ Needs Plan</span>
                           )}
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation(); // Prevent row selection
+                              console.log('Delete button clicked for work order:', workOrder.id);
+                              onDeleteWorkOrder(workOrder.id);
+                            }}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-2 rounded transition-colors"
+                            title="Delete work order"
+                          >
+                            🗑️
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1865,12 +2032,14 @@ interface WorkOrderDetailModalProps {
   workOrder: any
   onClose: () => void
   onGenerateImplementation?: (workOrderId: string) => void
+  onEnhanceAllTabs?: (workOrderId: string) => void
 }
 
 const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
   workOrder,
   onClose,
-  onGenerateImplementation
+  onGenerateImplementation,
+  onEnhanceAllTabs
 }) => {
   const [activeTab, setActiveTab] = useState<'description' | 'implementation' | 'blueprint' | 'prd'>('description')
   const [generatingPlan, setGeneratingPlan] = useState(false)
@@ -1880,6 +2049,16 @@ const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
     setGeneratingPlan(true)
     try {
       await onGenerateImplementation(workOrder.id)
+    } finally {
+      setGeneratingPlan(false)
+    }
+  }
+
+  const handleEnhanceAllTabs = async () => {
+    if (!onEnhanceAllTabs) return
+    setGeneratingPlan(true)
+    try {
+      await onEnhanceAllTabs(workOrder.id)
     } finally {
       setGeneratingPlan(false)
     }
@@ -1965,7 +2144,7 @@ const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
                 <h3 className="text-lg font-semibold text-white mb-3">Purpose</h3>
                 <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/30">
                   <p className="text-white/80 leading-relaxed">
-                    {workOrder.purpose || workOrder.description || 'No description available.'}
+                    {workOrder.description_content?.purpose || workOrder.purpose || workOrder.description || 'No description available.'}
                   </p>
                 </div>
               </div>
@@ -1974,7 +2153,16 @@ const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
               <div>
                 <h3 className="text-lg font-semibold text-white mb-3">Requirements</h3>
                 <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/30">
-                  {workOrder.requirements && workOrder.requirements.length > 0 ? (
+                  {workOrder.description_content?.requirements && workOrder.description_content.requirements.length > 0 ? (
+                    <ul className="space-y-2">
+                      {workOrder.description_content.requirements.map((req: string, index: number) => (
+                        <li key={index} className="flex items-start space-x-2">
+                          <span className="text-green-400 mt-1">✓</span>
+                          <span className="text-white/80">{req}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : workOrder.requirements && workOrder.requirements.length > 0 ? (
                     <ul className="space-y-2">
                       {workOrder.requirements.map((req: string, index: number) => (
                         <li key={index} className="flex items-start space-x-2">
@@ -1989,21 +2177,21 @@ const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Acceptance Criteria */}
+              {/* Out of Scope */}
               <div>
-                <h3 className="text-lg font-semibold text-white mb-3">Acceptance Criteria</h3>
+                <h3 className="text-lg font-semibold text-white mb-3">Out of Scope</h3>
                 <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/30">
-                  {workOrder.acceptance_criteria && workOrder.acceptance_criteria.length > 0 ? (
+                  {workOrder.description_content?.out_of_scope && workOrder.description_content.out_of_scope.length > 0 ? (
                     <ul className="space-y-2">
-                      {workOrder.acceptance_criteria.map((criteria: string, index: number) => (
+                      {workOrder.description_content.out_of_scope.map((item: string, index: number) => (
                         <li key={index} className="flex items-start space-x-2">
-                          <span className="text-blue-400 mt-1">🎯</span>
-                          <span className="text-white/80">{criteria}</span>
+                          <span className="text-red-400 mt-1">✗</span>
+                          <span className="text-white/80">{item}</span>
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-white/60">No acceptance criteria defined.</p>
+                    <p className="text-white/60">No out-of-scope items defined.</p>
                   )}
                 </div>
               </div>
@@ -2012,24 +2200,24 @@ const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
 
           {activeTab === 'implementation' && (
             <div className="h-full overflow-y-auto p-6">
-              {workOrder.implementation_plan ? (
+              {(workOrder.description_content && workOrder.implementation_approach && workOrder.blueprint_content && workOrder.prd_content) ? (
                 <div className="space-y-6">
-                  {/* Plan Description */}
+                  {/* Implementation Approach */}
                   <div>
-                    <h3 className="text-lg font-semibold text-white mb-3">Plan Description</h3>
+                    <h3 className="text-lg font-semibold text-white mb-3">Implementation Approach</h3>
                     <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/30">
                       <p className="text-white/80 leading-relaxed">
-                        {workOrder.implementation_plan.description}
+                        {workOrder.implementation_approach || 'No approach defined.'}
                       </p>
                     </div>
                   </div>
 
-                  {/* Approach Summary */}
+                  {/* Implementation Strategy */}
                   <div>
-                    <h3 className="text-lg font-semibold text-white mb-3">Approach Summary</h3>
+                    <h3 className="text-lg font-semibold text-white mb-3">Implementation Strategy</h3>
                     <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/30">
                       <p className="text-white/80 leading-relaxed">
-                        {workOrder.implementation_plan.approach_summary}
+                        {workOrder.implementation_strategy || 'No strategy defined.'}
                       </p>
                     </div>
                   </div>
@@ -2038,14 +2226,18 @@ const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
                   <div>
                     <h3 className="text-lg font-semibold text-white mb-3">Goals</h3>
                     <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/30">
-                      <ul className="space-y-2">
-                        {(workOrder.implementation_plan.goals || []).map((goal: string, index: number) => (
-                          <li key={index} className="flex items-start space-x-2">
-                            <span className="text-green-400 mt-1">🎯</span>
-                            <span className="text-white/80">{goal}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      {workOrder.implementation_goals && workOrder.implementation_goals.length > 0 ? (
+                        <ul className="space-y-2">
+                          {workOrder.implementation_goals.map((goal: string, index: number) => (
+                            <li key={index} className="flex items-start space-x-2">
+                              <span className="text-green-400 mt-1">🎯</span>
+                              <span className="text-white/80">{goal}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-white/60">No goals defined.</p>
+                      )}
                     </div>
                   </div>
 
@@ -2061,11 +2253,11 @@ const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
 
                   {/* Dependencies */}
                   <div>
-                    <h3 className="text-lg font-semibold text-white mb-3">Dependencies</h3>
+                    <h3 className="text-lg font-semibold text-white mb-3">Technical Dependencies</h3>
                     <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/30">
-                      {workOrder.implementation_plan.dependencies && workOrder.implementation_plan.dependencies.length > 0 ? (
+                      {workOrder.technical_dependencies && workOrder.technical_dependencies.length > 0 ? (
                         <ul className="space-y-2">
-                          {workOrder.implementation_plan.dependencies.map((dep: string, index: number) => (
+                          {workOrder.technical_dependencies.map((dep: string, index: number) => (
                             <li key={index} className="flex items-start space-x-2">
                               <span className="text-orange-400 mt-1">⚠️</span>
                               <span className="text-white/80">{dep}</span>
@@ -2078,21 +2270,50 @@ const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Implementation Files */}
+                  {/* Files to Create */}
                   <div>
-                    <h3 className="text-lg font-semibold text-white mb-3">Implementation Files</h3>
+                    <h3 className="text-lg font-semibold text-white mb-3">Files to Create</h3>
                     <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/30">
-                      {workOrder.implementation_plan.implementation_files && workOrder.implementation_plan.implementation_files.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {workOrder.implementation_plan.implementation_files.map((file: string, index: number) => (
-                            <div key={index} className="flex items-center space-x-2 bg-gray-900/50 rounded p-2">
-                              <span className="text-blue-400">📁</span>
-                              <code className="text-sm text-green-400 font-mono">{file}</code>
+                      {workOrder.files_to_create && workOrder.files_to_create.length > 0 ? (
+                        <div className="space-y-2">
+                          {workOrder.files_to_create.map((file: any, index: number) => (
+                            <div key={index} className="bg-gray-900/50 rounded p-3">
+                              <div className="flex items-center space-x-2 mb-1">
+                                <span className="text-green-400">📄</span>
+                                <code className="text-sm text-green-400 font-mono">{typeof file === 'string' ? file : file.path}</code>
+                              </div>
+                              {typeof file === 'object' && file.reasoning && (
+                                <p className="text-white/60 text-xs ml-6">{file.reasoning}</p>
+                              )}
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <p className="text-white/60">No specific files identified.</p>
+                        <p className="text-white/60">No files to create identified.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Files to Modify */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-white mb-3">Files to Modify</h3>
+                    <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/30">
+                      {workOrder.files_to_modify && workOrder.files_to_modify.length > 0 ? (
+                        <div className="space-y-2">
+                          {workOrder.files_to_modify.map((file: any, index: number) => (
+                            <div key={index} className="bg-gray-900/50 rounded p-3">
+                              <div className="flex items-center space-x-2 mb-1">
+                                <span className="text-blue-400">📝</span>
+                                <code className="text-sm text-blue-400 font-mono">{typeof file === 'string' ? file : file.path}</code>
+                              </div>
+                              {typeof file === 'object' && file.reasoning && (
+                                <p className="text-white/60 text-xs ml-6">{file.reasoning}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-white/60">No files to modify identified.</p>
                       )}
                     </div>
                   </div>
@@ -2105,13 +2326,13 @@ const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                       </svg>
                     </div>
-                    <h3 className="text-xl font-semibold text-white mb-2">No Implementation Plan</h3>
+                    <h3 className="text-xl font-semibold text-white mb-2">Work Order Not Enhanced</h3>
                     <p className="text-white/60 mb-6">
-                      Generate a comprehensive, codebase-aware implementation plan for this work order.
+                      Generate comprehensive content for all tabs: Description, Implementation, Blueprint, and PRD with AI-powered analysis.
                     </p>
                   </div>
                   <button
-                    onClick={handleGenerateImplementation}
+                    onClick={handleEnhanceAllTabs}
                     disabled={generatingPlan}
                     className={clsx(
                       'neon-btn px-8 py-3 text-lg font-medium',
@@ -2121,10 +2342,10 @@ const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
                     {generatingPlan ? (
                       <div className="flex items-center space-x-2">
                         <div className="w-5 h-5 border-2 border-yellow-300/30 border-t-yellow-300 rounded-full animate-spin"></div>
-                        <span>Generating...</span>
+                        <span>Enhancing All Tabs...</span>
                       </div>
                     ) : (
-                      '🛠️ Generate with AI'
+                      '⚡ Create with AI'
                     )}
                   </button>
                 </div>
@@ -2134,39 +2355,67 @@ const WorkOrderDetailModal: React.FC<WorkOrderDetailModalProps> = ({
 
           {activeTab === 'blueprint' && (
             <div className="h-full overflow-y-auto p-6">
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
+              {workOrder.blueprint_content ? (
+                <div className="space-y-6">
+                  <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700/30">
+                    <div className="prose prose-invert max-w-none">
+                      <div 
+                        className="text-white/80 leading-relaxed"
+                        dangerouslySetInnerHTML={{ 
+                          __html: typeof workOrder.blueprint_content === 'string' 
+                            ? workOrder.blueprint_content.replace(/\n/g, '<br/>') 
+                            : JSON.stringify(workOrder.blueprint_content, null, 2).replace(/\n/g, '<br/>')
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Blueprint Section</h3>
-                <p className="text-white/60">
-                  Architecture blueprints and technical specifications will be displayed here.
-                </p>
-                <button className="mt-6 neon-btn neon-btn--blue px-6 py-2">
-                  Generate Blueprint
-                </button>
-              </div>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-white mb-2">No Blueprint Available</h3>
+                  <p className="text-white/60">
+                    Generate an implementation plan to populate the blueprint section.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'prd' && (
             <div className="h-full overflow-y-auto p-6">
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              {workOrder.prd_content ? (
+                <div className="space-y-6">
+                  <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700/30">
+                    <div className="prose prose-invert max-w-none">
+                      <div 
+                        className="text-white/80 leading-relaxed"
+                        dangerouslySetInnerHTML={{ 
+                          __html: typeof workOrder.prd_content === 'string' 
+                            ? workOrder.prd_content.replace(/\n/g, '<br/>') 
+                            : JSON.stringify(workOrder.prd_content, null, 2).replace(/\n/g, '<br/>')
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">PRD Section</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">No PRD Content Available</h3>
                 <p className="text-white/60">
-                  Related Product Requirements Document sections and user stories will be displayed here.
+                  Generate an implementation plan to populate the PRD section.
                 </p>
-                <button className="mt-6 neon-btn neon-btn--purple px-6 py-2">
-                  Link PRD Sections
-                </button>
               </div>
+            )}
             </div>
           )}
         </div>

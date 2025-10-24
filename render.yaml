@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: software-factory-backend
+    env: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/system/health
+    envVars:
+      - key: FLASK_HOST
+        value: 0.0.0.0
+      - key: FLASK_PORT
+        value: 8000
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+    postDeployCommand: "python run_migration.py"
+
+

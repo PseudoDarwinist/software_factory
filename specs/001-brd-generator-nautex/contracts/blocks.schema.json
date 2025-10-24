@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://softwarefactory.local/schemas/blocks.schema.json",
+  "title": "Block Document",
+  "type": "object",
+  "required": ["blocks"],
+  "properties": {
+    "id": { "type": "string" },
+    "title": { "type": "string" },
+    "version": { "type": "string" },
+    "blocks": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/block" }
+    },
+    "outline": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/outlineIndex" }
+    }
+  },
+  "definitions": {
+    "block": {
+      "type": "object",
+      "required": ["id", "type", "order_index"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": [
+            "heading_1", "heading_2", "heading_3",
+            "paragraph", "bulleted_list", "numbered_list",
+            "checklist_item", "quote", "callout", "code",
+            "diagram", "table", "toggle", "image", "link", "reference"
+          ]
+        },
+        "content": { "type": ["object", "null"] },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/block" }
+        },
+        "order_index": { "type": "number" },
+        "parent_id": { "type": ["string", "null"] },
+        "collapsed": { "type": ["boolean", "null"] },
+        "annotations": { "type": ["object", "null"] }
+      }
+    },
+    "outlineIndex": {
+      "type": "object",
+      "required": ["id", "title", "level", "href"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "level": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "href": { "type": "string" }
+      }
+    }
+  }
+}
+

@@ -4,7 +4,10 @@ import uuid
 import json
 import re
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
+import logging
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy import String, TypeDecorator, Text
 from .base import db
@@ -350,11 +353,8 @@ def extract_prd_summary(ai_response: str, sources: List[str] = None) -> Dict[str
     """
     Extract structured PRD summary from AI-generated content.
     
-    New approach: Parse structured JSON from AI response for reliable extraction.
-    Falls back to markdown parsing if JSON is not found.
-    
     Args:
-        ai_response: Full PRD content from AI (markdown + JSON)
+        ai_response: Full PRD content from AI (markdown or JSON)
         sources: List of source file references for tagging (fallback)
         
     Returns:
@@ -365,220 +365,355 @@ def extract_prd_summary(ai_response: str, sources: List[str] = None) -> Dict[str
     
     # Default structure
     default_summary = {
-        'problem': {'text': '', 'sources': []},
-        'audience': {'text': '', 'sources': []},
-        'goals': {'items': [], 'sources': []},
-        'risks': {'items': [], 'sources': []},
-        'competitive_scan': {'items': [], 'sources': []},
-        'open_questions': {'items': [], 'sources': []}
+        'problem': {'text': '', 'sources': sources or []},
+        'audience': {'text': '', 'sources': sources or []},
+        'goals': {'items': [], 'sources': sources or []},
+        'risks': {'items': [], 'sources': sources or []},
+        'competitive_scan': {'items': [], 'sources': sources or []},
+        'open_questions': {'items': [], 'sources': sources or []}
     }
     
     if not ai_response:
         return default_summary
     
-    # Try to extract structured JSON from AI response
+    # Try to parse as JSON first
     try:
-        # Clean the response to extract JSON
-        cleaned_response = ai_response.strip()
+        # Clean control characters that break JSON parsing
+        cleaned_response = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', ai_response.strip())
         
         # Remove markdown code blocks if present
         if cleaned_response.startswith('```json'):
-            cleaned_response = cleaned_response[7:]  # Remove ```json
-        if cleaned_response.startswith('```'):
-            cleaned_response = cleaned_response[3:]   # Remove ```
+            cleaned_response = cleaned_response[7:]
+        elif cleaned_response.startswith('```'):
+            cleaned_response = cleaned_response[3:]
         if cleaned_response.endswith('```'):
-            cleaned_response = cleaned_response[:-3]  # Remove trailing ```
+            cleaned_response = cleaned_response[:-3]
         
         cleaned_response = cleaned_response.strip()
         
-        # Try to parse the cleaned response as JSON
-        try:
-            structured_data = json.loads(cleaned_response)
+        # Try to parse as JSON
+        structured_data = json.loads(cleaned_response)
+        
+        # If we have the expected structure, use it
+        if isinstance(structured_data, dict) and any(key in structured_data for key in ['problem', 'audience', 'goals']):
+            summary = default_summary.copy()
+            for field in ['problem', 'audience', 'goals', 'risks', 'competitive_scan', 'open_questions']:
+                if field in structured_data:
+                    summary[field] = structured_data[field]
+            return summary
             
-            # Extract the structured summary from the JSON
-            if 'problem' in structured_data and 'audience' in structured_data:
-                structured_summary = {
-                    'problem': structured_data.get('problem', {}),
-                    'audience': structured_data.get('audience', {}),
-                    'goals': structured_data.get('goals', {}),
-                    'risks': structured_data.get('risks', {}),
-                    'competitive_scan': structured_data.get('competitive_scan', {}),
-                    'open_questions': structured_data.get('open_questions', {})
-                }
-                
-                # Validate and clean the structured summary
-                validated_summary = default_summary.copy()
-                
-                for section in ['problem', 'audience', 'goals', 'risks', 'competitive_scan', 'open_questions']:
-                    if section in structured_summary:
-                        section_data = structured_summary[section]
-                        
-                        if section in ['problem', 'audience']:
-                            # Text-based sections
-                            if 'text' in section_data:
-                                validated_summary[section]['text'] = str(section_data['text'])
-                            if 'sources' in section_data and isinstance(section_data['sources'], list):
-                                validated_summary[section]['sources'] = section_data['sources']
-                        else:
-                            # List-based sections
-                            if 'items' in section_data and isinstance(section_data['items'], list):
-                                validated_summary[section]['items'] = section_data['items']
-                            if 'sources' in section_data and isinstance(section_data['sources'], list):
-                                validated_summary[section]['sources'] = section_data['sources']
-                
-                return validated_summary
-            else:
-                raise ValueError("JSON missing required sections")
-                
-        except (json.JSONDecodeError, ValueError) as parse_error:
-            # Try to extract JSON from within the response using regex
-            json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-                try:
-                    structured_data = json.loads(json_str)
-                    
-                    # Process the extracted JSON (same logic as above)
-                    if 'problem' in structured_data and 'audience' in structured_data:
-                        # Same validation logic as above
-                        validated_summary = default_summary.copy()
-                        
-                        for section in ['problem', 'audience', 'goals', 'risks', 'competitive_scan', 'open_questions']:
-                            if section in structured_data:
-                                section_data = structured_data[section]
-                                
-                                if section in ['problem', 'audience']:
-                                    if 'text' in section_data:
-                                        validated_summary[section]['text'] = str(section_data['text'])
-                                    if 'sources' in section_data and isinstance(section_data['sources'], list):
-                                        validated_summary[section]['sources'] = section_data['sources']
-                                else:
-                                    if 'items' in section_data and isinstance(section_data['items'], list):
-                                        validated_summary[section]['items'] = section_data['items']
-                                    if 'sources' in section_data and isinstance(section_data['sources'], list):
-                                        validated_summary[section]['sources'] = section_data['sources']
-                        
-                        return validated_summary
-                        
-                except json.JSONDecodeError:
-                    pass
-            
-            # Fallback to delimiter format
-            if '---STRUCTURED_SUMMARY---' in ai_response:
-                json_part = ai_response.split('---STRUCTURED_SUMMARY---')[1].strip()
-                
-                # Extract JSON from the response
-                json_match = re.search(r'\{.*\}', json_part, re.DOTALL)
-                if json_match:
-                    json_str = json_match.group(0)
-                    structured_summary = json.loads(json_str)
-                else:
-                    raise ValueError("No JSON found after delimiter")
-            else:
-                raise ValueError("No delimiter found")
-                
-    except (json.JSONDecodeError, KeyError, IndexError) as e:
-        # Log the error but don't print debug info
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(f"Failed to parse structured JSON, falling back to markdown parsing: {e}")
+    except (json.JSONDecodeError, ValueError):
+        pass
     
-    # Fallback to original markdown parsing
-    return _parse_markdown_summary(ai_response, sources, default_summary)
-
-
-def _parse_markdown_summary(ai_response: str, sources: List[str], default_summary: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Enhanced markdown parsing for comprehensive PRD summary extraction.
-    """
+    # If JSON parsing fails, create a basic summary from the content
+    # This ensures we always return something useful
     summary = default_summary.copy()
     
-    # Extract Problem Statement
-    problem_match = re.search(r'(?:problem statement|core problems).*?(?=##|\Z)', ai_response, re.IGNORECASE | re.DOTALL)
-    if problem_match:
-        problem_text = problem_match.group(0)
-        # Extract key problem points
-        problems = re.findall(r'[-*]\s*([^-*\n]+)', problem_text)
-        if problems:
-            summary['problem']['text'] = '. '.join(problems[:2])  # Take first 2 problems
-            summary['problem']['sources'] = ['S1']
+    # Extract basic information from the content
+    content_lower = ai_response.lower()
     
-    # Extract Target Audience
-    audience_match = re.search(r'(?:target audience|user personas?).*?(?=##|\Z)', ai_response, re.IGNORECASE | re.DOTALL)
-    if audience_match:
-        audience_text = audience_match.group(0)
-        # Look for Primary/Secondary structure
-        primary_match = re.search(r'\*\*primary:?\*\*\s*([^*\n]+)', audience_text, re.IGNORECASE)
-        secondary_match = re.search(r'\*\*secondary:?\*\*\s*([^*\n]+)', audience_text, re.IGNORECASE)
-        
-        audience_parts = []
-        if primary_match:
-            audience_parts.append(f"Primary: {primary_match.group(1).strip()}")
-        if secondary_match:
-            audience_parts.append(f"Secondary: {secondary_match.group(1).strip()}")
-        
-        if audience_parts:
-            summary['audience']['text'] = '. '.join(audience_parts)
-            summary['audience']['sources'] = ['S1']
+    # Try to extract problem statement
+    problem_patterns = [
+        r'(?:problem|challenge|issue).*?(?:\n\n|\n#|$)',
+        r'## problem.*?(?=##|$)',
+        r'# problem.*?(?=##|$)'
+    ]
     
-    # Extract Goals from Value Proposition or Business Objectives
-    goals_match = re.search(r'(?:value proposition|business objectives|goals).*?(?=##|\Z)', ai_response, re.IGNORECASE | re.DOTALL)
-    if goals_match:
-        goals_text = goals_match.group(0)
-        # Extract bullet points or numbered goals
-        goals = re.findall(r'[-*]\s*([^-*\n]+)', goals_text)
-        if not goals:
-            # Try numbered format
-            goals = re.findall(r'\d+\.\s*\*\*([^*]+)\*\*', goals_text)
-        
-        if goals:
-            summary['goals']['items'] = goals[:3]  # Take first 3 goals
-            summary['goals']['sources'] = ['S1'] * len(summary['goals']['items'])
+    for pattern in problem_patterns:
+        match = re.search(pattern, ai_response, re.IGNORECASE | re.DOTALL)
+        if match:
+            problem_text = match.group(0).strip()
+            # Clean up the text
+            problem_text = re.sub(r'^#+\s*', '', problem_text)
+            problem_text = re.sub(r'\*\*([^*]+)\*\*', r'\1', problem_text)
+            if len(problem_text) > 20:
+                summary['problem']['text'] = problem_text[:200] + '...' if len(problem_text) > 200 else problem_text
+                break
     
-    # Extract Risks from Problem Statement or dedicated Risk section
-    risks_match = re.search(r'(?:risks?|challenges?|concerns?).*?(?=##|\Z)', ai_response, re.IGNORECASE | re.DOTALL)
-    if risks_match:
-        risks_text = risks_match.group(0)
-        risks = re.findall(r'[-*]\s*([^-*\n]+)', risks_text)
-        if risks:
-            summary['risks']['items'] = risks[:2]  # Take first 2 risks
-            summary['risks']['sources'] = ['S1'] * len(summary['risks']['items'])
+    # Extract goals/objectives
+    goals_patterns = [
+        r'(?:goals?|objectives?).*?(?:\n\n|\n#|$)',
+        r'## (?:goals?|objectives?).*?(?=##|$)',
+        r'# (?:goals?|objectives?).*?(?=##|$)'
+    ]
     
-    # Extract Competitive Analysis from Key Differentiators or Solution Overview
-    comp_match = re.search(r'(?:key differentiators?|competitive|solution overview).*?(?=##|\Z)', ai_response, re.IGNORECASE | re.DOTALL)
-    if comp_match:
-        comp_text = comp_match.group(0)
-        competitors = re.findall(r'[-*]\s*([^-*\n]+)', comp_text)
-        if competitors:
-            summary['competitive_scan']['items'] = competitors[:2]  # Take first 2 differentiators
-            summary['competitive_scan']['sources'] = ['S1'] * len(summary['competitive_scan']['items'])
-    
-    # Extract Open Questions from Requirements or implied gaps
-    questions_match = re.search(r'(?:requirements?|user stories).*?(?=##|\Z)', ai_response, re.IGNORECASE | re.DOTALL)
-    if questions_match:
-        questions_text = questions_match.group(0)
-        # Look for question patterns or requirements that imply questions
-        questions = []
-        
-        # Add some intelligent questions based on the content
-        if 'enterprise security' in ai_response.lower():
-            questions.append("What specific enterprise security requirements must be met?")
-        if 'ai' in ai_response.lower():
-            questions.append("How will the AI algorithms be trained and validated?")
-        if 'mobile' in ai_response.lower():
-            questions.append("What is the optimal mobile-first user experience design?")
-        
-        if questions:
-            summary['open_questions']['items'] = questions[:3]
-            summary['open_questions']['sources'] = ['S1'] * len(summary['open_questions']['items'])
-    
-    print(f"⚠️ Used enhanced markdown parsing")
-    print(f"🔍 DEBUG: Enhanced parsing results:")
-    for section, data in summary.items():
-        if section in ['problem', 'audience']:
-            has_content = bool(data.get('text', '').strip())
-        else:
-            has_content = bool(data.get('items', []))
-        print(f"  - {section}: {'✅' if has_content else '❌'}")
+    for pattern in goals_patterns:
+        match = re.search(pattern, ai_response, re.IGNORECASE | re.DOTALL)
+        if match:
+            goals_text = match.group(0)
+            # Extract bullet points or numbered items
+            goals = re.findall(r'[-*]\s*([^\n]+)', goals_text)
+            if not goals:
+                goals = re.findall(r'\d+\.\s*([^\n]+)', goals_text)
+            if goals:
+                summary['goals']['items'] = goals[:3]  # Take first 3
+                break
     
     return summary
+
+
+def _parse_ai_json(ai_response: str) -> Dict[str, Any]:
+    """Parse AI response into JSON dict, handling common wrappers and noise.
+
+    Strategy:
+    - Strip BOM/zero-width/control chars
+    - Try direct json.loads
+    - Extract fenced code blocks and try each
+    - Extract first balanced JSON object and try it
+    Raises ValueError if nothing can be parsed.
+    """
+    if not ai_response:
+        raise ValueError("Empty AI response")
+
+    raw = _strip_control_and_bom(ai_response.strip())
+
+    # 1) Try direct parse
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+
+    # 2) Try fenced/brace candidates
+    for candidate in _find_json_blocks(raw):
+        cleaned = _strip_control_and_bom(candidate.strip())
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            # Some providers return JSONC; remove // and /* */ comments then retry
+            no_line_comments = re.sub(r"(^|\s)//.*", "", cleaned)
+            no_block_comments = re.sub(r"/\*[^*]*\*+(?:[^/*][^*]*\*+)*/", "", no_line_comments, flags=re.S)
+            # Remove trailing commas in objects/arrays (best-effort)
+            no_trailing_commas = re.sub(r",\s*(\}|\])", r"\1", no_block_comments)
+            try:
+                return json.loads(no_trailing_commas)
+            except Exception:
+                continue
+
+    raise ValueError("Could not parse JSON from AI response")
+
+
+def _strip_control_and_bom(text: str) -> str:
+    """Remove control chars, BOM and zero-width spaces that break JSON parsing."""
+    if text is None:
+        return ''
+    # Remove UTF-8/UTF-16 BOM and common zero-width chars
+    try:
+        text = text.replace('\ufeff', '').replace('\u200b', '').replace('\u200c', '').replace('\u200d', '')
+    except Exception:
+        pass
+    # Remove ASCII control characters except \t, \n, \r
+    text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)
+    return text
+
+
+def _find_json_blocks(text: str) -> List[str]:
+    """Find candidate JSON blocks within a string.
+
+    - Extract content from fenced code blocks ```/~~~ … (json/jsonc supported)
+    - Also attempt to extract the first balanced JSON object
+    - Heuristic: extract object that contains "full_prd"
+    """
+    if not text:
+        return []
+
+    candidates: List[str] = []
+    s = text
+
+    # 1) Look for fenced code blocks first (prefer those labeled json)
+    fence_pattern = re.compile(r"(```|~~~)\s*([a-zA-Z0-9_\-]*)\s*\n([\s\S]*?)\1", re.MULTILINE)
+    for m in fence_pattern.finditer(s):
+        lang = (m.group(2) or '').lower()
+        body = m.group(3).strip()
+        if not body:
+            continue
+        if lang in ('json', 'jsonc', 'json5', 'application/json'):
+            candidates.insert(0, body)
+        else:
+            candidates.append(body)
+
+    # 2) Brace-balanced extraction for first object
+    if not candidates:
+        start = None
+        depth = 0
+        in_str = False
+        esc = False
+        for i, ch in enumerate(s):
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == '\\':
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch == '{':
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif ch == '}':
+                if depth > 0:
+                    depth -= 1
+                    if depth == 0 and start is not None:
+                        block = s[start:i+1].strip()
+                        if block:
+                            candidates.append(block)
+                        break
+
+        if not candidates:
+            loose = re.search(r"\{[\s\S]*\}", s)
+            if loose:
+                candidates.append(loose.group(0).strip())
+
+    # 3) Heuristic: extract JSON object that contains a target key like "full_prd"
+    if '"full_prd"' in s and not any('"full_prd"' in c for c in candidates):
+        idx = s.find('"full_prd"')
+        # Find nearest preceding '{' and walk to matching '}'
+        start = None
+        for i in range(idx, -1, -1):
+            if s[i] == '{':
+                start = i
+                break
+        if start is not None:
+            depth = 0
+            in_str = False
+            esc = False
+            for j in range(start, len(s)):
+                ch = s[j]
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif ch == '\\':
+                        esc = True
+                    elif ch == '"':
+                        in_str = False
+                else:
+                    if ch == '"':
+                        in_str = True
+                    elif ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            block = s[start:j+1].strip()
+                            if block:
+                                candidates.insert(0, block)
+                            break
+
+    if not candidates:
+        logger.warning("PRD JSON parse: no candidate blocks found")
+
+    return candidates
+
+
+def extract_summary_from_markdown(md: str, sources: List[str] = None) -> Dict[str, Any]:
+    """Heuristic summary extraction from markdown when JSON isn't provided.
+
+    Looks for common headings and bullets to populate the six UI fields.
+    """
+    base = lambda: {
+        'problem': {'text': '', 'sources': sources or []},
+        'audience': {'text': '', 'sources': sources or []},
+        'goals': {'items': [], 'sources': sources or []},
+        'risks': {'items': [], 'sources': sources or []},
+        'competitive_scan': {'items': [], 'sources': sources or []},
+        'open_questions': {'items': [], 'sources': sources or []},
+    }
+    if not md:
+        return base()
+
+    def section_text(title_variants: List[str]) -> str:
+        patt = re.compile(r"^(#{1,6}|\*\*|__)\s*(%s)\b.*$" % ("|".join(map(re.escape, title_variants))), re.IGNORECASE | re.MULTILINE)
+        m = patt.search(md)
+        if not m:
+            # Try plain line starts without markdown markers
+            patt2 = re.compile(r"^(%s)\b.*$" % ("|".join(map(re.escape, title_variants))), re.IGNORECASE | re.MULTILINE)
+            m = patt2.search(md)
+        if not m:
+            return ''
+        start = m.end()
+        # Capture until next heading or end
+        next_heading = re.search(r"^#{1,6}\s|^\*\*|^__|^\w+\s*:\s*$", md[start:], re.MULTILINE)
+        end = start + (next_heading.start() if next_heading else len(md) - start)
+        return md[start:end].strip()
+
+    def list_items_from(text: str, limit: int = 10) -> List[str]:
+        if not text:
+            return []
+        items = []
+        for line in text.splitlines():
+            line = line.strip()
+            m = re.match(r"^[-*+•]\s+(.*)$", line)
+            if m:
+                items.append(m.group(1).strip())
+                continue
+            m2 = re.match(r"^\d+[\.)\s]+(.*)$", line)
+            if m2:
+                items.append(m2.group(1).strip())
+            if len(items) >= limit:
+                break
+        # If no bullets, split paragraphs/sentences
+        if not items and text:
+            parts = re.split(r"\n\n+|\.\s+", text)
+            items = [p.strip() for p in parts if p.strip()][:limit]
+        return items
+
+    problem_text = section_text(["Problem", "Problem Statement"])[:600]
+    audience_text = section_text(["Audience", "Target Audience", "User Personas"])[:600]
+    goals_text = section_text(["Goals", "Objectives", "Key Goals"])[:2000]
+    risks_text = section_text(["Risks", "Risk Analysis"])[:2000]
+    comp_text = section_text(["Competitive Scan", "Competitive Analysis", "Competition"])[:2000]
+    q_text = section_text(["Open Questions", "Questions", "Unknowns"])[:2000]
+
+    summary = base()
+    summary['problem']['text'] = problem_text.strip()
+    summary['audience']['text'] = audience_text.strip()
+    summary['goals']['items'] = list_items_from(goals_text)
+    summary['risks']['items'] = list_items_from(risks_text)
+    summary['competitive_scan']['items'] = list_items_from(comp_text)
+    summary['open_questions']['items'] = list_items_from(q_text)
+    return summary
+
+
+def extract_prd_summary(ai_response: str, sources: List[str] = None) -> Dict[str, Any]:
+    """
+    Extract structured PRD summary from AI JSON response.
+    
+    Args:
+        ai_response: JSON response from AI containing PRD structure
+        sources: List of source file references for tagging
+        
+    Returns:
+        Dict with structured sections and source attribution
+    """
+    import json
+    import re
+    
+    if not ai_response:
+        raise ValueError("Empty AI response")
+    
+    try:
+        structured_data = _parse_ai_json(ai_response)
+        
+        # Extract and validate required fields
+        summary = {}
+        for field in ['problem', 'audience', 'goals', 'risks', 'competitive_scan', 'open_questions']:
+            if field in structured_data:
+                summary[field] = structured_data[field]
+            else:
+                # Provide default structure for missing fields
+                if field in ['problem', 'audience']:
+                    summary[field] = {'text': '', 'sources': sources or []}
+                else:
+                    summary[field] = {'items': [], 'sources': sources or []}
+        
+        return summary
+        
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON response from AI: {e}")
+    except Exception as e:
+        raise ValueError(f"Failed to extract PRD summary: {e}")
+
+
+

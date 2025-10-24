@@ -737,6 +737,25 @@ class WebSocketServer:
             logger.error(f"Error broadcasting work order enhancement: {e}")
             self.stats['errors'] += 1
     
+    def broadcast_work_order_fully_enhanced(self, work_order_id: str, all_content: Dict[str, Any]):
+        """Broadcast work order full enhancement completion (all four tabs)"""
+        try:
+            event_data = {
+                'type': 'work_order_fully_enhanced',
+                'work_order_id': work_order_id,
+                'all_content': all_content,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            self.socketio.emit('work_order_fully_enhanced', event_data)
+            self.stats['messages_sent'] += 1
+            
+            logger.info(f"Broadcasted work order full enhancement for {work_order_id}")
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting work order full enhancement: {e}")
+            self.stats['errors'] += 1
+    
     def broadcast_work_order_ready(self, work_order_id: str):
         """Broadcast work order ready status"""
         try:

@@ -23,6 +23,8 @@ import ADIPackConfiguration from '@/pages/ADI/ADIPackConfiguration'
 import { Notifications } from '@/components/core/Notifications'
 import { WebSocketProvider } from '@/contexts/WebSocketProvider'
 import { Settings } from '@/pages/Settings/Settings'
+import { PRDEditor } from '@/pages/PRDEditor/PRDEditor'
+import { TestPRDEditor } from '@/pages/PRDEditor/TestPRDEditor'
 import './App.css'
 
 // Create React Query client
@@ -48,6 +50,10 @@ function App() {
               <Route path="/" element={<MissionControl />} />
             {/* Optional alias */}
               <Route path="/mission-control" element={<MissionControl />} />
+            {/* New PRD Editor */}
+              <Route path="/prd-editor/:sessionId" element={<PRDEditor />} />
+            {/* Test PRD Editor */}
+              <Route path="/prd-editor-test" element={<TestPRDEditor />} />
             {/* ADI Field Review */}
               <Route path="/adi" element={<ADIFieldReview />} />
             {/* ADI Pack Configuration */}

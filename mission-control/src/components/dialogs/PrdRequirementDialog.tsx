@@ -44,9 +44,9 @@ export const PrdRequirementDialog: React.FC<PrdRequirementDialogProps> = ({
       // Create idea-specific PRD
       const result = await missionControlApi.createIdeaSpecificPrd(itemId, projectId)
       
-      // Navigate to the PO interface to edit the PRD
-      const poUrl = `/po.html?project=${projectId}&session=${result.upload_session_id}&context=edit_prd&item=${itemId}&title=${encodeURIComponent(itemTitle)}`
-      window.open(poUrl, '_blank', 'width=1200,height=800')
+      // Navigate to the new full-screen PRD editor
+      const editorUrl = `/intelligent-prd-editor.html?project=${projectId}&session=${result.upload_session_id}&context=edit_prd&item=${itemId}&title=${encodeURIComponent(itemTitle)}`
+      window.open(editorUrl, '_blank', 'width=1200,height=800')
       
       // Close this dialog
       onClose()
@@ -72,8 +72,8 @@ export const PrdRequirementDialog: React.FC<PrdRequirementDialogProps> = ({
     // If there's a draft PRD, guide user to freeze it
     if (uploadSessions.length > 0) {
       const latestSession = uploadSessions[0]
-      const poUrl = `/po.html?project=${projectId}&session=${latestSession.id}&action=freeze_prd`
-      window.open(poUrl, '_blank', 'width=1200,height=800')
+      const editorUrl = `/intelligent-prd-editor.html?project=${projectId}&session=${latestSession.id}&action=freeze_prd`
+      window.open(editorUrl, '_blank', 'width=1200,height=800')
       onClose()
     }
   }, [projectId, uploadSessions, onClose])

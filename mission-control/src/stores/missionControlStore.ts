@@ -37,11 +37,32 @@ interface NotificationPrefs {
   showErrors: boolean
 }
 
+interface PRDSession {
+  sessionId: string
+  projectId: string
+  ideaId?: string
+  description: string
+  status: 'idle' | 'uploading' | 'analyzing' | 'drafting' | 'ready'
+  files: Array<{
+    name: string
+    type: 'pdf' | 'video' | 'image' | 'document' | 'link'
+    progress: number
+    error?: string
+  }>
+  prdContent?: string
+  createdAt: string
+  updatedAt: string
+}
+
 interface MissionControlState {
   // Data
   projects: ProjectSummary[]
   feedItems: FeedItem[]
   conversation: ConversationPayload | null
+  
+  // PRD Session Management
+  prdSessions: Record<string, PRDSession>
+  activePRDSession: string | null
   
   // UI State
   ui: UIState
@@ -86,6 +107,16 @@ interface MissionControlState {
     // Notification preference actions
     setNotificationPrefs: (prefs: Partial<NotificationPrefs>) => void
     enableBrowserNotifications: () => Promise<void>
+    
+    // PRD Session actions
+    createPRDSession: (session: Omit<PRDSession, 'createdAt' | 'updatedAt'>) => void
+    updatePRDSession: (sessionId: string, updates: Partial<PRDSession>) => void
+    deletePRDSession: (sessionId: string) => void
+    setActivePRDSession: (sessionId: string | null) => void
+    getPRDSession: (sessionId: string) => PRDSession | null
+    savePRDSessionToStorage: (sessionId: string) => void
+    loadPRDSessionFromStorage: (sessionId: string) => PRDSession | null
+    loadAllPRDSessionsFromStorage: () => void
   }
 }
 
@@ -105,6 +136,10 @@ export const useMissionControlStore = create<MissionControlState>()(
       projects: [],
       feedItems: [],
       conversation: null,
+      
+      // PRD Sessions
+      prdSessions: {},
+      activePRDSession: null,
       
       ui: {
         sidebarCollapsed: false,
@@ -260,6 +295,165 @@ export const useMissionControlStore = create<MissionControlState>()(
             }
           } catch {}
         },
+        
+        // PRD Session actions
+        createPRDSession: (session) => {
+          const now = new Date().toISOString()
+          const fullSession: PRDSession = {
+            ...session,
+            createdAt: now,
+            updatedAt: now
+          }
+          
+          set((state) => {
+            const newSessions = {
+              ...state.prdSessions,
+              [session.sessionId]: fullSession
+            }
+            
+            // Save to localStorage
+            try {
+              localStorage.setItem(`prd-session-${session.sessionId}`, JSON.stringify(fullSession))
+              localStorage.setItem('prd-sessions-list', JSON.stringify(Object.keys(newSessions)))
+            } catch (error) {
+              console.error('Failed to save PRD session to localStorage:', error)
+            }
+            
+            return {
+              prdSessions: newSessions,
+              activePRDSession: session.sessionId
+            }
+          })
+        },
+        
+        updatePRDSession: (sessionId, updates) => {
+          set((state) => {
+            const existingSession = state.prdSessions[sessionId]
+            if (!existingSession) return state
+            
+            const updatedSession = {
+              ...existingSession,
+              ...updates,
+              updatedAt: new Date().toISOString()
+            }
+            
+            const newSessions = {
+              ...state.prdSessions,
+              [sessionId]: updatedSession
+            }
+            
+            // Save to localStorage
+            try {
+              localStorage.setItem(`prd-session-${sessionId}`, JSON.stringify(updatedSession))
+            } catch (error) {
+              console.error('Failed to update PRD session in localStorage:', error)
+            }
+            
+            return {
+              prdSessions: newSessions
+            }
+          })
+        },
+        
+        deletePRDSession: (sessionId) => {
+          set((state) => {
+            const newSessions = { ...state.prdSessions }
+            delete newSessions[sessionId]
+            
+            // Remove from localStorage
+            try {
+              localStorage.removeItem(`prd-session-${sessionId}`)
+              localStorage.setItem('prd-sessions-list', JSON.stringify(Object.keys(newSessions)))
+            } catch (error) {
+              console.error('Failed to remove PRD session from localStorage:', error)
+            }
+            
+            return {
+              prdSessions: newSessions,
+              activePRDSession: state.activePRDSession === sessionId ? null : state.activePRDSession
+            }
+          })
+        },
+        
+        setActivePRDSession: (sessionId) => {
+          set((state) => {
+            // Save active session to localStorage
+            try {
+              if (sessionId) {
+                localStorage.setItem('active-prd-session', sessionId)
+              } else {
+                localStorage.removeItem('active-prd-session')
+              }
+            } catch (error) {
+              console.error('Failed to save active PRD session to localStorage:', error)
+            }
+            
+            return {
+              activePRDSession: sessionId
+            }
+          })
+        },
+        
+        getPRDSession: (sessionId) => {
+          return get().prdSessions[sessionId] || null
+        },
+        
+        savePRDSessionToStorage: (sessionId) => {
+          const session = get().prdSessions[sessionId]
+          if (session) {
+            try {
+              localStorage.setItem(`prd-session-${sessionId}`, JSON.stringify(session))
+            } catch (error) {
+              console.error('Failed to save PRD session to localStorage:', error)
+            }
+          }
+        },
+        
+        loadPRDSessionFromStorage: (sessionId) => {
+          try {
+            const stored = localStorage.getItem(`prd-session-${sessionId}`)
+            if (stored) {
+              const session: PRDSession = JSON.parse(stored)
+              set((state) => ({
+                prdSessions: {
+                  ...state.prdSessions,
+                  [sessionId]: session
+                }
+              }))
+              return session
+            }
+          } catch (error) {
+            console.error('Failed to load PRD session from localStorage:', error)
+          }
+          return null
+        },
+        
+        loadAllPRDSessionsFromStorage: () => {
+          try {
+            const sessionsList = localStorage.getItem('prd-sessions-list')
+            if (sessionsList) {
+              const sessionIds: string[] = JSON.parse(sessionsList)
+              const sessions: Record<string, PRDSession> = {}
+              
+              sessionIds.forEach(sessionId => {
+                const stored = localStorage.getItem(`prd-session-${sessionId}`)
+                if (stored) {
+                  sessions[sessionId] = JSON.parse(stored)
+                }
+              })
+              
+              // Load active session
+              const activeSessionId = localStorage.getItem('active-prd-session')
+              
+              set(() => ({
+                prdSessions: sessions,
+                activePRDSession: activeSessionId && sessions[activeSessionId] ? activeSessionId : null
+              }))
+            }
+          } catch (error) {
+            console.error('Failed to load PRD sessions from localStorage:', error)
+          }
+        },
       },
     }),
     {
@@ -303,3 +497,22 @@ export const useUnreadCount = (projectId?: string) => useMissionControlStore(sta
 export const useProjectHealth = (projectId: string) => useMissionControlStore(state => 
   state.projects.find(p => p.id === projectId)?.health || 'green'
 )
+
+// PRD Session selectors
+export const usePRDSessions = () => useMissionControlStore(state => state.prdSessions)
+export const useActivePRDSession = () => useMissionControlStore(state => 
+  state.activePRDSession ? state.prdSessions[state.activePRDSession] : null
+)
+export const usePRDSession = (sessionId: string | null) => useMissionControlStore(state => 
+  sessionId ? state.prdSessions[sessionId] : null
+)
+export const usePRDSessionActions = () => useMissionControlStore(state => ({
+  createPRDSession: state.actions.createPRDSession,
+  updatePRDSession: state.actions.updatePRDSession,
+  deletePRDSession: state.actions.deletePRDSession,
+  setActivePRDSession: state.actions.setActivePRDSession,
+  getPRDSession: state.actions.getPRDSession,
+  savePRDSessionToStorage: state.actions.savePRDSessionToStorage,
+  loadPRDSessionFromStorage: state.actions.loadPRDSessionFromStorage,
+  loadAllPRDSessionsFromStorage: state.actions.loadAllPRDSessionsFromStorage,
+}))

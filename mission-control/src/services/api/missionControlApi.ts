@@ -44,7 +44,7 @@ class MissionControlApi {
     this.baseURL = baseURL;
     this.client = axios.create({
       baseURL,
-      timeout: 300000, // 5 minutes for AI-powered document analysis
+      timeout: 600000, // 10 minutes for comprehensive PRD generation
       headers: {
         "Content-Type": "application/json",
       },
@@ -1394,6 +1394,68 @@ class MissionControlApi {
     }
   }
 
+  // Load PRD content for the new React editor (uses existing backend route)
+  async getPrdEditorContent(
+    prdIdOrSessionId: string,
+    version?: string
+  ): Promise<{
+    id: string
+    title?: string
+    editorjs_content?: any
+    version?: string
+    status?: string
+  }> {
+    try {
+      const response = await this.client.get<
+        ApiResponse<{
+          id: string
+          title?: string
+          editorjs_content?: any
+          version?: string
+          status?: string
+        }>
+      >(`/prd-editor/prds/${encodeURIComponent(prdIdOrSessionId)}`, {
+        params: version ? { version } : undefined,
+      })
+      // Some endpoints in this project return data nested, some not – support both.
+      return (response.data as any)?.data || (response.data as any)
+    } catch (error) {
+      console.error('Failed to load PRD editor content:', error)
+      throw new Error('Failed to load PRD content')
+    }
+  }
+
+  // Save PRD blocks after AI generation/modification
+  async savePRDBlocks(
+    sessionId: string, 
+    blocks: any[], 
+    metadata?: { 
+      title?: string
+      lastModified?: Date 
+      source?: 'ai_generation' | 'ai_modification' | 'manual_edit'
+    }
+  ): Promise<{ success: boolean; prdId: string }> {
+    try {
+      const response = await this.client.post<
+        ApiResponse<{ prdId: string }>
+      >(`/prd-editor/save-blocks/${encodeURIComponent(sessionId)}`, {
+        blocks,
+        metadata: {
+          title: metadata?.title,
+          lastModified: (metadata?.lastModified || new Date()).toISOString(),
+          source: metadata?.source || 'ai_generation'
+        }
+      })
+      return {
+        success: true,
+        prdId: response.data.data?.prdId || sessionId
+      }
+    } catch (error) {
+      console.error('Failed to save PRD blocks:', error)
+      throw new Error('Failed to save PRD blocks')
+    }
+  }
+
   async freezePRD(
     prdId: string,
     createdBy?: string
@@ -1631,6 +1693,7 @@ class MissionControlApi {
           error?: string;
         }>
       >(`/upload/session/${sessionId}/analyze`, {
+        // Default to Claude Opus for higher-quality PRD drafting; UI may override
         preferred_model: preferredModel || "claude-opus-4",
       });
       console.log(`✅ Analysis completed for session ${sessionId}`);
@@ -1684,6 +1747,7 @@ class MissionControlApi {
       file_count: number;
       created_at: string;
       updated_at: string;
+      feed_item_id?: string;
     }[]
   > {
     try {
@@ -1697,6 +1761,7 @@ class MissionControlApi {
             file_count: number;
             created_at: string;
             updated_at: string;
+            feed_item_id?: string;
           }[]
         >
       >(`/upload/project/${projectId}/sessions`);
@@ -1799,7 +1864,7 @@ class MissionControlApi {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`
         },
-        body: JSON.stringify({ projectId: projectId })
+        body: JSON.stringify({ projectId: projectId, enhanced: true })
       });
 
       if (!response.ok) {
@@ -1889,6 +1954,98 @@ class MissionControlApi {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to generate implementation plan'
       };
+    }
+  }
+
+  async enhanceWorkOrderAllTabs(workOrderId: string, specId: string, projectId: string): Promise<{
+    success: boolean;
+    all_tabs_populated?: boolean;
+    status?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await this.client.post<ApiResponse<{
+        all_tabs_populated: boolean;
+        status: string;
+      }>>(`/work-orders/${workOrderId}/enhance-all-tabs`, {
+        specId: specId,
+        projectId: projectId
+      });
+
+      return {
+        success: true,
+        all_tabs_populated: response.data.data?.all_tabs_populated,
+        status: response.data.data?.status
+      };
+    } catch (error) {
+      console.error('Failed to enhance work order with all tabs:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to enhance work order'
+      };
+    }
+  }
+
+  async deleteWorkOrder(workOrderId: string): Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await this.client.delete<ApiResponse<{
+        message: string;
+        work_order_id: string;
+      }>>(`/work-orders/${workOrderId}`);
+      
+      return {
+        success: true,
+        message: response.data.data?.message || 'Work order deleted successfully'
+      };
+    } catch (error) {
+      console.error('Failed to delete work order:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete work order'
+      };
+    }
+  }
+
+  // Block editing and persistence methods (Task 5)
+  async updateBlock(blockId: string, content: any, sessionId: string): Promise<any> {
+    try {
+      const response = await this.client.put(`/prd-editor/blocks/${blockId}`, {
+        content,
+        session_id: sessionId
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Failed to update block:", error);
+      throw new Error("Failed to update block");
+    }
+  }
+
+  async createBlock(type: string, content: any, sessionId: string, position?: number): Promise<any> {
+    try {
+      const response = await this.client.post("/prd-editor/blocks", {
+        type,
+        content,
+        session_id: sessionId,
+        position
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Failed to create block:", error);
+      throw new Error("Failed to create block");
+    }
+  }
+
+  async deleteBlock(blockId: string, sessionId: string): Promise<any> {
+    try {
+      const response = await this.client.delete(`/prd-editor/blocks/${blockId}?session_id=${sessionId}`);
+      return response.data;
+    } catch (error) {
+      console.error("Failed to delete block:", error);
+      throw new Error("Failed to delete block");
     }
   }
 }

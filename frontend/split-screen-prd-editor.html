@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRD Editor - Split Screen</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #ffffff;
+      color: #37352f;
+      line-height: 1.5;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Split screen layout */
+    .app-container {
+      display: flex;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* Left sidebar */
+    .sidebar {
+      width: 280px;
+      min-width: 240px;
+      max-width: 400px;
+      background: #f8f9fa;
+      border-right: 1px solid #e1e8ed;
+      display: flex;
+      flex-direction: column;
+      resize: horizontal;
+      overflow: auto;
+    }
+
+    .sidebar-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e1e8ed;
+      background: #ffffff;
+      font-weight: 600;
+      font-size: 14px;
+      color: #37352f;
+    }
+
+    .sidebar-content {
+      flex: 1;
+      padding: 16px 12px;
+      overflow-y: auto;
+    }
+
+    .outline-section {
+      margin-bottom: 24px;
+    }
+
+    .outline-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      padding: 0 8px;
+    }
+
+    .outline-item {
+      display: block;
+      padding: 6px 12px;
+      margin: 2px 0;
+      color: #37352f;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: all 0.15s ease;
+    }
+
+    .outline-item:hover {
+      background: #e2e8f0;
+      color: #1e293b;
+    }
+
+    .outline-item.active {
+      background: #3b82f6;
+      color: white;
+    }
+
+    /* Main editor area */
+    .main-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: #ffffff;
+    }
+
+    .editor-header {
+      padding: 16px 24px;
+      border-bottom: 1px solid #e1e8ed;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .editor-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #37352f;
+    }
+
+    .editor-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      color: #374151;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover {
+      background: #f9fafb;
+      border-color: #9ca3af;
+    }
+
+    .btn.primary {
+      background: #3b82f6;
+      border-color: #3b82f6;
+      color: white;
+    }
+
+    .btn.primary:hover {
+      background: #2563eb;
+    }
+
+    /* Editor content area */
+    .editor-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 40px 60px 120px;
+    }
+
+    /* Block styling */
+    .notion-block {
+      position: relative;
+      padding: 3px 0;
+      margin: 2px 0;
+      border-radius: 3px;
+      transition: all 0.1s ease;
+    }
+    
+    .notion-block:hover {
+      background: rgba(55, 53, 47, 0.03);
+    }
+    
+    .notion-block.selected {
+      background: rgba(46, 170, 220, 0.15);
+      box-shadow: 0 0 0 1px rgba(46, 170, 220, 0.4);
+    }
+    
+    /* Floating controls */
+    .notion-controls {
+      position: absolute;
+      right: 12px;
+      top: 8px;
+      display: none;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 25px;
+      padding: 6px 8px;
+      gap: 6px;
+      z-index: 100;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    }
+    
+    .notion-block.selected .notion-controls {
+      display: flex;
+    }
+    
+    .notion-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 600;
+      transition: all 0.15s ease;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    
+    .notion-btn.add {
+      background: #22c55e;
+      color: white;
+    }
+    
+    .notion-btn.add:hover {
+      background: #16a34a;
+      transform: scale(1.05);
+    }
+    
+    .notion-btn.delete {
+      background: #ef4444;
+      color: white;
+    }
+    
+    .notion-btn.delete:hover {
+      background: #dc2626;
+      transform: scale(1.05);
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+    }
+
+    /* Typography */
+    h1 {
+      font-size: 40px;
+      font-weight: 700;
+      margin: 0 0 24px 0;
+      color: #37352f;
+      padding: 3px 2px;
+    }
+    
+    h2 {
+      font-size: 24px;
+      font-weight: 600;
+      margin: 24px 0 8px 0;
+      color: #37352f;
+      padding: 3px 2px;
+    }
+    
+    p {
+      font-size: 16px;
+      line-height: 1.6;
+      color: #37352f;
+      margin: 8px 0;
+      padding: 3px 2px;
+    }
+    
+    ul {
+      padding-left: 24px;
+      margin: 8px 0;
+    }
+    
+    li {
+      padding: 2px 0;
+      margin: 0;
+      line-height: 1.5;
+    }
+
+    /* Resize handle */
+    .resize-handle {
+      width: 4px;
+      background: transparent;
+      cursor: col-resize;
+      position: relative;
+    }
+
+    .resize-handle:hover {
+      background: #3b82f6;
+    }
+
+    .resize-handle::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -2px;
+      right: -2px;
+      bottom: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Left Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        Documents & Outline
+      </div>
+      <div class="sidebar-content">
+        <div class="outline-section">
+          <div class="outline-title">Documents</div>
+          <a href="#" class="outline-item active">Product Specification</a>
+          <a href="#" class="outline-item">Technical Specification</a>
+          <a href="#" class="outline-item">Implementation Plan</a>
+        </div>
+        
+        <div class="outline-section">
+          <div class="outline-title">Outline</div>
+          <a href="#intro" class="outline-item">Introduction & Vision</a>
+          <a href="#features" class="outline-item">Key Features</a>
+          <a href="#requirements" class="outline-item">Requirements Breakdown</a>
+          <a href="#technical" class="outline-item">Technical Specifications</a>
+          <a href="#personas" class="outline-item">User Personas</a>
+          <a href="#architecture" class="outline-item">System Architecture</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resize Handle -->
+    <div class="resize-handle"></div>
+
+    <!-- Main Editor Area -->
+    <div class="main-area">
+      <div class="editor-header">
+        <div class="editor-title">Product Requirements Document</div>
+        <div class="editor-actions">
+          <button class="btn">Save Draft</button>
+          <button class="btn">Export</button>
+          <button class="btn primary">Publish</button>
+        </div>
+      </div>
+
+      <div class="editor-content">
+        <div class="notion-block" onclick="selectBlock(this)">
+          <div class="notion-controls">
+            <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+            <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+            <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+          </div>
+          <h1 contenteditable="true">Product Requirements Document</h1>
+        </div>
+
+        <div class="notion-block" onclick="selectBlock(this)">
+          <div class="notion-controls">
+            <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+            <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+            <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+          </div>
+          <p contenteditable="true">This document outlines the comprehensive requirements for our next-generation product. Click on any block to see the floating controls appear and interact with the content.</p>
+        </div>
+
+        <div class="notion-block" onclick="selectBlock(this)" id="intro">
+          <div class="notion-controls">
+            <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+            <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+            <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+          </div>
+          <h2 contenteditable="true">Introduction & Vision</h2>
+        </div>
+
+        <div class="notion-block" onclick="selectBlock(this)">
+          <div class="notion-controls">
+            <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+            <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+            <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+          </div>
+          <p contenteditable="true">Our vision is to create a tool that reduces downtime, accelerates fixes, and enables the system to learn and improve over time. The agent acts as an instant-on incident investigator, intelligently filtering signals from noise and forming hypotheses based on evidence.</p>
+        </div>
+
+        <div class="notion-block" onclick="selectBlock(this)">
+          <div class="notion-controls">
+            <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+            <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+            <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+          </div>
+          <p contenteditable="true">After an incident, the agent shifts to a proactive mode, analyzing trends across metrics, events, logs, and traces to identify patterns and suggest preventative changes. The core goal is to decrease mean time to repair (MTTR) and create a continuously improving, more resilient system.</p>
+        </div>
+
+        <div class="notion-block" onclick="selectBlock(this)" id="features">
+          <div class="notion-controls">
+            <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+            <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+            <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+          </div>
+          <h2 contenteditable="true">Key Features</h2>
+        </div>
+
+        <div class="notion-block" onclick="selectBlock(this)">
+          <div class="notion-controls">
+            <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+            <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+            <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+          </div>
+          <ul contenteditable="true">
+            <li>Intelligent signal filtering and noise reduction</li>
+            <li>Evidence-based hypothesis generation</li>
+            <li>Clear, actionable remediation steps</li>
+            <li>Proactive pattern identification and prevention</li>
+            <li>Comprehensive documentation and audit trails</li>
+            <li>Real-time collaboration and communication tools</li>
+          </ul>
+        </div>
+
+        <div class="notion-block" onclick="selectBlock(this)" id="requirements">
+          <div class="notion-controls">
+            <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+            <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+            <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+          </div>
+          <h2 contenteditable="true">Requirements Breakdown</h2>
+        </div>
+
+        <div class="notion-block" onclick="selectBlock(this)">
+          <div class="notion-controls">
+            <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+            <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+            <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+          </div>
+          <p contenteditable="true">The system must process alerts from external sources, create centralized incident workspaces, and provide step-by-step remediation guidance. All actions should be logged for future analysis and continuous improvement.</p>
+        </div>
+
+        <div class="notion-block" onclick="selectBlock(this)" id="technical">
+          <div class="notion-controls">
+            <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+            <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+            <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+          </div>
+          <h2 contenteditable="true">Technical Specifications</h2>
+        </div>
+
+        <div class="notion-block" onclick="selectBlock(this)">
+          <div class="notion-controls">
+            <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+            <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+            <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+          </div>
+          <p contenteditable="true">The platform will leverage microservices architecture with event-driven communication, providing scalable data processing capabilities and real-time analytics for incident response and prevention.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function selectBlock(block) {
+      // Remove selection from all blocks
+      document.querySelectorAll('.notion-block').forEach(b => b.classList.remove('selected'));
+      
+      // Select clicked block
+      block.classList.add('selected');
+      
+      // Update outline highlighting if this block has an ID
+      if (block.id) {
+        document.querySelectorAll('.outline-item').forEach(item => item.classList.remove('active'));
+        const outlineItem = document.querySelector(`a[href="#${block.id}"]`);
+        if (outlineItem) outlineItem.classList.add('active');
+      }
+    }
+
+    function addAbove(button) {
+      event.stopPropagation();
+      const block = button.closest('.notion-block');
+      const newBlock = createNewBlock('New content above...');
+      block.parentNode.insertBefore(newBlock, block);
+    }
+
+    function addBelow(button) {
+      event.stopPropagation();
+      const block = button.closest('.notion-block');
+      const newBlock = createNewBlock('New content below...');
+      block.parentNode.insertBefore(newBlock, block.nextSibling);
+    }
+
+    function deleteBlock(button) {
+      event.stopPropagation();
+      const block = button.closest('.notion-block');
+      if (confirm('Delete this block?')) {
+        block.remove();
+      }
+    }
+
+    function createNewBlock(text) {
+      const newBlock = document.createElement('div');
+      newBlock.className = 'notion-block';
+      newBlock.onclick = () => selectBlock(newBlock);
+      newBlock.innerHTML = `
+        <div class="notion-controls">
+          <button class="notion-btn add" onclick="addAbove(this)">↑</button>
+          <button class="notion-btn add" onclick="addBelow(this)">↓</button>
+          <button class="notion-btn delete" onclick="deleteBlock(this)">🗑</button>
+        </div>
+        <p contenteditable="true">${text}</p>
+      `;
+      return newBlock;
+    }
+
+    // Handle sidebar resizing
+    let isResizing = false;
+
+    document.querySelector('.resize-handle').addEventListener('mousedown', (e) => {
+      isResizing = true;
+      document.addEventListener('mousemove', handleResize);
+      document.addEventListener('mouseup', stopResize);
+    });
+
+    function handleResize(e) {
+      if (!isResizing) return;
+      
+      const sidebar = document.querySelector('.sidebar');
+      const newWidth = e.clientX;
+      
+      if (newWidth >= 240 && newWidth <= 400) {
+        sidebar.style.width = newWidth + 'px';
+      }
+    }
+
+    function stopResize() {
+      isResizing = false;
+      document.removeEventListener('mousemove', handleResize);
+      document.removeEventListener('mouseup', stopResize);
+    }
+
+    // Handle outline navigation
+    document.querySelectorAll('.outline-item[href^="#"]').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const targetId = link.getAttribute('href').substring(1);
+        const targetBlock = document.getElementById(targetId);
+        if (targetBlock) {
+          targetBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          selectBlock(targetBlock);
+        }
+      });
+    });
+
+    // Auto-select first block on load
+    setTimeout(() => {
+      const firstBlock = document.querySelector('.notion-block');
+      if (firstBlock) selectBlock(firstBlock);
+    }, 100);
+  </script>
+</body>
+</html>
+

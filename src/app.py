@@ -61,9 +61,9 @@ logger = logging.getLogger(__name__)
 
 # Grouped imports for better structure
 try:
-    from .models import db
-    from .core import database
-    from .services import (
+    from src.models import db
+    from src.core import database
+    from src.services import (
         distributed_cache,
         background,
         event_bus,
@@ -76,7 +76,7 @@ try:
         ai_agents,
         auth_service
     )
-    from .api import (
+    from src.api import (
         projects,
         system,
         ai,
@@ -95,7 +95,9 @@ try:
         github,
         kiro_endpoints,
         tasks,
-        upload
+        upload,
+        validation,
+        prd_editor
     )
 except ImportError as e:
     # Handle direct execution for scripts, etc.
@@ -114,7 +116,7 @@ except ImportError as e:
     import services.context_aware_ai as context_aware_ai
     import services.ai_agents as ai_agents
     import services.auth_service as auth_service
-    from api import system, ai, mission_control, mcp_external, conversations, stages, events, graph, vector, webhooks, cache, intelligence, monitoring, github, kiro_endpoints, tasks, upload, validation
+    from api import system, ai, mission_control, mcp_external, conversations, stages, events, graph, vector, webhooks, cache, intelligence, monitoring, github, kiro_endpoints, tasks, upload, validation, prd_editor
     from api import ai_broker as ai_broker_api
 
 migrate = Migrate()
@@ -138,7 +140,7 @@ class Config:
     MAX_WORKERS = int(os.environ.get('MAX_WORKERS', 4))
     STATIC_FOLDER = os.environ.get('STATIC_FOLDER', 'frontend/dist')
     GOOSE_SCRIPT_PATH = os.environ.get('GOOSE_SCRIPT_PATH', './scripts/goose-gemini')
-    MODEL_GARDEN_API_URL = os.environ.get('MODEL_GARDEN_API_URL', 'https://quasarmarket.coforge.com/aistudio-llmrouter-api/api/v2/chat/completions')
+    MODEL_GARDEN_API_URL = os.environ.get('MODEL_GARDEN_API_URL', 'https://quasarmarket.coforge.com/qag/llmrouter-api/v2/chat/completions')
     MODEL_GARDEN_API_KEY = os.environ.get('MODEL_GARDEN_API_KEY', '4b7103fd-77b1-4db6-9ab7-a88e92a0e835')
     REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
     REDIS_CACHE_DB = os.environ.get('REDIS_CACHE_DB', '1')
@@ -218,7 +220,7 @@ def create_app(config_class=Config):
 
     # Initialize Slack feed bridge
     try:
-        from .services.slack_feed_bridge import init_slack_feed_bridge
+        from src.services.slack_feed_bridge import init_slack_feed_bridge
         init_slack_feed_bridge()
         app.logger.info("Slack feed bridge initialized successfully")
     except ImportError:
@@ -243,7 +245,7 @@ def create_app(config_class=Config):
     
     # Initialize Vector Context Service
     try:
-        from .services import vector_context_service
+        from src.services import vector_context_service
         if vector_context_service.init_vector_context_service():
             app.logger.info("Vector context service initialized successfully")
         else:
@@ -278,7 +280,7 @@ def create_app(config_class=Config):
 
     # Initialize Spec Generation Service
     try:
-        from .services.spec_generation_service import init_spec_generation_service
+        from src.services.spec_generation_service import init_spec_generation_service
         init_spec_generation_service(app)
         app.logger.info("Spec generation service initialized successfully")
     except ImportError:
@@ -290,7 +292,7 @@ def create_app(config_class=Config):
 
     # Initialize DefineAgent bridge
     try:
-        from .services.define_agent_bridge import init_define_agent_bridge
+        from src.services.define_agent_bridge import init_define_agent_bridge
         init_define_agent_bridge()
         app.logger.info("DefineAgent bridge initialized successfully")
     except ImportError:
@@ -302,7 +304,7 @@ def create_app(config_class=Config):
 
     # Initialize PlannerAgent
     try:
-        from .services.planner_agent_bridge import init_planner_agent_bridge
+        from src.services.planner_agent_bridge import init_planner_agent_bridge
         init_planner_agent_bridge(app)
         app.logger.info("PlannerAgent bridge initialized successfully")
     except ImportError:
@@ -314,7 +316,7 @@ def create_app(config_class=Config):
 
     # Initialize Prometheus metrics server
     try:
-        from .services.metrics_service import start_metrics_server
+        from src.services.metrics_service import start_metrics_server
         start_metrics_server(port=9100)
         app.logger.info("Prometheus metrics server started on port 9100")
     except ImportError:
@@ -336,7 +338,7 @@ def create_app(config_class=Config):
 def setup_logging(app):
     """Configure clean, focused logging"""
     try:
-        from config.logging_config import setup_clean_logging
+        from src.config.logging_config import setup_clean_logging
         setup_clean_logging(app)
     except ImportError:
         # Fallback to quiet logging
@@ -372,11 +374,23 @@ def register_blueprints(app):
     app.register_blueprint(github.github_bp)
     app.register_blueprint(upload.upload_bp)
     app.register_blueprint(validation.validation_bp)
+    app.register_blueprint(prd_editor.prd_editor_bp)
+    # app.register_blueprint(mock_prd.mock_prd_bp)  # Disabled - using real PRD editor
+    
+    # Register reliable PRD generator blueprint
+    try:
+        from src.api.reliable_prd_generator import reliable_prd_bp
+        app.register_blueprint(reliable_prd_bp)
+        app.logger.info("Reliable PRD generator blueprint registered successfully")
+    except ImportError as e:
+        app.logger.warning(f"Could not register reliable PRD generator blueprint: {e}")
+    except Exception as e:
+        app.logger.error(f"Failed to register reliable PRD generator blueprint: {e}")
     
     # Register ADI Engine blueprints
     try:
-        from .adi.api import ingest_bp, insights_bp, knowledge_bp, evaluation_bp, pack_config_bp
-        from .adi.api.field_review import adi_bp
+        from src.adi.api import ingest_bp, insights_bp, knowledge_bp, evaluation_bp, pack_config_bp
+        from src.adi.api.field_review import adi_bp
         app.register_blueprint(ingest_bp)
         app.register_blueprint(insights_bp)
         app.register_blueprint(knowledge_bp)
@@ -402,9 +416,50 @@ def register_blueprints(app):
 
 def register_frontend_routes(app):
     """Serve frontend application and static files"""
+    # Directory paths
     frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend'))
-    # Correct the path to point to the mission-control-dist directory
     mission_control_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'mission-control-dist'))
+    
+    @app.route('/intelligent-prd-editor.html')
+    def serve_intelligent_prd_editor():
+        """Serve the intelligent PRD editor"""
+        app.logger.debug("Serving intelligent PRD editor")
+        editor_path = os.path.join(frontend_dir, 'intelligent-prd-editor.html')
+        if os.path.exists(editor_path):
+            return send_from_directory(frontend_dir, 'intelligent-prd-editor.html')
+        else:
+            app.logger.error(f"Intelligent PRD editor not found at: {editor_path}")
+            from flask import abort
+            abort(404)
+    
+    @app.route('/enhanced-prd-editor.html')
+    def redirect_enhanced_to_intelligent():
+        """Redirect legacy enhanced PRD editor to intelligent PRD editor"""
+        from flask import redirect, request
+        # Preserve all query parameters
+        query_string = request.query_string.decode('utf-8')
+        redirect_url = '/intelligent-prd-editor.html'
+        if query_string:
+            redirect_url += '?' + query_string
+        return redirect(redirect_url, code=302)
+    
+    @app.route('/js/<path:filename>')
+    def serve_js_files(filename):
+        """Serve JavaScript files from frontend/js directory"""
+        js_dir = os.path.join(frontend_dir, 'js')
+        if os.path.exists(os.path.join(js_dir, filename)):
+            return send_from_directory(js_dir, filename)
+        from flask import abort
+        abort(404)
+    
+    @app.route('/css/<path:filename>')
+    def serve_css_files(filename):
+        """Serve CSS files from frontend/css directory"""
+        css_dir = os.path.join(frontend_dir, 'css')
+        if os.path.exists(os.path.join(css_dir, filename)):
+            return send_from_directory(css_dir, filename)
+        from flask import abort
+        abort(404)
 
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
@@ -414,6 +469,11 @@ def register_frontend_routes(app):
             from flask import abort
             abort(404)  # Let Flask continue to check other routes
             
+        # Don't intercept mission control or PRD editor routes
+        if path.startswith(('mission-control/', 'prd-editor/', 'intelligent-prd-editor.html', 'js/', 'css/')):
+            from flask import abort
+            abort(404)  # Let other routes handle these
+            
         if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
             return send_from_directory(app.static_folder, path)
         else:
@@ -421,6 +481,8 @@ def register_frontend_routes(app):
 
     @app.route('/mission-control/', defaults={'path': 'index.html'})
     @app.route('/mission-control/<path:path>')
+    @app.route('/prd-editor/', defaults={'path': 'index.html'})
+    @app.route('/prd-editor/<path:path>')
     def serve_mission_control(path):
         app.logger.debug(f"Mission Control request for path: {path}")
         app.logger.debug(f"Mission Control directory: {mission_control_dir}")

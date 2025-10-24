@@ -32,6 +32,7 @@ class UploadSession(db.Model):
     completeness_score = db.Column(db.JSON)  # PRD quality checklist scores
     combined_content = db.Column(db.Text)  # All extracted text combined
     ai_analysis = db.Column(db.Text)  # AI-generated insights
+    session_metadata = db.Column(db.JSON)  # Store feed_item_id and other metadata
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -54,6 +55,7 @@ class UploadSession(db.Model):
             'completeness_score': self.completeness_score,
             'combined_content': self.combined_content,
             'ai_analysis': self.ai_analysis,
+            'metadata': self.session_metadata or {},
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'files': [file.to_dict() for file in self.files] if self.files else []
@@ -65,7 +67,8 @@ class UploadSession(db.Model):
         session = cls(
             project_id=project_id,
             description=description,
-            status=cls.STATUS_ACTIVE
+            status=cls.STATUS_ACTIVE,
+            session_metadata={}
         )
         
         db.session.add(session)

@@ -210,6 +210,7 @@ export const MissionControlLayout: React.FC<MissionControlLayoutProps> = ({
               {activeStage === 'plan' && (
                 <PlanStage
                   selectedProject={selectedProject}
+                  selectedFeedItem={selectedFeedItem}
                   onStageChange={onStageChange}
                 />
               )}

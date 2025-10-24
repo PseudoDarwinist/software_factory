@@ -102,19 +102,8 @@ root.render(
   </React.StrictMode>
 )
 
-// Hot Module Replacement (HMR) for development
-if (process.env.NODE_ENV === 'development' && (module as any).hot) {
-  (module as any).hot.accept('./App', () => {
-    const NextApp = require('./App').default
-    root.render(
-      <React.StrictMode>
-        <ErrorBoundary>
-          <NextApp />
-        </ErrorBoundary>
-      </React.StrictMode>
-    )
-  })
-}
+// Vite + @vitejs/plugin-react handles HMR automatically. No explicit module.hot usage.
+// Leaving this block empty to avoid "module is not defined" errors in the browser.
 
 // Performance monitoring
 if (process.env.NODE_ENV === 'development') {

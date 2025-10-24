@@ -594,3 +594,5 @@ When working with AI interfaces in this project:
 - Documents contain actual requirements and specifications
 - Split-screen activation is intelligent and purposeful
 - User experience is conversational and intuitive
+
+- dont build or start server. I will do it myself. Just let me know when to do them.
