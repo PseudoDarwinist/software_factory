@@ -17,7 +17,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY src/ ./src/
 COPY frontend/ ./frontend/
-COPY mission-control-dist/ ./mission-control-dist/
+
+# Build Mission Control frontend (Vite) inside the image so files exist
+# 1) Install Node.js
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get update && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2) Copy mission-control sources and build to ../mission-control-dist as per vite.config.ts
+COPY mission-control/ ./mission-control/
+RUN npm ci --prefix mission-control \
+    && npm run build --prefix mission-control
 
 # Create directories for logs and instance data
 RUN mkdir -p /app/logs /app/instance
