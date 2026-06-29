@@ -64,7 +64,7 @@ export const ThinkStage: React.FC<ThinkStageProps> = ({
   error,
   onFilterChange,
 }) => {
-  const [filter, setFilter] = useState<FilterType>('all')
+  const [filter, setFilter] = useState<FilterType>('ideas')
 
   // Notify parent when filter changes
   useEffect(() => {
